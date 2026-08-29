@@ -1,5 +1,27 @@
-# Override de production : images buildées, aucun code monté, aucun hot-reload.
+# Override de production : images buildées OU tirées de GHCR, aucun code
+# monté, aucun hot-reload.
+#
+# Déploiement rapide (recommandé, voir .github/workflows/ci.yml) : `image:`
+# pointe vers les images déjà construites et publiées sur GHCR à chaque push
+# sur `main` — le serveur les télécharge au lieu de recompiler le moteur de
+# duel en C++ sur place (le vrai gain de temps).
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# IMPORTANT, une seule fois : ces images sont PRIVÉES par défaut sur GHCR même
+# si le repo est public (bizarrerie connue de GitHub) — sans rien faire, le
+# `pull` ci-dessus échoue en 401/403. Après le tout premier push sur `main`
+# (qui crée les packages), rendez-les publics une fois pour toutes dans
+# github.com/<votre compte> -> Packages -> dnd_duel_go-backend/-frontend ->
+# Package settings -> Change visibility -> Public (irréversible dans l'autre
+# sens, mais évite d'avoir à gérer un token GHCR sur le serveur).
+#
+# Toujours possible de builder en local à la place (`build:` reste défini) :
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# IMAGE_TAG (optionnel, voir .env.example) : "latest" par défaut, ou un SHA de
+# commit précis pour figer/rollback une version au lieu de toujours prendre la
+# dernière publiée.
 services:
   # `ports: []` seul NE VIDE PAS la liste héritée de docker-compose.yml —
   # Compose fusionne les listes par clé unique et une liste vide ne "gagne"
@@ -11,6 +33,7 @@ services:
     ports: !reset []
 
   backend:
+    image: ghcr.io/claude-boulay/dnd_duel_go-backend:${IMAGE_TAG:-latest}
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -34,6 +57,7 @@ services:
       - card_images:/app/uploads
 
   frontend:
+    image: ghcr.io/claude-boulay/dnd_duel_go-frontend:${IMAGE_TAG:-latest}
     build:
       context: ./frontend
       target: prod
