@@ -271,6 +271,10 @@ function CharacterEconomy({
               ? () => void handleOpen(opening.setCode, opening.setName)
               : undefined
           }
+          otherSets={
+            openingSet === null ? character.sealed_boosters.filter((b) => b.set_code !== opening.setCode && b.quantity > 0) : []
+          }
+          onOpenOther={(setCode, setName) => void handleOpen(setCode, setName)}
         />
       )}
 

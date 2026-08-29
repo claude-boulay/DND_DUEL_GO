@@ -9,13 +9,22 @@ interface BoosterOpeningOverlayProps {
   onClose: () => void;
   /** Un autre booster du même set attend encore : affiche "Suivant" à côté de "Fermer" une fois la révélation terminée. Absent/omis = aucun booster restant. */
   onNext?: () => void;
+  /** Boosters scellés d'AUTRES sets encore disponibles — proposés une fois la révélation terminée, pour ne pas devoir rouvrir le menu principal entre deux sets différents. */
+  otherSets?: Array<{ set_code: string; set_name: string; quantity: number }>;
+  onOpenOther?: (setCode: string, setName: string) => void;
 }
 
 type ActivePhase = 'idle' | 'spin' | 'hero' | 'settle';
 
 // Durées (ms) des tours successifs sur une carte, décroissantes : chaque
 // carte "tourne" de plus en plus vite avant de se révéler au dernier tour.
+// Réservée aux raretés qui déclenchent déjà la grande révélation
+// (`is_rare_reveal`, Super Rare et plus, voir boosterOpening.ts côté
+// serveur) — la montée en tension a du sens là où il y a un vrai suspense.
 const SPIN_DURATIONS = [320, 250, 190, 140, 100];
+// Commune/Rare (le gros du booster) : un seul tour suffit avant la
+// révélation, pas besoin de la montée en tension complète (retour utilisateur).
+const QUICK_SPIN_DURATIONS = [220];
 const HERO_HOLD_MS = 1000; // durée de la grande révélation (SR/UR et plus rare)
 const SETTLE_MS = 260;
 const BETWEEN_CARDS_MS = 150;
@@ -54,10 +63,11 @@ function PendingSlot() {
   );
 }
 
+/** Une fois révélée, la carte grossit au survol pour qu'on puisse relire son texte d'effet — le conteneur grille reste `overflow:visible` (voir plus bas) pour ne pas la tronquer, et le z-index passe devant ses voisines pendant le survol. */
 function SettledSlot({ card }: { card: ApiOpenedCard }) {
   return (
     <div
-      className={`mx-auto aspect-[59/86] w-full max-w-[140px] overflow-hidden rounded-lg ${
+      className={`relative mx-auto aspect-[59/86] w-full max-w-[140px] overflow-hidden rounded-lg transition-transform duration-200 ease-out hover:z-20 hover:scale-[2.5] hover:cursor-zoom-in ${
         card.is_rare_reveal ? 'shadow-[0_0_18px_4px_rgba(244,192,79,0.35)] ring-2 ring-accent-400' : ''
       }`}
     >
@@ -120,7 +130,7 @@ function ActiveSlot({
   );
 }
 
-export function BoosterOpeningOverlay({ setName, cards, onClose, onNext }: BoosterOpeningOverlayProps) {
+export function BoosterOpeningOverlay({ setName, cards, onClose, onNext, otherSets, onOpenOther }: BoosterOpeningOverlayProps) {
   const [revealedCount, setRevealedCount] = useState(0);
   const [activePhase, setActivePhase] = useState<ActivePhase>('idle');
   const [squashed, setSquashed] = useState(false);
@@ -152,17 +162,18 @@ export function BoosterOpeningOverlay({ setName, cards, onClose, onNext }: Boost
 
     async function run() {
       for (let i = 0; i < cards.length; i += 1) {
+        const durations = cards[i]!.is_rare_reveal ? SPIN_DURATIONS : QUICK_SPIN_DURATIONS;
         setFaceUp(false);
         setSquashed(false);
         setActivePhase('spin');
 
-        for (let s = 0; s < SPIN_DURATIONS.length; s += 1) {
-          const half = SPIN_DURATIONS[s]! / 2;
+        for (let s = 0; s < durations.length; s += 1) {
+          const half = durations[s]! / 2;
           setSpinHalfMs(half);
           setSquashed(true);
           await sleep(half);
           if (bail()) return;
-          if (s === SPIN_DURATIONS.length - 1) setFaceUp(true);
+          if (s === durations.length - 1) setFaceUp(true);
           setSquashed(false);
           await sleep(half);
           if (bail()) return;
@@ -248,6 +259,24 @@ export function BoosterOpeningOverlay({ setName, cards, onClose, onNext }: Boost
           </button>
         )}
       </div>
+
+      {allDone && otherSets && otherSets.length > 0 && (
+        <div className="mt-6 flex flex-col items-center gap-2">
+          <p className="text-[11px] uppercase tracking-wide text-neutral-500">Ouvrir un autre booster scellé</p>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {otherSets.map((s) => (
+              <button
+                key={s.set_code}
+                type="button"
+                onClick={() => onOpenOther?.(s.set_code, s.set_name)}
+                className="rounded-md border border-arena-600 px-4 py-1.5 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+              >
+                {s.set_name} ×{s.quantity}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>,
     document.body,
   );
