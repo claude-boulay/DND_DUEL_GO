@@ -487,6 +487,86 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
     expect(typeof testCardEntry.acquired_order).toBe('number');
     expect(testCardEntry.acquired_order).toBeGreaterThanOrEqual(0);
   });
+
+  it("marchandage en 2 temps (POST .../haggle) : un jet raté peut être relancé via un reroll de Chance AVANT de valider l'achat, jamais après", async () => {
+    // Solde de rerolls connu, indépendant de la Chance de base du personnage
+    // (8, sous le seuil de la formule CLAUDE.md §3.3 — 0 reroll naturel).
+    await Character.updateOne({ _id: characterId }, { $set: { remaining_luck_rerolls: 1 } });
+
+    // Modificateur garanti en échec (max total = 20-20=0 < DC 5, quel que
+    // soit le jet réel) : le premier jet ET le reroll échouent tous les
+    // deux de façon déterministe — la remise négociée ne s'applique jamais,
+    // seul le comptage du reroll et la consommation de la négociation sont
+    // testés ici (pas l'issue du hasard, déjà couverte par les tests
+    // "marchandage réussi/raté" plus haut).
+    // stockTestItemId (prix 10, stock 1) plutôt que cardItemId : ce dernier
+    // est déjà à sec (stock 3 entièrement consommé par les 3 achats plus
+    // haut) — stockTestItemId, lui, n'a encore jamais été acheté avec
+    // succès (les tests le concernant ne font que vérifier le refus 409).
+    const rolled = await request(app)
+      .post(`/api/merchants/${merchantId}/items/${stockTestItemId}/haggle`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ character_id: characterId, modifier: -20, discount_percent: 50 })
+      .expect(201);
+    expect(rolled.body.haggle.success).toBe(false);
+    expect(rolled.body.remaining_luck_rerolls).toBe(1);
+    const haggleId = rolled.body.haggle.id as string;
+
+    const rerolled = await request(app)
+      .post(`/api/merchants/${merchantId}/haggle/${haggleId}/reroll`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({})
+      .expect(200);
+    expect(rerolled.body.haggle.success).toBe(false); // même modificateur -20, échec garanti aussi après reroll
+    expect(rerolled.body.remaining_luck_rerolls).toBe(0);
+
+    // Plus de reroll disponible pour ce personnage : refusé.
+    await request(app)
+      .post(`/api/merchants/${merchantId}/haggle/${haggleId}/reroll`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({})
+      .expect(400);
+
+    const before = await request(app).get(`/api/characters/${characterId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+    const collectionBefore = (before.body.character.collection as string[]).length;
+
+    const purchased = await request(app)
+      .post(`/api/merchants/${merchantId}/items/${stockTestItemId}/purchase`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ character_id: characterId, quantity: 1, haggle_id: haggleId })
+      .expect(200);
+    expect(purchased.body.purchase.haggle).toMatchObject({ success: false, discount_percent: 0 });
+    expect(purchased.body.purchase.unit_price).toBe(10); // prix plein (stockTestItemId), l'échec est resté un échec
+    expect(purchased.body.character.collection).toHaveLength(collectionBefore + 1);
+
+    // La négociation vient d'être consommée par cet achat : pas rejouable.
+    await request(app)
+      .post(`/api/merchants/${merchantId}/items/${stockTestItemId}/purchase`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ character_id: characterId, quantity: 1, haggle_id: haggleId })
+      .expect(404);
+  });
+
+  it("un tiers non-membre du salon ne peut ni lancer le marchandage, ni dépenser le reroll de Chance, pour ce personnage", async () => {
+    await request(app)
+      .post(`/api/merchants/${merchantId}/items/${cardItemId}/haggle`)
+      .set('Authorization', `Bearer ${outsider.token}`)
+      .send({ character_id: characterId, modifier: 0, discount_percent: 10 })
+      .expect(403);
+
+    await Character.updateOne({ _id: characterId }, { $set: { remaining_luck_rerolls: 1 } });
+    const rolled = await request(app)
+      .post(`/api/merchants/${merchantId}/items/${cardItemId}/haggle`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ character_id: characterId, modifier: 0, discount_percent: 10 })
+      .expect(201);
+
+    await request(app)
+      .post(`/api/merchants/${merchantId}/haggle/${rolled.body.haggle.id}/reroll`)
+      .set('Authorization', `Bearer ${outsider.token}`)
+      .send({})
+      .expect(403);
+  });
 });
 
 /**

@@ -228,6 +228,19 @@ export interface ApiHaggleResult {
   discount_percent: number;
 }
 
+/** Négociation déjà lancée (POST .../haggle), pas encore consommée par un achat — voir POST .../haggle/:id/reroll et purchaseMerchantItem's haggle_id. */
+export interface ApiPendingHaggle {
+  id: string;
+  item_id: string;
+  character_id: string;
+  modifier: number;
+  discount_percent: number;
+  dc: number;
+  roll: number;
+  total: number;
+  success: boolean;
+}
+
 export interface ApiPurchaseResult {
   item_type: ApiMerchantItemType;
   quantity: number;
@@ -640,11 +653,32 @@ export const api = {
     token: string,
     merchantId: string,
     itemId: string,
-    input: { character_id: string; quantity?: number; haggle?: { modifier: number; discount_percent: number } },
+    input: { character_id: string; quantity?: number; haggle?: { modifier: number; discount_percent: number }; haggle_id?: string },
   ) =>
     request<ApiPurchaseResponse>(
       `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}/purchase`,
       { method: 'POST', body: JSON.stringify(input) },
+      token,
+    ),
+
+  /** Lance le marchandage SANS acheter — le résultat peut être relancé (Chance) avant de confirmer l'achat via purchaseMerchantItem's haggle_id. */
+  haggleMerchantItem: (
+    token: string,
+    merchantId: string,
+    itemId: string,
+    input: { character_id: string; modifier: number; discount_percent: number },
+  ) =>
+    request<{ haggle: ApiPendingHaggle; remaining_luck_rerolls: number }>(
+      `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}/haggle`,
+      { method: 'POST', body: JSON.stringify(input) },
+      token,
+    ),
+
+  /** Dépense un reroll de Chance sur une négociation déjà lancée (pas encore utilisée pour un achat). */
+  rerollMerchantHaggle: (token: string, merchantId: string, haggleId: string) =>
+    request<{ haggle: ApiPendingHaggle; remaining_luck_rerolls: number }>(
+      `/merchants/${encodeURIComponent(merchantId)}/haggle/${encodeURIComponent(haggleId)}/reroll`,
+      { method: 'POST', body: JSON.stringify({}) },
       token,
     ),
 

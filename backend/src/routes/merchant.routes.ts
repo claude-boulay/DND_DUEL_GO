@@ -4,7 +4,8 @@ import { Types } from 'mongoose';
 import { Merchant, type MerchantDocument } from '../models/Merchant.model';
 import { Card } from '../models/Card.model';
 import { CardSet } from '../models/CardSet.model';
-import { Character } from '../models/Character.model';
+import { Character, type CharacterDocument } from '../models/Character.model';
+import type { GameSessionDocument } from '../models/GameSession.model';
 import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
@@ -12,6 +13,7 @@ import { isSessionGm, isSessionMember } from '../utils/sessionMembership';
 import { loadSessionOrThrow } from '../utils/loaders';
 import { rollDie } from '../utils/dice';
 import { broadcastSessionResourceChanged } from '../utils/broadcast';
+import { consumeHaggle, getHaggle, recordHaggle, updateHaggleRoll, type PendingHaggle } from '../utils/haggleStore';
 
 export const merchantRouter = Router();
 merchantRouter.use(requireAuth);
@@ -51,6 +53,26 @@ async function loadMerchantAsGmOrThrow(merchantId: string, userId: string): Prom
     throw new AppError(403, 'Seul le MJ peut gérer ce marchand', 'forbidden');
   }
   return merchant;
+}
+
+/** Personnage du même salon, contrôlé par l'appelant (son propre personnage) ou le MJ — même règle que pour l'achat. */
+async function loadOwnedCharacterOrThrow(
+  characterId: string,
+  gameSessionId: string,
+  session: GameSessionDocument,
+  userId: string,
+): Promise<CharacterDocument> {
+  if (!Types.ObjectId.isValid(characterId)) throw new AppError(400, 'character_id invalide', 'invalid_input');
+  const character = await Character.findById(characterId);
+  if (!character || character.game_session_id.toString() !== gameSessionId) {
+    throw new AppError(404, 'Personnage introuvable dans ce salon', 'not_found');
+  }
+  const isOwner = character.user_id.toString() === userId;
+  const isGm = isSessionGm(session, userId);
+  if (!isOwner && !isGm) {
+    throw new AppError(403, 'Vous ne pouvez pas agir pour ce personnage', 'forbidden');
+  }
+  return character;
 }
 
 const createMerchantSchema = z.object({
@@ -232,19 +254,120 @@ merchantRouter.delete(
   }),
 );
 
-const purchaseSchema = z.object({
+function toHaggleDto(haggle: PendingHaggle) {
+  return {
+    id: haggle.haggleId,
+    item_id: haggle.itemId,
+    character_id: haggle.characterId,
+    modifier: haggle.modifier,
+    discount_percent: haggle.discountPercent,
+    dc: haggle.dc,
+    roll: haggle.roll,
+    total: haggle.total,
+    success: haggle.success,
+  };
+}
+
+const haggleRollSchema = z.object({
   character_id: z.string(),
-  quantity: z.number().int().min(1).max(99).default(1),
   // Marchandage (CLAUDE.md §3.5) : le MJ arbitre les deux paramètres avant le
   // jet, comme à la table — le modificateur appliqué au d20 (contexte du
   // personnage/scène, pas nécessairement le modificateur de Charisme brut de
-  // la fiche) et la remise accordée en cas de succès. Absent = achat plein tarif.
+  // la fiche) et la remise accordée en cas de succès.
+  modifier: z.number().int().min(-20).max(30),
+  discount_percent: z.number().int().min(0).max(100),
+});
+
+/**
+ * Lance le marchandage SANS acheter — sépare le jet de la confirmation
+ * d'achat pour laisser le temps de voir le résultat et de dépenser un
+ * reroll de Chance avant de valider, exactement comme pour n'importe quel
+ * autre jet (voir sockets/index.ts `roll_dice`/`reroll_dice`, même
+ * mécanique de reroll server-authoritative appliquée ici).
+ */
+merchantRouter.post(
+  '/:id/items/:itemId/haggle',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const merchant = await loadMerchantOrThrow(req.params.id!);
+    const session = await loadSessionOrThrow(merchant.game_session_id.toString());
+    const userId = req.user!.sub;
+    if (!isSessionMember(session, userId)) {
+      throw new AppError(403, "Vous n'êtes pas membre de ce salon", 'forbidden');
+    }
+
+    const item = merchant.items.find((i) => i._id.toString() === req.params.itemId);
+    if (!item) throw new AppError(404, 'Article introuvable', 'not_found');
+
+    const body = haggleRollSchema.parse(req.body);
+    const character = await loadOwnedCharacterOrThrow(body.character_id, merchant.game_session_id.toString(), session, userId);
+
+    const roll = rollDie(20);
+    const haggle = recordHaggle({
+      merchantId: merchant._id.toString(),
+      itemId: item._id.toString(),
+      characterId: character._id.toString(),
+      modifier: body.modifier,
+      discountPercent: body.discount_percent,
+      dc: merchant.haggle_dc,
+      roll,
+    });
+
+    res.status(201).json({ haggle: toHaggleDto(haggle), remaining_luck_rerolls: character.remaining_luck_rerolls });
+  }),
+);
+
+/** Dépense un reroll de Chance sur une négociation déjà lancée (pas encore utilisée pour un achat) — même garde anti-triche que reroll_dice. */
+merchantRouter.post(
+  '/:id/haggle/:haggleId/reroll',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const merchant = await loadMerchantOrThrow(req.params.id!);
+    const session = await loadSessionOrThrow(merchant.game_session_id.toString());
+    const userId = req.user!.sub;
+    if (!isSessionMember(session, userId)) {
+      throw new AppError(403, "Vous n'êtes pas membre de ce salon", 'forbidden');
+    }
+
+    const pending = getHaggle(req.params.haggleId!);
+    if (!pending || pending.merchantId !== merchant._id.toString()) {
+      throw new AppError(404, 'Négociation introuvable (peut-être expirée) — relancez le marchandage', 'not_found');
+    }
+
+    const character = await loadOwnedCharacterOrThrow(pending.characterId, merchant.game_session_id.toString(), session, userId);
+
+    // Décrément atomique conditionné à un solde positif : anti-triche même en
+    // cas de double clic/requêtes concurrentes — même garde que reroll_dice.
+    const updated = await Character.findOneAndUpdate(
+      { _id: character._id, remaining_luck_rerolls: { $gt: 0 } },
+      { $inc: { remaining_luck_rerolls: -1 } },
+      { new: true },
+    );
+    if (!updated) throw new AppError(400, 'Plus de reroll de Chance disponible pour ce personnage', 'no_rerolls_left');
+
+    const roll = rollDie(20);
+    const updatedHaggle = updateHaggleRoll(pending.haggleId, roll);
+    if (!updatedHaggle) throw new AppError(404, 'Négociation introuvable (peut-être expirée)', 'not_found');
+
+    res.json({ haggle: toHaggleDto(updatedHaggle), remaining_luck_rerolls: updated.remaining_luck_rerolls });
+  }),
+);
+
+const purchaseSchema = z.object({
+  character_id: z.string(),
+  quantity: z.number().int().min(1).max(99).default(1),
+  // Marchandage en un seul appel (pas de reroll possible) : le modificateur
+  // appliqué au d20 et la remise accordée en cas de succès. Absent = achat
+  // plein tarif.
   haggle: z
     .object({
       modifier: z.number().int().min(-20).max(30),
       discount_percent: z.number().int().min(0).max(100),
     })
     .optional(),
+  // Négociation déjà lancée via POST .../haggle (+ éventuels rerolls de
+  // Chance, voir POST .../haggle/:haggleId/reroll) — prioritaire sur
+  // `haggle` si les deux sont fournis : reflète le résultat déjà VU et
+  // accepté par le joueur, pas un nouveau tirage à l'aveugle dans cet appel.
+  haggle_id: z.string().optional(),
 });
 
 merchantRouter.post(
@@ -262,20 +385,10 @@ merchantRouter.post(
     const item = merchant.items.find((i) => i._id.toString() === req.params.itemId);
     if (!item) throw new AppError(404, 'Article introuvable', 'not_found');
 
-    if (!Types.ObjectId.isValid(body.character_id)) {
-      throw new AppError(400, 'character_id invalide', 'invalid_input');
-    }
-    const character = await Character.findById(body.character_id);
-    if (!character || character.game_session_id.toString() !== merchant.game_session_id.toString()) {
-      throw new AppError(404, 'Personnage introuvable dans ce salon', 'not_found');
-    }
-    const isOwner = character.user_id.toString() === userId;
-    const isGm = isSessionGm(session, userId);
-    if (!isOwner && !isGm) {
-      throw new AppError(403, 'Vous ne pouvez pas acheter pour ce personnage', 'forbidden');
-    }
+    const character = await loadOwnedCharacterOrThrow(body.character_id, merchant.game_session_id.toString(), session, userId);
 
-    // Jet server-authoritative (anti-triche) : le d20 est lancé ici, mais le
+    // Jet server-authoritative (anti-triche) : le d20 est lancé ici (ou lu
+    // depuis une négociation déjà tranchée via `haggle_id`), mais le
     // modificateur et la remise en cas de succès sont ceux que le MJ a
     // choisis pour cette négociation précise, pas une formule automatique.
     let haggleResult: {
@@ -288,7 +401,24 @@ merchantRouter.post(
     } | null = null;
 
     let unitPrice = item.price;
-    if (body.haggle) {
+    if (body.haggle_id) {
+      const pending = getHaggle(body.haggle_id);
+      if (
+        !pending ||
+        pending.merchantId !== merchant._id.toString() ||
+        pending.itemId !== item._id.toString() ||
+        pending.characterId !== character._id.toString()
+      ) {
+        throw new AppError(404, 'Négociation introuvable (peut-être expirée) — relancez le marchandage', 'not_found');
+      }
+      // Consommée dès qu'elle sert à un achat, réussi ou non — jamais
+      // rejouable (empêche de réutiliser le même bon résultat sur plusieurs
+      // achats, ou de la garder "en réserve" indéfiniment).
+      consumeHaggle(body.haggle_id);
+      const discountPercent = pending.success ? pending.discountPercent : 0;
+      unitPrice = Math.ceil(item.price * (1 - discountPercent / 100));
+      haggleResult = { roll: pending.roll, modifier: pending.modifier, total: pending.total, dc: pending.dc, success: pending.success, discount_percent: discountPercent };
+    } else if (body.haggle) {
       const { modifier, discount_percent: chosenDiscount } = body.haggle;
       const roll = rollDie(20);
       const total = roll + modifier;

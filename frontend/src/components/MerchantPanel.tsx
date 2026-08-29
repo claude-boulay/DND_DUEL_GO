@@ -6,6 +6,7 @@ import {
   type ApiCharacter,
   type ApiMerchant,
   type ApiMerchantItem,
+  type ApiPendingHaggle,
   type ApiSealedBooster,
 } from '../lib/api';
 import { MerchantItemPickerOverlay } from './MerchantItemPickerOverlay';
@@ -405,21 +406,69 @@ function PurchaseWidget({
   const [haggling, setHaggling] = useState(false);
   const [modifier, setModifier] = useState(0);
   const [discountPercent, setDiscountPercent] = useState(20);
+  // Négociation déjà lancée (roll fait), pas encore utilisée pour acheter —
+  // sépare le jet de la confirmation d'achat pour laisser le temps de voir
+  // le résultat et de dépenser un reroll de Chance avant de valider, comme
+  // pour n'importe quel autre jet (voir DicePanel.tsx).
+  const [pendingHaggle, setPendingHaggle] = useState<ApiPendingHaggle | null>(null);
+  const [rerollsLeft, setRerollsLeft] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{ ok: boolean; message: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (buyableCharacters.length === 0) return null;
+
+  const activeCharacterId = characterId || buyableCharacters[0]!.id;
+
+  const resetHaggle = () => {
+    setPendingHaggle(null);
+    setRerollsLeft(null);
+  };
+
+  const handleRollHaggle = async () => {
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const { haggle, remaining_luck_rerolls } = await api.haggleMerchantItem(token, merchantId, item.id, {
+        character_id: activeCharacterId,
+        modifier,
+        discount_percent: discountPercent,
+      });
+      setPendingHaggle(haggle);
+      setRerollsLeft(remaining_luck_rerolls);
+    } catch (err) {
+      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleReroll = async () => {
+    if (!pendingHaggle) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const { haggle, remaining_luck_rerolls } = await api.rerollMerchantHaggle(token, merchantId, pendingHaggle.id);
+      setPendingHaggle(haggle);
+      setRerollsLeft(remaining_luck_rerolls);
+    } catch (err) {
+      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleBuy = async () => {
     setSubmitting(true);
     setFeedback(null);
     try {
       const data = await api.purchaseMerchantItem(token, merchantId, item.id, {
-        character_id: characterId || buyableCharacters[0]!.id,
+        character_id: activeCharacterId,
         quantity,
-        haggle: haggling ? { modifier, discount_percent: discountPercent } : undefined,
+        haggle: haggling && !pendingHaggle ? { modifier, discount_percent: discountPercent } : undefined,
+        haggle_id: pendingHaggle?.id,
       });
       onPurchased(data);
+      resetHaggle();
       const h = data.purchase.haggle;
       const message = h
         ? `Acheté pour ${data.purchase.total_price} ${currencyName} — marchandage : ${h.roll}+${h.modifier}=${h.total} contre DC ${h.dc} → ${
@@ -437,8 +486,11 @@ function PurchaseWidget({
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-arena-700 pt-1.5">
       <select
-        value={characterId || buyableCharacters[0]!.id}
-        onChange={(e) => setCharacterId(e.target.value)}
+        value={activeCharacterId}
+        onChange={(e) => {
+          setCharacterId(e.target.value);
+          resetHaggle(); // une négociation en cours est liée au personnage qui l'a lancée
+        }}
         className="rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-neutral-100"
       >
         {buyableCharacters.map((c) => (
@@ -455,11 +507,18 @@ function PurchaseWidget({
         className="w-12 rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-right text-neutral-100"
       />
       <label className="flex items-center gap-1 text-neutral-400">
-        <input type="checkbox" checked={haggling} onChange={(e) => setHaggling(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={haggling}
+          onChange={(e) => {
+            setHaggling(e.target.checked);
+            resetHaggle();
+          }}
+        />
         Marchander
       </label>
 
-      {haggling && (
+      {haggling && !pendingHaggle && (
         <span className="flex flex-wrap items-center gap-1 text-neutral-400">
           <span>modificateur (MJ)</span>
           <input
@@ -480,14 +539,44 @@ function PurchaseWidget({
         </span>
       )}
 
-      <button
-        type="button"
-        onClick={() => void handleBuy()}
-        disabled={submitting}
-        className="rounded bg-accent-500 px-2 py-0.5 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
-      >
-        Acheter
-      </button>
+      {pendingHaggle && (
+        <span className={`flex flex-wrap items-center gap-1.5 rounded border px-1.5 py-0.5 ${pendingHaggle.success ? 'border-emerald-700 text-emerald-400' : 'border-red-800 text-red-400'}`}>
+          {pendingHaggle.roll}+{pendingHaggle.modifier}={pendingHaggle.total} contre DC {pendingHaggle.dc} →{' '}
+          {pendingHaggle.success ? `réussi, -${pendingHaggle.discount_percent}%` : 'échoué, prix plein'}
+        </span>
+      )}
+
+      {haggling && !pendingHaggle && (
+        <button
+          type="button"
+          onClick={() => void handleRollHaggle()}
+          disabled={submitting}
+          className="rounded border border-accent-500 px-2 py-0.5 text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
+        >
+          Lancer le marchandage
+        </button>
+      )}
+      {pendingHaggle && !pendingHaggle.success && (rerollsLeft ?? 0) > 0 && (
+        <button
+          type="button"
+          onClick={() => void handleReroll()}
+          disabled={submitting}
+          className="rounded border border-accent-500 px-2 py-0.5 text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
+        >
+          Relancer (Chance : {rerollsLeft})
+        </button>
+      )}
+
+      {(!haggling || pendingHaggle) && (
+        <button
+          type="button"
+          onClick={() => void handleBuy()}
+          disabled={submitting}
+          className="rounded bg-accent-500 px-2 py-0.5 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+        >
+          Acheter
+        </button>
+      )}
       {feedback && (
         <p className={`w-full ${feedback.ok ? 'text-emerald-400' : 'text-red-400'}`}>{feedback.message}</p>
       )}
