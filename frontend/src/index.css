@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Tailwind v4 : la configuration se fait en CSS, plus de tailwind.config.js.
+   Palette de base inspirée des cartes Yu-Gi-Oh! (fond sombre, accents ambre). */
+@theme {
+  --color-arena-950: #0b0b12;
+  --color-arena-900: #12121c;
+  --color-arena-800: #1b1b2a;
+  --color-arena-700: #26263a;
+  --color-arena-600: #3a3a55;
+
+  --color-accent-400: #f4c04f;
+  --color-accent-500: #e0a52e;
+  --color-accent-600: #b8811d;
+
+  --font-display: "Cinzel", ui-serif, Georgia, serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-arena-950);
+  color: #e7e7ef;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Révélation des cartes à l'ouverture d'un booster (DicePanel/CharacterList). */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Interface plein écran d'ouverture de booster (BoosterOpeningOverlay). */
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Halo pulsant autour d'une carte Super Rare et plus rare pendant sa grande révélation. */
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 25px 8px rgba(244, 192, 79, 0.55),
+      0 0 55px 18px rgba(244, 192, 79, 0.25);
+  }
+  50% {
+    box-shadow:
+      0 0 45px 16px rgba(244, 192, 79, 0.9),
+      0 0 85px 28px rgba(244, 192, 79, 0.5);
+  }
+}
+
+/* Traînée de brillance qui balaie la carte pendant la grande révélation. */
+@keyframes shine-sweep {
+  from {
+    transform: translateX(-130%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(230%) skewX(-20deg);
+  }
+}
