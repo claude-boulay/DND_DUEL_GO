@@ -1,5 +1,7 @@
 # Yu-Gi-Oh! D&D — Plateforme de jeu de rôle
 
+[![CI](https://github.com/claude-boulay/DND_DUEL_GO/actions/workflows/ci.yml/badge.svg)](https://github.com/claude-boulay/DND_DUEL_GO/actions/workflows/ci.yml)
+
 Application web full-stack pour animer des parties de JDR sur table Yu-Gi-Oh! :
 fiches de personnage type D&D, dés serveur-autoritatifs avec rerolls de Chance,
 cartes officielles et custom, économie/boutiques, deckbuilding et duels multi-NPC
@@ -156,6 +158,23 @@ Points spécifiques à un vrai serveur (pas juste `docker compose up` local) :
 - **Redémarrage automatique** : les trois services sont en
   `restart: unless-stopped`, donc ils repartent seuls après un reboot du
   serveur ou un crash du daemon Docker.
+
+---
+
+## Intégration continue (GitHub Actions)
+
+`.github/workflows/ci.yml` tourne à chaque push et pull request :
+
+| Job              | Fait quoi |
+| ---------------- | --------- |
+| `backend-test`   | `tsc --noEmit` + `npm test` (Vitest + Supertest) contre une vraie base Mongo éphémère (service `mongo:7` du job). |
+| `frontend-build` | `tsc --noEmit` + `vite build`. |
+| `security-audit` | `npm audit --audit-level=high` (backend et frontend) — casse la CI sur une vulnérabilité haute/critique, laisse passer le reste (visible dans les logs). |
+| `codeql`         | Analyse statique GitHub CodeQL (`security-and-quality`) — sécurité **et** qualité de code, remonté dans l'onglet Security du repo. |
+| `build-images`   | Construit les images `backend` (compile aussi `ocgcore`, voir plus haut) et `frontend` en cible `prod`, sur tout push/PR (valide que les deux `Dockerfile` compilent) ; **publiées sur GHCR uniquement sur push vers `main`** (`ghcr.io/<repo>-backend`/`-frontend`, tags `latest` + SHA du commit), avec cache de build inter-runs (`cache-from`/`cache-to: type=gha`). |
+
+Rien à configurer côté secrets : `GITHUB_TOKEN` (fourni automatiquement par
+Actions) suffit pour publier sur GHCR.
 
 ---
 

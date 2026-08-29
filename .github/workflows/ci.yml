@@ -1,0 +1,166 @@
+name: CI
+
+# Déclenché à chaque push (comme demandé) et sur les pull requests (même
+# déclencheur, mais permet aussi de voir le résultat avant de merger) — voir
+# README.md "Production / déploiement sur un serveur" pour le contexte des
+# images construites ici.
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend-test:
+    name: Backend — typecheck + tests (Vitest, vraie base Mongo)
+    runs-on: ubuntu-latest
+    # Job conteneurisé (pas juste le runner nu) : c'est ce qui permet au
+    # service `mongo` ci-dessous d'être joignable par son nom de service
+    # ("mongo") — exactement l'hôte déjà en dur dans `npm test`
+    # (MONGO_URI=mongodb://mongo:27017/..., voir backend/package.json) sans
+    # avoir à le retoucher pour la CI.
+    container: node:22-alpine
+    services:
+      mongo:
+        image: mongo:7
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok'"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Uniquement pour que env.ts (validation Zod, JWT_SECRET obligatoire,
+      # min 8 caractères) accepte de démarrer en CI — jamais une vraie valeur
+      # de prod, jamais un secret GitHub.
+      JWT_SECRET: ci_test_secret_do_not_use_in_prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-backend-${{ hashFiles('backend/package-lock.json') }}
+          restore-keys: npm-backend-
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  frontend-build:
+    name: Frontend — typecheck + build (Vite)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      # Combine déjà `tsc --noEmit` + `vite build` (voir frontend/package.json).
+      - run: npm run build
+
+  security-audit:
+    name: Audit sécurité — npm audit (backend + frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # audit-level=high : ne fait pas échouer la CI sur une vulnérabilité
+      # low/moderate d'une dépendance transitive qu'on ne maîtrise pas
+      # forcément (elles restent visibles dans les logs ci-dessous) — voir
+      # CLAUDE.md pour un exemple réel (nodemailer) traité manuellement cette
+      # façon plutôt qu'en bloquant toute la CI pour ça.
+      - name: npm audit — backend
+        working-directory: backend
+        run: npm audit --audit-level=high
+
+      - name: npm audit — frontend
+        working-directory: frontend
+        run: npm audit --audit-level=high
+
+  codeql:
+    name: Audit sécurité/qualité du code — CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # "security-and-quality" (pas juste "security") : couvre aussi les
+          # requêtes de qualité de code de CodeQL, faute d'ESLint configuré
+          # dans ce repo pour l'instant.
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3
+
+  build-images:
+    name: Construire les images Docker (backend + frontend)
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-build, security-audit]
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # GHCR (registre de paquets GitHub) exige un nom d'image en minuscules ;
+      # github.repository ("claude-boulay/DND_DUEL_GO") ne l'est pas forcément.
+      - name: Nom d'image en minuscules
+        id: repo
+        run: echo "name=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      # Publié UNIQUEMENT sur push vers main : sur une branche/PR, les images
+      # sont quand même construites (ça valide les deux Dockerfile), juste
+      # jamais poussées vers le registre — pas besoin de secret à configurer,
+      # GITHUB_TOKEN suffit pour GHCR.
+      - name: Connexion à GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image backend (compile aussi le moteur de duel ocgcore, voir README.md)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          target: prod
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.name }}-backend:latest
+            ghcr.io/${{ steps.repo.outputs.name }}-backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Image frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          target: prod
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.name }}-frontend:latest
+            ghcr.io/${{ steps.repo.outputs.name }}-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
