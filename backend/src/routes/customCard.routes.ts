@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { Types } from 'mongoose';
 import { Card, type CardDocument } from '../models/Card.model';
-import { CardSet } from '../models/CardSet.model';
+import { CardSet, type CardSetDocument } from '../models/CardSet.model';
+import { Merchant } from '../models/Merchant.model';
+import { Character } from '../models/Character.model';
 import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
@@ -177,6 +179,27 @@ customCardRouter.patch(
   }),
 );
 
+const updateImageSchema = z.object({ image_url: z.string().trim().min(1).optional() });
+
+/**
+ * Change UNIQUEMENT l'image — la mise à jour complète (PATCH /:id) exige de
+ * renvoyer toute la carte + un script Lua (même validation qu'à la
+ * création), trop lourd pour ce cas d'usage précis.
+ */
+customCardRouter.patch(
+  '/:id/image',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const card = await loadCustomCardOrThrow(req.params.id!);
+    assertOwner(card, req.user!.sub);
+
+    const { image_url: imageUrl } = updateImageSchema.parse(req.body);
+    card.card_images = imageUrl ? [{ image_id: 0, image_url: imageUrl, image_url_small: imageUrl, image_url_cropped: imageUrl }] : [];
+    await card.save();
+
+    res.json({ card: toCustomCardDto(card) });
+  }),
+);
+
 customCardRouter.delete(
   '/:id',
   asyncHandler(async (req: AuthenticatedRequest, res) => {
@@ -204,6 +227,87 @@ async function generateUniqueCustomSetCode(setName: string): Promise<string> {
   }
   throw new Error('Impossible de générer un code de booster custom unique');
 }
+
+const createBoosterSchema = z.object({
+  game_session_id: z.string(),
+  name: z.string().trim().min(1).max(64),
+});
+
+/**
+ * Crée un booster custom VIDE (pas encore lié à une carte) — jusqu'ici, un
+ * booster custom ne pouvait naître qu'en tant qu'effet de bord du lien d'une
+ * première carte (`new_set_name` sur POST .../booster-link), obligeant à
+ * déjà posséder une carte pour "réserver" le nom du booster. Cette route
+ * permet au MJ de créer le booster D'ABORD, puis d'y ajouter des cartes
+ * (existantes ou nouvelles) via booster-link comme avant.
+ */
+customCardRouter.post(
+  '/boosters',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = createBoosterSchema.parse(req.body);
+    const session = await loadSessionOrThrow(body.game_session_id);
+    const userId = req.user!.sub;
+    if (!isSessionGm(session, userId)) {
+      throw new AppError(403, 'Seul le MJ peut créer un booster custom', 'forbidden');
+    }
+
+    const setCode = await generateUniqueCustomSetCode(body.name);
+    const cardSet = await CardSet.create({
+      set_name: body.name,
+      set_code: setCode,
+      num_of_cards: 0,
+      tcg_date: null,
+      imported_at: new Date(), // un booster custom n'a pas d'étape d'import
+      is_custom: true,
+      owner_id: new Types.ObjectId(userId),
+    });
+
+    res.status(201).json({ card_set: { set_code: cardSet.set_code, set_name: cardSet.set_name } });
+  }),
+);
+
+async function loadOwnedCustomBoosterOrThrow(setCode: string, userId: string): Promise<CardSetDocument> {
+  const cardSet = await CardSet.findOne({ set_code: setCode });
+  if (!cardSet || !cardSet.is_custom) throw new AppError(404, 'Booster custom introuvable', 'not_found');
+  if (cardSet.owner_id?.toString() !== userId) {
+    throw new AppError(403, "Vous n'êtes pas le créateur de ce booster custom", 'forbidden');
+  }
+  return cardSet;
+}
+
+/**
+ * Supprime un booster custom (vide ou non — les cartes qui y étaient liées ne
+ * sont PAS supprimées, juste déliées, comme le fait déjà la suppression d'un
+ * lien carte-booster individuel ci-dessus). Bloqué (409) si un marchand vend
+ * encore ce booster, ou si un personnage possède déjà des exemplaires scellés
+ * en attente d'ouverture — dans les deux cas la référence deviendrait
+ * orpheline (l'ouverture échouerait avec "Set introuvable") si on laissait
+ * passer ; le MJ doit d'abord retirer l'article du/des marchand(s) concernés
+ * ou attendre que les exemplaires déjà distribués soient ouverts.
+ */
+customCardRouter.delete(
+  '/boosters/:setCode',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const setCode = req.params.setCode!;
+    const cardSet = await loadOwnedCustomBoosterOrThrow(setCode, req.user!.sub);
+
+    const [merchantCount, characterCount] = await Promise.all([
+      Merchant.countDocuments({ 'items.item_type': 'booster', 'items.set_code': setCode }),
+      Character.countDocuments({ 'sealed_boosters.set_code': setCode }),
+    ]);
+    if (merchantCount > 0) {
+      throw new AppError(409, 'Ce booster est encore en vente chez au moins un marchand — retirez-le de son inventaire avant de le supprimer', 'booster_in_use');
+    }
+    if (characterCount > 0) {
+      throw new AppError(409, 'Au moins un personnage possède déjà des exemplaires scellés de ce booster — ils doivent être ouverts avant de le supprimer', 'booster_in_use');
+    }
+
+    await Card.updateMany({ 'card_sets.set_code': setCode }, { $pull: { card_sets: { set_code: setCode } } });
+    await cardSet.deleteOne();
+
+    res.status(204).send();
+  }),
+);
 
 const boosterLinkSchema = z
   .object({

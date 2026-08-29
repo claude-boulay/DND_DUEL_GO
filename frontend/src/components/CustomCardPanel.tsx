@@ -1,7 +1,8 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   api,
   ApiError,
+  type ApiCardSet,
   type ApiCustomCard,
   type CardAttribute,
   type CustomCardCategory,
@@ -90,12 +91,27 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
     };
   }, [token, sessionId]);
 
-  // Le MJ courant est le propriétaire de chaque carte listée ici (la liste
-  // côté serveur est déjà filtrée sur owner_id === gm_id de ce salon) : pas
-  // besoin de vérifier l'appartenance carte par carte pour afficher les actions.
-  const existingBoosterSets = Array.from(
-    new Map(cards.flatMap((c) => c.card_sets).map((s) => [s.set_code, s])).values(),
-  );
+  // Liste des boosters custom remontée ici (au lieu d'être re-dérivée /
+  // re-fetchée séparément par CustomBoosterManager et par BoosterLinkForm) :
+  // les deux interfaces de liaison (depuis une carte, ou depuis un booster)
+  // écrivent la même donnée, elles doivent donc lire la même source et se
+  // rafraîchir ensemble — sinon un booster créé/lié d'un côté reste invisible
+  // de l'autre jusqu'au rechargement de la page.
+  const [boosters, setBoosters] = useState<ApiCardSet[]>([]);
+  const [boostersLoading, setBoostersLoading] = useState(false);
+
+  const loadBoosters = useCallback(() => {
+    setBoostersLoading(true);
+    api
+      .listCardSets(token, { include_custom: true })
+      .then(({ sets }) => setBoosters(sets.filter((s) => s.is_custom)))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+      .finally(() => setBoostersLoading(false));
+  }, [token]);
+
+  useEffect(() => {
+    loadBoosters();
+  }, [loadBoosters]);
 
   const handleDelete = async (cardId: string) => {
     try {
@@ -106,54 +122,333 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
     }
   };
 
+  const updateCard = (updated: ApiCustomCard) => setCards((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
+        <header className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Cartes custom</h2>
+          {isGm && (
+            <button
+              type="button"
+              onClick={() => setShowCreate((v) => !v)}
+              className="text-xs text-accent-400 underline hover:text-accent-300"
+            >
+              {showCreate ? 'Annuler' : '+ Créer une carte'}
+            </button>
+          )}
+        </header>
+
+        {showCreate && isGm && (
+          <div className="mb-4">
+            <CreateCustomCardForm
+              token={token}
+              sessionId={sessionId}
+              onCreated={(card) => {
+                setCards((prev) => [...prev, card]);
+                setShowCreate(false);
+              }}
+              onError={setError}
+            />
+          </div>
+        )}
+
+        {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
+        {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
+        {!loading && cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte custom dans ce salon.</p>}
+
+        <div className="mt-1 space-y-2">
+          {cards.map((card) => (
+            <CustomCardRow
+              key={card.id}
+              token={token}
+              card={card}
+              isGm={isGm}
+              boosters={boosters}
+              onBoosterLinked={loadBoosters}
+              onUpdated={updateCard}
+              onDeleted={() => void handleDelete(card.id)}
+              onError={setError}
+            />
+          ))}
+        </div>
+      </section>
+
+      <CustomBoosterManager
+        token={token}
+        sessionId={sessionId}
+        isGm={isGm}
+        cards={cards}
+        boosters={boosters}
+        loading={boostersLoading}
+        onRefresh={loadBoosters}
+        onCardUpdated={updateCard}
+        onError={setError}
+      />
+    </div>
+  );
+}
+
+/**
+ * Un booster custom se crée D'ABORD (vide), puis se remplit en y ajoutant
+ * des cartes custom existantes — l'inverse du flux "Lier à un booster" par
+ * carte (toujours disponible, ci-dessus) qui, lui, ne peut naître qu'à
+ * l'occasion de la première carte liée. Les deux écrivent dans la même
+ * donnée (card_sets d'une Card + CardSet.is_custom), juste par des chemins
+ * différents.
+ */
+function CustomBoosterManager({
+  token,
+  sessionId,
+  isGm,
+  cards,
+  boosters,
+  loading,
+  onRefresh,
+  onCardUpdated,
+  onError,
+}: {
+  token: string;
+  sessionId: string;
+  isGm: boolean;
+  cards: ApiCustomCard[];
+  boosters: ApiCardSet[];
+  loading: boolean;
+  onRefresh: () => void;
+  onCardUpdated: (card: ApiCustomCard) => void;
+  onError: (message: string) => void;
+}) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const handleCreate = async (event: FormEvent) => {
+    event.preventDefault();
+    setCreating(true);
+    try {
+      await api.createCustomBooster(token, sessionId, newName);
+      setNewName('');
+      setShowCreate(false);
+      onRefresh();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Cartes custom</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Boosters custom</h2>
         {isGm && (
-          <button
-            type="button"
-            onClick={() => setShowCreate((v) => !v)}
-            className="text-xs text-accent-400 underline hover:text-accent-300"
-          >
-            {showCreate ? 'Annuler' : '+ Créer une carte'}
+          <button type="button" onClick={() => setShowCreate((v) => !v)} className="text-xs text-accent-400 underline hover:text-accent-300">
+            {showCreate ? 'Annuler' : '+ Créer un booster'}
           </button>
         )}
       </header>
 
       {showCreate && isGm && (
-        <div className="mb-4">
-          <CreateCustomCardForm
-            token={token}
-            sessionId={sessionId}
-            onCreated={(card) => {
-              setCards((prev) => [...prev, card]);
-              setShowCreate(false);
-            }}
-            onError={setError}
+        <form onSubmit={handleCreate} className="mb-3 flex gap-2">
+          <input
+            type="text"
+            placeholder="Nom du booster"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            required
+            className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-xs text-neutral-100 outline-none focus:border-accent-500"
           />
-        </div>
+          <button
+            type="submit"
+            disabled={creating}
+            className="rounded-md bg-accent-500 px-3 py-2 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+          >
+            Créer
+          </button>
+        </form>
       )}
 
-      {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
       {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
-      {!loading && cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte custom dans ce salon.</p>}
+      {!loading && boosters.length === 0 && (
+        <p className="text-xs text-neutral-500">
+          Aucun booster custom pour l'instant — créez-en un ici, ou depuis "Lier à un booster" sur une carte.
+        </p>
+      )}
 
-      <div className="mt-1 space-y-2">
-        {cards.map((card) => (
-          <CustomCardRow
-            key={card.id}
+      <div className="space-y-2">
+        {boosters.map((booster) => (
+          <CustomBoosterRow
+            key={booster.set_code}
             token={token}
-            card={card}
+            booster={booster}
             isGm={isGm}
-            existingBoosterSets={existingBoosterSets}
-            onUpdated={(updated) => setCards((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))}
-            onDeleted={() => void handleDelete(card.id)}
-            onError={setError}
+            cards={cards}
+            onCardUpdated={onCardUpdated}
+            onDeleted={onRefresh}
+            onError={onError}
           />
         ))}
       </div>
     </section>
+  );
+}
+
+function CustomBoosterRow({
+  token,
+  booster,
+  isGm,
+  cards,
+  onCardUpdated,
+  onDeleted,
+  onError,
+}: {
+  token: string;
+  booster: ApiCardSet;
+  isGm: boolean;
+  cards: ApiCustomCard[];
+  onCardUpdated: (card: ApiCustomCard) => void;
+  onDeleted: () => void;
+  onError: (message: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [addingCardId, setAddingCardId] = useState('');
+  const [rarity, setRarity] = useState<CustomCardRarity>('Common');
+  const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const cardsInBooster = cards.filter((c) => c.card_sets.some((s) => s.set_code === booster.set_code));
+  const linkableCards = cards.filter((c) => !c.card_sets.some((s) => s.set_code === booster.set_code));
+
+  const handleAdd = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!addingCardId) return;
+    setSubmitting(true);
+    try {
+      const { card } = await api.linkCustomCardToBooster(token, addingCardId, { set_code: booster.set_code, rarity });
+      onCardUpdated(card);
+      setAddingCardId('');
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteCustomBooster(token, booster.set_code);
+      onDeleted();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  };
+
+  const handleRemove = async (cardId: string) => {
+    try {
+      const { card } = await api.unlinkCustomCardFromBooster(token, cardId, booster.set_code);
+      onCardUpdated(card);
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    }
+  };
+
+  return (
+    <article className="rounded-lg border border-arena-700 bg-arena-800 p-3 text-xs">
+      <div className="flex w-full items-center justify-between gap-2">
+        <button type="button" onClick={() => setExpanded((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <span className="min-w-0 truncate">
+            <span className="font-semibold text-accent-400">{booster.set_name}</span>{' '}
+            <span className="text-neutral-500">
+              ({cardsInBooster.length} carte{cardsInBooster.length !== 1 ? 's' : ''})
+            </span>
+          </span>
+          <span className="shrink-0 text-neutral-500">{expanded ? '▲' : '▼'}</span>
+        </button>
+
+        {isGm && (
+          <div className="flex shrink-0 items-center gap-1">
+            {confirmingDelete ? (
+              <>
+                <span className="text-neutral-400">Supprimer ?</span>
+                <button
+                  type="button"
+                  onClick={() => void handleDelete()}
+                  disabled={deleting}
+                  className="text-red-400 hover:text-red-300 disabled:opacity-50"
+                >
+                  Confirmer
+                </button>
+                <button type="button" onClick={() => setConfirmingDelete(false)} className="text-neutral-400 hover:text-neutral-300">
+                  Annuler
+                </button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setConfirmingDelete(true)} className="text-red-400 hover:text-red-300">
+                Supprimer
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="mt-2 space-y-2 border-t border-arena-700 pt-2">
+          {cardsInBooster.length === 0 && <p className="text-neutral-500">Aucune carte dans ce booster pour l'instant.</p>}
+          {cardsInBooster.map((c) => {
+            const entry = c.card_sets.find((s) => s.set_code === booster.set_code);
+            return (
+              <div key={c.id} className="flex items-center justify-between gap-2 rounded bg-arena-900 px-2 py-1">
+                <span className="text-neutral-200">
+                  {c.name} <span className="text-neutral-500">({entry?.set_rarity})</span>
+                </span>
+                {isGm && (
+                  <button type="button" onClick={() => void handleRemove(c.id)} className="shrink-0 text-red-400 hover:text-red-300">
+                    Retirer
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          {isGm && linkableCards.length > 0 && (
+            <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2 border-t border-arena-800 pt-2">
+              <select
+                value={addingCardId}
+                onChange={(e) => setAddingCardId(e.target.value)}
+                className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100"
+              >
+                <option value="">Ajouter une carte...</option>
+                {linkableCards.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <select value={rarity} onChange={(e) => setRarity(e.target.value as CustomCardRarity)} className="rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100">
+                {RARITIES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={submitting || !addingCardId}
+                className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+              >
+                Ajouter
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -175,7 +470,8 @@ function CustomCardRow({
   token,
   card,
   isGm,
-  existingBoosterSets,
+  boosters,
+  onBoosterLinked,
   onUpdated,
   onDeleted,
   onError,
@@ -183,12 +479,14 @@ function CustomCardRow({
   token: string;
   card: ApiCustomCard;
   isGm: boolean;
-  existingBoosterSets: ApiCustomCard['card_sets'];
+  boosters: ApiCardSet[];
+  onBoosterLinked: () => void;
   onUpdated: (card: ApiCustomCard) => void;
   onDeleted: () => void;
   onError: (message: string) => void;
 }) {
   const [showBoosterLink, setShowBoosterLink] = useState(false);
+  const [showImageEdit, setShowImageEdit] = useState(false);
 
   const handleUnlink = async (setCode: string) => {
     try {
@@ -233,6 +531,9 @@ function CustomCardRow({
 
         {isGm && (
           <div className="flex shrink-0 flex-col items-end gap-1">
+            <button type="button" onClick={() => setShowImageEdit((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
+              {showImageEdit ? 'Fermer' : "Changer l'image"}
+            </button>
             <button type="button" onClick={() => setShowBoosterLink((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
               {showBoosterLink ? 'Fermer' : 'Lier à un booster'}
             </button>
@@ -243,13 +544,26 @@ function CustomCardRow({
         )}
       </div>
 
+      {showImageEdit && isGm && (
+        <ImageEditForm
+          token={token}
+          card={card}
+          onUpdated={(updated) => {
+            onUpdated(updated);
+            setShowImageEdit(false);
+          }}
+          onError={onError}
+        />
+      )}
+
       {showBoosterLink && isGm && (
         <BoosterLinkForm
           token={token}
           card={card}
-          existingBoosterSets={existingBoosterSets}
+          boosters={boosters}
           onLinked={(updated) => {
             onUpdated(updated);
+            onBoosterLinked();
             setShowBoosterLink(false);
           }}
           onError={onError}
@@ -259,21 +573,82 @@ function CustomCardRow({
   );
 }
 
+function ImageEditForm({
+  token,
+  card,
+  onUpdated,
+  onError,
+}: {
+  token: string;
+  card: ApiCustomCard;
+  onUpdated: (card: ApiCustomCard) => void;
+  onError: (message: string) => void;
+}) {
+  const [imageUrl, setImageUrl] = useState(card.card_images[0]?.image_url ?? '');
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const { url } = await api.uploadCardImage(token, file);
+      setImageUrl(url);
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : "Échec de l'envoi de l'image");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    try {
+      const { card: updated } = await api.updateCustomCardImage(token, card.id, imageUrl);
+      onUpdated(updated);
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-2 flex flex-wrap items-center gap-2 border-t border-arena-700 pt-2">
+      <label className="flex items-center gap-2 text-neutral-400">
+        Nouvelle image
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => void handleFileChange(e)} className="text-neutral-300" />
+      </label>
+      {uploading && <span className="text-neutral-500">envoi...</span>}
+      {imageUrl && <img src={imageUrl} alt="" className="h-10 w-auto rounded" />}
+      <button
+        type="submit"
+        disabled={submitting || uploading || !imageUrl}
+        className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+      >
+        Enregistrer
+      </button>
+    </form>
+  );
+}
+
 function BoosterLinkForm({
   token,
   card,
-  existingBoosterSets,
+  boosters,
   onLinked,
   onError,
 }: {
   token: string;
   card: ApiCustomCard;
-  existingBoosterSets: ApiCustomCard['card_sets'];
+  boosters: ApiCardSet[];
   onLinked: (card: ApiCustomCard) => void;
   onError: (message: string) => void;
 }) {
   const linkedCodes = new Set(card.card_sets.map((s) => s.set_code));
-  const linkableExisting = existingBoosterSets.filter((s) => !linkedCodes.has(s.set_code));
+  const linkableExisting = boosters.filter((s) => !linkedCodes.has(s.set_code));
 
   const [mode, setMode] = useState<'existing' | 'new'>(linkableExisting.length > 0 ? 'existing' : 'new');
   const [setCode, setSetCode] = useState(linkableExisting[0]?.set_code ?? '');

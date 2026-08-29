@@ -1,8 +1,11 @@
+import { randomInt } from 'node:crypto';
 import { Router } from 'express';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { User, type UserDocument } from '../models/User.model';
+import { PasswordReset } from '../models/PasswordReset.model';
 import { signToken } from '../utils/jwt';
+import { sendPasswordResetEmail } from '../services/email';
 import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
@@ -70,5 +73,85 @@ authRouter.get(
     const user = await User.findById(req.user?.sub);
     if (!user) throw new AppError(404, 'Utilisateur introuvable', 'not_found');
     res.json({ user: toUserDto(user) });
+  }),
+);
+
+// --- Mot de passe oublié ---
+
+const RESET_CODE_TTL_MS = 15 * 60 * 1000;
+const MAX_RESET_ATTEMPTS = 5;
+
+/** `randomInt` (crypto), pas Math.random — code non prévisible côté serveur, même logique que rollDie (dice.ts). */
+function generateResetCode(): string {
+  return randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+const forgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email() });
+
+authRouter.post(
+  '/forgot-password',
+  asyncHandler(async (req, res) => {
+    const { email } = forgotPasswordSchema.parse(req.body);
+    const user = await User.findOne({ email });
+
+    // Réponse IDENTIQUE que l'email existe ou non, dans tous les cas — sinon
+    // n'importe qui pourrait déduire quels emails sont enregistrés
+    // (énumération de comptes) juste en regardant si la réponse diffère.
+    if (user) {
+      // Invalide tout code de réinitialisation précédent encore actif pour
+      // ce compte : une nouvelle demande remplace l'ancienne, jamais deux
+      // codes valides en même temps.
+      await PasswordReset.deleteMany({ user_id: user._id });
+      const code = generateResetCode();
+      const code_hash = await bcrypt.hash(code, 10);
+      await PasswordReset.create({ user_id: user._id, code_hash, expires_at: new Date(Date.now() + RESET_CODE_TTL_MS) });
+      await sendPasswordResetEmail(user.email, code);
+    }
+
+    res.json({ message: "Si un compte existe avec cet email, un code de réinitialisation vient d'être envoyé." });
+  }),
+);
+
+const resetPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+  code: z.string().trim().length(6, 'Le code fait 6 chiffres'),
+  new_password: z.string().min(8, 'Le mot de passe doit faire au moins 8 caractères'),
+});
+
+authRouter.post(
+  '/reset-password',
+  asyncHandler(async (req, res) => {
+    const { email, code, new_password } = resetPasswordSchema.parse(req.body);
+    // Message générique dans tous les cas d'échec (email inconnu, code
+    // expiré, code faux, trop de tentatives) — ne jamais laisser deviner
+    // LAQUELLE de ces raisons s'applique.
+    const invalid = () => new AppError(400, 'Code invalide ou expiré', 'invalid_reset_code');
+
+    const user = await User.findOne({ email });
+    if (!user) throw invalid();
+
+    const pending = await PasswordReset.findOne({ user_id: user._id, expires_at: { $gt: new Date() } }).sort({ createdAt: -1 });
+    if (!pending) throw invalid();
+
+    if (pending.attempts >= MAX_RESET_ATTEMPTS) {
+      await pending.deleteOne();
+      throw invalid();
+    }
+
+    const valid = await bcrypt.compare(code, pending.code_hash);
+    if (!valid) {
+      pending.attempts += 1;
+      await pending.save();
+      throw invalid();
+    }
+
+    user.password_hash = await bcrypt.hash(new_password, 12);
+    await user.save();
+    await pending.deleteOne();
+
+    // Connecte directement (même forme de réponse que /login) : pas besoin
+    // de resaisir ses identifiants juste après avoir choisi un nouveau mot de passe.
+    const token = signToken({ sub: user._id.toString(), role: user.role });
+    res.json({ token, user: toUserDto(user) });
   }),
 );

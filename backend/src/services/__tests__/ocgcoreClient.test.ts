@@ -123,6 +123,17 @@ describe('parseSelectPlace / firstAvailablePlace (MSG_SELECT_PLACE)', () => {
   it("renvoie null quand aucune zone propre n'est libre", () => {
     expect(firstAvailablePlace(0xffffffff)).toBeNull();
   });
+
+  // Régression réelle (rapportée : invocation Pendule impossible, plus aucune
+  // action possible) — la portion szone du flag couvre 8 bits (0-4 normales,
+  // 5 = Terrain, 6-7 = Pendule), confirmé en lisant operations.cpp
+  // (`flag = ((flag & 0xff) << 8) | ...`). Un masque à 5 bits seulement
+  // (l'ancien bug) aurait renvoyé null ici, alors que la Zone Pendule gauche
+  // (séquence 6) est la SEULE zone libre.
+  it('détecte une Zone Pendule (séquence 6) libre quand toutes les autres zones sont indisponibles', () => {
+    const flag = 0xffffffff & ~(1 << (8 + 6));
+    expect(firstAvailablePlace(flag)).toEqual({ location: Location.SZONE, sequence: 6 });
+  });
 });
 
 describe('encodeSelectPlaceResponse', () => {

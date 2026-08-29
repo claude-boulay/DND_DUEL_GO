@@ -71,13 +71,32 @@ const BattleCmdCategory = { ACTIVATE: 0, ATTACK: 1, TO_MAIN2: 2, TO_END: 3 } as 
 const EngineLocation = { HAND: 0x02, MZONE: 0x04, SZONE: 0x08 } as const;
 const EnginePosition = { FACEUP_ATTACK: 0x1, FACEDOWN_ATTACK: 0x2, FACEUP_DEFENSE: 0x4, FACEDOWN_DEFENSE: 0x8 } as const;
 
-/** Emplacements libres décodés du flag de MSG_SELECT_PLACE (bit=1 = indisponible) — mzone (7 zones, bits 0-6) puis szone (5 zones, bits 8-12). */
+/**
+ * Emplacements libres décodés du flag de MSG_SELECT_PLACE (bit=1 =
+ * indisponible) — mzone (7 zones, bits 0-6) puis szone (8 zones, bits 8-15 :
+ * 0-4 Magie/Piège normales, 5 = Zone Terrain, 6-7 = Zones Pendule). RÉEL BUG
+ * corrigé ici (rapporté : invocation Pendule impossible, plus aucune action
+ * possible) — cette liste s'arrêtait à bit 4 (5 zones), reflet d'une lecture
+ * trop courte du flag moteur ; confirmé en lisant `operations.cpp`
+ * (`flag = ((flag & 0xff) << 8) | ...` — la portion szone du flag occupe TOUT
+ * un octet, 8 bits, pas 5). Poser une carte Pendule dans une Zone Pendule
+ * n'avait donc JAMAIS d'emplacement éligible proposé, quelle que soit sa
+ * disponibilité réelle côté moteur — la joueuse restait bloquée sans aucune
+ * zone cliquable pour terminer l'action.
+ */
 function availablePlaces(flag: number): Array<{ location: number; sequence: number }> {
   const available = ~flag >>> 0;
   const places: Array<{ location: number; sequence: number }> = [];
   for (let bit = 0; bit < 7; bit += 1) if (available & (1 << bit)) places.push({ location: EngineLocation.MZONE, sequence: bit });
-  for (let bit = 0; bit < 5; bit += 1) if (available & (1 << (8 + bit))) places.push({ location: EngineLocation.SZONE, sequence: bit });
+  for (let bit = 0; bit < 8; bit += 1) if (available & (1 << (8 + bit))) places.push({ location: EngineLocation.SZONE, sequence: bit });
   return places;
+}
+
+/** Étiquette d'une zone Magie/Piège par séquence — 0-4 normales, 5 = Zone Terrain, 6-7 = Zones Pendule (voir availablePlaces). */
+function szoneLabel(sequence: number): string {
+  if (sequence === 5) return 'Zone Terrain';
+  if (sequence === 6 || sequence === 7) return `Zone Pendule ${sequence === 6 ? 'gauche' : 'droite'}`;
+  return `Magie/Piège ${sequence + 1}`;
 }
 
 function isDefensePosition(position: number): boolean {
@@ -1024,7 +1043,7 @@ function PromptPanel({
               }}
               className={`rounded border px-2 py-1 text-left ${isPicked(place) ? 'border-accent-400 bg-accent-500/10 text-accent-300' : 'border-arena-600 text-neutral-200 hover:border-accent-500'}`}
             >
-              {place.location === EngineLocation.MZONE ? `Monstre ${place.sequence + 1}` : `Magie/Piège ${place.sequence + 1}`}
+              {place.location === EngineLocation.MZONE ? `Monstre ${place.sequence + 1}` : szoneLabel(place.sequence)}
             </button>
           ))}
         </div>

@@ -48,11 +48,23 @@ export function useAuth() {
     [applySession],
   );
 
+  const forgotPassword = useCallback(async (email: string) => {
+    await api.forgotPassword(email);
+  }, []);
+
+  const resetPassword = useCallback(
+    async (email: string, code: string, newPassword: string) => {
+      const { token: newToken, user: newUser } = await api.resetPassword(email, code, newPassword);
+      applySession(newToken, newUser); // connecté directement, comme après login/register
+    },
+    [applySession],
+  );
+
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setToken(null);
     setUser(null);
   }, []);
 
-  return { token, user, loading, login, register, logout };
+  return { token, user, loading, login, register, logout, forgotPassword, resetPassword };
 }

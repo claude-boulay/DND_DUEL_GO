@@ -232,7 +232,12 @@ export default function App() {
           </>
         ) : (
           <div className="sm:col-span-2 sm:mx-auto sm:w-full sm:max-w-sm">
-            <AuthPanel onLogin={auth.login} onRegister={auth.register} />
+            <AuthPanel
+              onLogin={auth.login}
+              onRegister={auth.register}
+              onForgotPassword={auth.forgotPassword}
+              onResetPassword={auth.resetPassword}
+            />
           </div>
         )}
       </div>

@@ -91,6 +91,7 @@ export interface ApiCardSet {
   set_image: string | null;
   imported: boolean;
   imported_at: string | null;
+  is_custom: boolean;
 }
 
 export interface ApiCardSetRef {
@@ -555,6 +556,16 @@ export const api = {
 
   me: (token: string) => request<{ user: ApiUser }>('/auth/me', {}, token),
 
+  /** Toujours { message } même si l'email n'existe pas (anti-énumération de comptes) — voir auth.routes.ts. */
+  forgotPassword: (email: string) =>
+    request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+
+  resetPassword: (email: string, code: string, newPassword: string) =>
+    request<{ token: string; user: ApiUser }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, new_password: newPassword }),
+    }),
+
   createSession: (token: string, currencyName: string) =>
     request<{ session: ApiSession }>(
       '/sessions',
@@ -589,8 +600,20 @@ export const api = {
       token,
     ),
 
-  listCardSets: (token: string, params?: { refresh?: boolean; search?: string }) =>
+  listCardSets: (token: string, params?: { refresh?: boolean; search?: string; include_custom?: boolean }) =>
     request<{ sets: ApiCardSet[] }>(`/cards/sets${buildQuery(params)}`, {}, token),
+
+  /** Booster custom vide (pas encore de carte liée) — voir CustomCardPanel.tsx, la gestion des cartes qu'il contient passe par linkCustomCardToBooster/unlinkCustomCardFromBooster. */
+  createCustomBooster: (token: string, sessionId: string, name: string) =>
+    request<{ card_set: { set_code: string; set_name: string } }>(
+      '/custom-cards/boosters',
+      { method: 'POST', body: JSON.stringify({ game_session_id: sessionId, name }) },
+      token,
+    ),
+
+  /** 409 (booster_in_use) si un marchand le vend encore ou qu'un personnage en possède des exemplaires scellés non ouverts. */
+  deleteCustomBooster: (token: string, setCode: string) =>
+    request<null>(`/custom-cards/boosters/${encodeURIComponent(setCode)}`, { method: 'DELETE' }, token),
 
   importCardSet: (token: string, setCode: string) =>
     request<{ set_name: string; imported_count: number }>(
@@ -864,6 +887,14 @@ export const api = {
 
   deleteCustomCard: (token: string, cardId: string) =>
     request<null>(`/custom-cards/${encodeURIComponent(cardId)}`, { method: 'DELETE' }, token),
+
+  /** Change uniquement l'image — pas besoin de renvoyer toute la carte + un script Lua comme updateCustomCard. */
+  updateCustomCardImage: (token: string, cardId: string, imageUrl: string) =>
+    request<{ card: ApiCustomCard }>(
+      `/custom-cards/${encodeURIComponent(cardId)}/image`,
+      { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) },
+      token,
+    ),
 
   linkCustomCardToBooster: (
     token: string,

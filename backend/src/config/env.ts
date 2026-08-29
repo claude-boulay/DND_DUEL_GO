@@ -13,6 +13,20 @@ const envSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('7d'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   YGOPRODECK_API_URL: z.string().url().default('https://db.ygoprodeck.com/api/v7'),
+  // Envoi d'email (mot de passe oublié, voir services/email.ts) — tous
+  // optionnels : si SMTP_HOST est absent, le code de réinitialisation part
+  // en console au lieu d'un vrai email (utile en dev sans compte SMTP réel),
+  // jamais le cas en prod une fois ces variables renseignées.
+  SMTP_HOST: z.string().trim().optional(),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  // z.coerce.boolean() convertirait à tort la CHAÎNE "false" en `true`
+  // (toute chaîne non vide est "truthy") — comparaison explicite à la
+  // chaîne littérale "true" à la place.
+  SMTP_SECURE: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  // Adresse "From" affichée au destinataire — replie sur SMTP_USER si absente.
+  SMTP_FROM: z.string().trim().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

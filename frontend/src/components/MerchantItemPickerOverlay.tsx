@@ -94,7 +94,10 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
     setLoadingSets(true);
     const handle = setTimeout(() => {
       api
-        .listCardSets(token, { search: setSearch })
+        // include_custom : un booster custom du MJ (créé depuis le panneau
+        // de cartes custom, voir CustomCardPanel.tsx) doit pouvoir être
+        // stocké dans un marchand comme n'importe quel set officiel.
+        .listCardSets(token, { search: setSearch, include_custom: true })
         .then(({ sets }) => setSetResults(sets))
         .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
         .finally(() => setLoadingSets(false));
@@ -470,9 +473,13 @@ function BoosterSelectionPreview({ set }: { set: ApiCardSet | null }) {
           </div>
         </div>
       </div>
-      <span className={`inline-block rounded px-2 py-1 text-xs ${set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'}`}>
-        {set.imported ? 'Cartes déjà importées' : 'Cartes importées à la volée à la première ouverture'}
-      </span>
+      {set.is_custom ? (
+        <span className="inline-block rounded bg-accent-900 px-2 py-1 text-xs text-accent-300">Booster custom</span>
+      ) : (
+        <span className={`inline-block rounded px-2 py-1 text-xs ${set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'}`}>
+          {set.imported ? 'Cartes déjà importées' : 'Cartes importées à la volée à la première ouverture'}
+        </span>
+      )}
     </div>
   );
 }
@@ -501,8 +508,12 @@ function BoosterTile({ set, selected, onClick }: { set: ApiCardSet; selected: bo
         <div className="text-[10px] text-neutral-300">
           <p>{set.num_of_cards} cartes</p>
           <p>{set.tcg_date ?? 'date inconnue'}</p>
-          <span className={`mt-1 inline-block rounded px-1.5 py-0.5 ${set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'}`}>
-            {set.imported ? 'Importé' : 'À importer'}
+          <span
+            className={`mt-1 inline-block rounded px-1.5 py-0.5 ${
+              set.is_custom ? 'bg-accent-900 text-accent-300' : set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'
+            }`}
+          >
+            {set.is_custom ? 'Custom' : set.imported ? 'Importé' : 'À importer'}
           </span>
         </div>
       </div>

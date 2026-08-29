@@ -406,6 +406,174 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
     });
   });
 
+  describe('POST /custom-cards/boosters : créer un booster custom VIDE (sans devoir déjà posséder une carte)', () => {
+    let emptyBoosterSetCode: string;
+
+    it('le MJ crée un booster custom vide', async () => {
+      const res = await request(app)
+        .post('/api/custom-cards/boosters')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ game_session_id: sessionA.id, name: 'Booster Vide de Test' })
+        .expect(201);
+      emptyBoosterSetCode = res.body.card_set.set_code;
+      expect(emptyBoosterSetCode).toMatch(/^CUSTOM-/);
+      expect(res.body.card_set.set_name).toBe('Booster Vide de Test');
+    });
+
+    it("un joueur (pas MJ) ne peut pas créer de booster custom", async () => {
+      await request(app)
+        .post('/api/custom-cards/boosters')
+        .set('Authorization', `Bearer ${player.token}`)
+        .send({ game_session_id: sessionA.id, name: 'Booster Pirate' })
+        .expect(403);
+    });
+
+    it("une carte custom peut ensuite être liée à CE booster déjà créé (set_code, pas new_set_name)", async () => {
+      const created = await request(app)
+        .post('/api/custom-cards')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({
+          game_session_id: sessionA.id,
+          card: { category: 'trap', trap_type: 'normal', effect_text: 'Piège de test.', name: 'Piège du Booster Vide' },
+          lua_script: DUMMY_LUA_SCRIPT,
+        })
+        .expect(201);
+
+      const linked = await request(app)
+        .post(`/api/custom-cards/${created.body.card.id}/booster-link`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ set_code: emptyBoosterSetCode, rarity: 'Rare' })
+        .expect(201);
+      expect(linked.body.card.card_sets).toEqual([expect.objectContaining({ set_code: emptyBoosterSetCode, set_rarity: 'Rare' })]);
+    });
+
+    it("GET /cards/sets exclut toujours ce booster custom par défaut, mais le montre avec include_custom=true — jamais à un AUTRE MJ", async () => {
+      const withoutFlag = await request(app).get('/api/cards/sets').set('Authorization', `Bearer ${gm1.token}`).expect(200);
+      expect(withoutFlag.body.sets.some((s: { set_code: string }) => s.set_code === emptyBoosterSetCode)).toBe(false);
+
+      const withFlag = await request(app).get('/api/cards/sets?include_custom=true').set('Authorization', `Bearer ${gm1.token}`).expect(200);
+      const found = withFlag.body.sets.find((s: { set_code: string }) => s.set_code === emptyBoosterSetCode);
+      expect(found).toBeDefined();
+      expect(found.is_custom).toBe(true);
+
+      // gm2 (un AUTRE MJ) ne voit jamais le booster custom de gm1, même avec include_custom=true.
+      const asOtherGm = await request(app).get('/api/cards/sets?include_custom=true').set('Authorization', `Bearer ${gm2.token}`).expect(200);
+      expect(asOtherGm.body.sets.some((s: { set_code: string }) => s.set_code === emptyBoosterSetCode)).toBe(false);
+    });
+  });
+
+  describe('DELETE /custom-cards/boosters/:setCode : supprimer un booster custom', () => {
+    it('le propriétaire supprime un booster custom et les cartes qui y étaient liées sont déliées (pas supprimées)', async () => {
+      const created = await request(app)
+        .post('/api/custom-cards/boosters')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ game_session_id: sessionA.id, name: 'Booster à Supprimer' })
+        .expect(201);
+      const setCode = created.body.card_set.set_code;
+
+      const card = await request(app)
+        .post('/api/custom-cards')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({
+          game_session_id: sessionA.id,
+          card: { category: 'trap', trap_type: 'normal', effect_text: 'Sera délié.', name: 'Piège Bientôt Délié' },
+          lua_script: DUMMY_LUA_SCRIPT,
+        })
+        .expect(201);
+      await request(app)
+        .post(`/api/custom-cards/${card.body.card.id}/booster-link`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ set_code: setCode, rarity: 'Rare' })
+        .expect(201);
+
+      await request(app)
+        .delete(`/api/custom-cards/boosters/${encodeURIComponent(setCode)}`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(204);
+
+      // Le booster a disparu de la liste...
+      const sets = await request(app).get('/api/cards/sets?include_custom=true').set('Authorization', `Bearer ${gm1.token}`).expect(200);
+      expect(sets.body.sets.some((s: { set_code: string }) => s.set_code === setCode)).toBe(false);
+
+      // ...mais la carte elle-même existe toujours, juste déliée de ce booster.
+      const cards = await request(app).get(`/api/custom-cards/session/${sessionA.id}`).set('Authorization', `Bearer ${gm1.token}`).expect(200);
+      const stillThere = cards.body.cards.find((c: { id: string }) => c.id === card.body.card.id);
+      expect(stillThere).toBeDefined();
+      expect(stillThere.card_sets).toEqual([]);
+    });
+
+    it("un autre MJ ne peut pas supprimer le booster custom d'un MJ tiers (403), et un set_code inconnu 404", async () => {
+      const created = await request(app)
+        .post('/api/custom-cards/boosters')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ game_session_id: sessionA.id, name: 'Booster Protégé' })
+        .expect(201);
+
+      await request(app)
+        .delete(`/api/custom-cards/boosters/${encodeURIComponent(created.body.card_set.set_code)}`)
+        .set('Authorization', `Bearer ${gm2.token}`)
+        .expect(403);
+
+      await request(app)
+        .delete('/api/custom-cards/boosters/CUSTOM-NEXISTEPAS-0000')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(404);
+    });
+
+    it("refuse (409) tant qu'un marchand vend encore le booster, ou qu'un personnage en possède des exemplaires scellés non ouverts", async () => {
+      const created = await request(app)
+        .post('/api/custom-cards/boosters')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ game_session_id: sessionA.id, name: 'Booster En Vente' })
+        .expect(201);
+      const setCode = created.body.card_set.set_code;
+
+      const merchant = await request(app)
+        .post('/api/merchants')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ game_session_id: sessionA.id, name: 'Boutique de Test Suppression', description: '', haggle_dc: 10 })
+        .expect(201);
+      const itemRes = await request(app)
+        .post(`/api/merchants/${merchant.body.merchant.id}/items`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ item_type: 'booster', set_code: setCode, price: 10, stock: 5 })
+        .expect(201);
+      const itemId = itemRes.body.merchant.items.find((i: { item_type: string }) => i.item_type === 'booster').id;
+
+      const blockedByMerchant = await request(app)
+        .delete(`/api/custom-cards/boosters/${encodeURIComponent(setCode)}`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(409);
+      expect(blockedByMerchant.body.error.code).toBe('booster_in_use');
+
+      // Une fois retiré du marchand, mais tant qu'un personnage possède
+      // encore des exemplaires scellés non ouverts, toujours refusé.
+      await request(app)
+        .delete(`/api/merchants/${merchant.body.merchant.id}/items/${itemId}`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(200);
+
+      const character = await createCharacter(gm1.token, sessionA.id, 'Porteur de Booster Scellé', true);
+      await Character.updateOne(
+        { _id: character.id },
+        { $push: { sealed_boosters: { set_code: setCode, set_name: 'Booster En Vente', quantity: 1 } } },
+      );
+
+      const blockedByCharacter = await request(app)
+        .delete(`/api/custom-cards/boosters/${encodeURIComponent(setCode)}`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(409);
+      expect(blockedByCharacter.body.error.code).toBe('booster_in_use');
+
+      // Une fois l'exemplaire scellé retiré, la suppression réussit enfin.
+      await Character.updateOne({ _id: character.id }, { $set: { sealed_boosters: [] } });
+      await request(app)
+        .delete(`/api/custom-cards/boosters/${encodeURIComponent(setCode)}`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(204);
+    });
+  });
+
   describe('une carte custom (script obligatoire) rejoint un deck et un vrai duel', () => {
     // Le déroulé complet d'un duel (invocation, combat, chaîne, script
     // effectivement exécuté par le moteur) est couvert par duel.e2e.test.ts —
@@ -974,6 +1142,36 @@ end
 
       await request(app).post(`/api/duels/${duelId}/end`).set('Authorization', `Bearer ${gm1.token}`).expect(200);
     });
+  });
+
+  it("le propriétaire change l'image d'une carte custom (PATCH .../image, sans redonner tout le reste de la carte)", async () => {
+    const created = await request(app)
+      .post('/api/custom-cards')
+      .set('Authorization', `Bearer ${gm1.token}`)
+      .send({
+        game_session_id: sessionA.id,
+        card: { category: 'trap', trap_type: 'normal', effect_text: 'Image de test.', name: 'Piège Image de Test', image_url: 'https://example.com/old.png' },
+        lua_script: DUMMY_LUA_SCRIPT,
+      })
+      .expect(201);
+    expect(created.body.card.card_images[0].image_url).toBe('https://example.com/old.png');
+
+    const updated = await request(app)
+      .patch(`/api/custom-cards/${created.body.card.id}/image`)
+      .set('Authorization', `Bearer ${gm1.token}`)
+      .send({ image_url: 'https://example.com/new.png' })
+      .expect(200);
+    expect(updated.body.card.card_images[0].image_url).toBe('https://example.com/new.png');
+    // Le reste de la carte est inchangé — pas besoin de tout renvoyer.
+    expect(updated.body.card.name).toBe('Piège Image de Test');
+    expect(updated.body.card.description).toBe('Image de test.');
+
+    // Un tiers (même MJ d'une autre partie) ne peut pas modifier une carte qu'il ne possède pas.
+    await request(app)
+      .patch(`/api/custom-cards/${created.body.card.id}/image`)
+      .set('Authorization', `Bearer ${gm2.token}`)
+      .send({ image_url: 'https://example.com/hack.png' })
+      .expect(403);
   });
 
   it('le propriétaire supprime une carte custom', async () => {

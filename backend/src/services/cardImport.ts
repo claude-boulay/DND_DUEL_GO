@@ -66,6 +66,17 @@ export async function importCardsForSet(setCode: string): Promise<{ setName: str
           race: card.race ?? null,
           attribute: card.attribute ?? null,
           archetype: card.archetype ?? null,
+          // Réel bug corrigé ici : ces deux champs n'étaient JAMAIS renseignés
+          // pour une carte officielle (YgoCard ne les déclarait même pas),
+          // laissant `pendulum_scale` toujours null pour tout monstre Pendule
+          // officiel — l'échelle n'apparaissait donc nulle part dans
+          // l'app (DeckEditorOverlay.tsx affiche pourtant "Échelle Pendule"
+          // dès que non-null). `linkmarkers` de YGOPRODeck utilise déjà la
+          // même casse que LinkArrow ("Top-Left" etc.) — juste mis en
+          // minuscules pour matcher exactement la convention custom
+          // ("top-left", voir CustomCardPanel.tsx).
+          pendulum_scale: card.scale ?? null,
+          link_arrows: (card.linkmarkers ?? []).map((m) => m.toLowerCase()),
           card_sets: (card.card_sets ?? []).map((s) => ({
             set_name: s.set_name,
             set_code: s.set_code,

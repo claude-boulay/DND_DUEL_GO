@@ -390,12 +390,19 @@ export function parseSelectPlace(raw: Buffer): ParsedSelectPlace {
  * demandeur) déduit du flag — suffisant pour poser une carte qui n'exige pas
  * un choix de zone stratégique (Magie/Piège normales, Invocation Normale
  * sans zone préférée). Retourne null si aucune zone propre n'est libre.
+ *
+ * La portion szone du flag couvre les 8 zones (0-4 Magie/Piège normales, 5 =
+ * Zone Terrain, 6-7 = Zones Pendule) sur TOUT un octet — confirmé en lisant
+ * `operations.cpp` (`flag = ((flag & 0xff) << 8) | ...`). Un masque `0x1f00`
+ * ici (5 bits seulement) aurait le même bug réel corrigé côté frontend pour
+ * `availablePlaces` (voir DuelBoardOverlay.tsx) : les Zones Pendule
+ * n'auraient jamais pu être retenues comme emplacement libre.
  */
 export function firstAvailablePlace(flag: number): { location: number; sequence: number } | null {
   const available = ~flag >>> 0;
   const mzoneBits = available & 0x7f;
   if (mzoneBits) return { location: Location.MZONE, sequence: Math.log2(mzoneBits & -mzoneBits) };
-  const szoneBits = available & 0x1f00;
+  const szoneBits = available & 0xff00;
   if (szoneBits) return { location: Location.SZONE, sequence: Math.log2(szoneBits & -szoneBits) - 8 };
   return null;
 }

@@ -4,7 +4,7 @@ import { Card } from '../models/Card.model';
 import { CardSet, type CardSetDocument } from '../models/CardSet.model';
 import { AppError } from '../middleware/errorHandler';
 import { asyncHandler } from '../middleware/asyncHandler';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
 import { syncCardSets, importCardsForSet } from '../services/cardImport';
 import { toCardDto } from '../utils/cardDto';
 import { buildCardCatalogQuery } from '../utils/cardQueryFilters';
@@ -26,28 +26,37 @@ function toCardSetDto(set: CardSetDocument) {
     set_image: set.set_image,
     imported: set.imported_at !== null,
     imported_at: set.imported_at,
+    is_custom: set.is_custom,
   };
 }
 
 const listSetsSchema = z.object({
   refresh: z.enum(['true', 'false']).optional(),
   search: z.string().trim().max(100).optional(),
+  // Par défaut, les boosters custom (créés depuis le panneau de cartes
+  // custom) sont exclus : dans le panneau d'IMPORT, un faux bouton
+  // "Importer" interrogerait l'API YGOPRODeck réelle pour un nom de set
+  // fictif. Mais un autre appelant (ex. le sélecteur d'article de marchand)
+  // a besoin de VOIR les boosters custom pour pouvoir les stocker — d'où ce
+  // paramètre plutôt qu'une exclusion en dur.
+  include_custom: z.enum(['true', 'false']).optional(),
 });
 
 cardRouter.get(
   '/sets',
-  asyncHandler(async (req, res) => {
-    const { refresh, search } = listSetsSchema.parse(req.query);
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const { refresh, search, include_custom } = listSetsSchema.parse(req.query);
 
     const isEmpty = (await CardSet.estimatedDocumentCount()) === 0;
     if (refresh === 'true' || isEmpty) {
       await syncCardSets();
     }
 
-    // Les boosters custom (créés depuis le panneau de cartes custom) ne sont
-    // pas des sets YGOPRODeck : les exclure ici évite un faux bouton
-    // "Importer" qui interrogerait l'API réelle pour un nom de set fictif.
-    const filter: Record<string, unknown> = { is_custom: { $ne: true } };
+    // Un booster custom appartient à SON créateur (CLAUDE.md §3.4, comme les
+    // cartes custom elles-mêmes) — même avec include_custom=true, on ne
+    // montre jamais le booster custom d'un AUTRE MJ.
+    const filter: Record<string, unknown> =
+      include_custom === 'true' ? { $or: [{ is_custom: { $ne: true } }, { is_custom: true, owner_id: req.user!.sub }] } : { is_custom: { $ne: true } };
     if (search) filter.set_name = { $regex: escapeRegex(search), $options: 'i' };
     const sets = await CardSet.find(filter).sort({ set_name: 1 }).limit(500);
     res.json({ sets: sets.map(toCardSetDto) });

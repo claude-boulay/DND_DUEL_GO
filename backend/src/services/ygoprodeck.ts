@@ -48,6 +48,14 @@ export interface YgoCard {
   race?: string;
   attribute?: string;
   archetype?: string;
+  // Échelle Pendule (monstres Pendule uniquement) et flèches Link (monstres
+  // Link uniquement) — confirmés en direct contre le vrai endpoint
+  // cardinfo.php ("scale": 4 pour Odd-Eyes Pendulum Dragon ; "linkmarkers":
+  // ["Top","Bottom-Left","Bottom-Right"] pour Decode Talker), absents du
+  // reste des cartes plutôt que null.
+  scale?: number;
+  linkval?: number;
+  linkmarkers?: string[];
   card_sets?: YgoCardSetRef[];
   card_images: YgoCardImage[];
 }
