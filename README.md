@@ -36,7 +36,8 @@ Socket.io : si les trois sont au vert, la stack est fonctionnelle de bout en bou
 ```
 .
 ├── docker-compose.yml        # Stack de développement (hot-reload)
-├── docker-compose.prod.yml   # Override production (images buildées + Nginx)
+├── docker-compose.prod.yml   # Override production (images buildées + Caddy en entrée TLS)
+├── Caddyfile                 # Reverse proxy TLS de prod (CADDY_DOMAIN) — voir "Production" ci-dessous
 ├── .env.example              # Variables d'environnement à copier en .env
 ├── engine/ocgcore/           # Preuve de faisabilité + notes de validation du moteur de duel réel (voir ci-dessous)
 ├── backend/                  # Express + Socket.io + Mongoose (TypeScript)
@@ -132,9 +133,19 @@ cp .env.example .env       # puis éditer .env — voir la checklist ci-dessous
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-Le frontend est alors servi par Nginx sur le port `${FRONTEND_PORT:-8080}`,
-Mongo n'est plus exposé sur l'hôte, et le backend tourne en
-`NODE_ENV=production` sous l'utilisateur non-root `node`.
+**Caddy termine le TLS automatiquement** et devient le SEUL point d'entrée
+public : `mongo`, `backend` et `frontend` ne publient plus aucun port sur
+l'hôte en prod (uniquement joignables entre eux, en interne, sur le réseau
+Docker `ygodnd`) — seuls les ports `80`/`443` de `caddy` le sont. Renseignez
+`CADDY_DOMAIN` dans `.env` (le domaine pointé vers ce serveur, voir DNS
+ci-dessous) : Caddy obtient et renouvelle alors tout seul un certificat Let's
+Encrypt pour ce nom, et redirige automatiquement le HTTP vers le HTTPS.
+Laisser `CADDY_DOMAIN=localhost` (valeur par défaut) fait fonctionner la
+stack quand même, avec un certificat auto-signé — pratique pour tester le mode
+prod en local, mais pas pour un vrai déploiement.
+
+Le backend tourne en `NODE_ENV=production` sous l'utilisateur non-root
+`node`.
 
 Points spécifiques à un vrai serveur (pas juste `docker compose up` local) :
 
@@ -144,18 +155,18 @@ Points spécifiques à un vrai serveur (pas juste `docker compose up` local) :
   long qu'un simple `npm install` (compilation complète d'`ygopro-core` + Lua).
   Les builds suivants (sans changer `engine/ocgcore/poc/server.cpp`) réutilisent
   le cache Docker de ce stage.
-- **Aucun des deux compose files ne fait de TLS/HTTPS** — Nginx sert du HTTP
-  brut sur le port exposé. Pour un serveur exposé sur Internet (pas juste un
-  LAN/VPN privé), placez un reverse proxy devant (Caddy, Traefik, ou un Nginx
-  hôte avec Let's Encrypt) qui termine le TLS et relaie vers le port
-  `FRONTEND_PORT` du conteneur `frontend` — celui-ci route déjà en interne
-  `/api`, `/uploads` et `/socket.io` (WebSocket compris) vers le backend, donc
-  un seul domaine/port à exposer côté proxy externe suffit.
-- **Persistance** : seul le volume nommé `mongo_data` (+ `card_images` pour
-  les images de cartes custom uploadées) doit survivre à un redéploiement —
-  `docker compose down` (sans `-v`) les conserve ; `docker compose pull`/`up
-  --build` après un `git pull` ne les touche pas non plus.
-- **Redémarrage automatique** : les trois services sont en
+- **DNS** : pointez un enregistrement `A` (et `AAAA` si IPv6) de votre domaine
+  vers l'IP publique du serveur, et ouvrez les ports `80`/`443` — le `80` sert
+  à la validation du certificat Let's Encrypt (challenge HTTP-01), le `443` au
+  trafic HTTPS réel.
+- **Persistance** : les volumes nommés `mongo_data`, `card_images` (images de
+  cartes custom uploadées) et `caddy_data`/`caddy_config` (certificat TLS —
+  sans eux, un simple redémarrage du conteneur redemanderait un certificat à
+  Let's Encrypt à chaque fois, avec un vrai risque de plafond de requêtes
+  atteint) doivent survivre à un redéploiement — `docker compose down` (sans
+  `-v`) les conserve ; `docker compose pull`/`up --build` après un `git pull`
+  ne les touche pas non plus.
+- **Redémarrage automatique** : les quatre services sont en
   `restart: unless-stopped`, donc ils repartent seuls après un reboot du
   serveur ou un crash du daemon Docker.
 
@@ -187,9 +198,9 @@ Actions) suffit pour publier sur GHCR.
       (mot de passe oublié) — sans ça le code de réinitialisation part seulement
       dans les logs du conteneur backend, jamais par email, ce qui est le repli
       de dev voulu mais inutilisable pour de vrais joueurs.
-- [ ] Mettre un reverse proxy TLS devant `frontend` si le serveur est exposé sur
-      Internet (voir "Production / déploiement sur un serveur" ci-dessus — ni
-      `docker-compose.yml` ni son override prod ne font de HTTPS eux-mêmes).
+- [ ] Renseigner `CADDY_DOMAIN` dans `.env` avec votre vrai nom de domaine (DNS
+      pointé dessus au préalable) — Caddy s'occupe du reste (TLS Let's Encrypt
+      automatique). Voir "Production / déploiement sur un serveur" ci-dessus.
 - [ ] Mettre en place les sauvegardes du volume `mongo_data`.
 
 ---

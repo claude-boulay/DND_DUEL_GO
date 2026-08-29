@@ -1,8 +1,14 @@
 # Override de production : images buildées, aucun code monté, aucun hot-reload.
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 services:
+  # `ports: []` seul NE VIDE PAS la liste héritée de docker-compose.yml —
+  # Compose fusionne les listes par clé unique et une liste vide ne "gagne"
+  # sur rien (vérifié en direct avec `docker compose config` : sans `!reset`,
+  # le port 27017 restait exposé côté hôte malgré ce bloc). `!reset` est la
+  # syntaxe Compose Specification qui vide réellement l'attribut hérité — même
+  # correctif appliqué à `frontend` ci-dessous, pour la même raison.
   mongo:
-    ports: []
+    ports: !reset []
 
   backend:
     build:
@@ -11,14 +17,63 @@ services:
       target: prod
     environment:
       NODE_ENV: production
-    volumes:
+    # Plus exposé directement sur l'hôte non plus (même logique que `frontend`
+    # ci-dessous) : `frontend` (Nginx) proxifie déjà /api, /uploads et
+    # /socket.io vers backend:3000 EN INTERNE (voir frontend/nginx.conf) —
+    # sans ce !reset, le port 3000 restait joignable en clair (sans TLS, en
+    # contournant Caddy) directement sur l'IP publique du serveur.
+    ports: !reset []
+    # !override (pas juste une liste normale) : sans lui, Compose AJOUTE
+    # card_images à la liste héritée de docker-compose.yml au lieu de la
+    # remplacer (les entrées ne partagent pas la même cible) — le conteneur
+    # prod récupérait donc EN PLUS les bind mounts du code source (backend/src,
+    # package.json...) montés en lecture-écriture depuis l'hôte, contredisant
+    # le "aucun code monté" annoncé en tête de ce fichier. Vérifié en direct
+    # via `docker compose config` avant/après ce correctif.
+    volumes: !override
       - card_images:/app/uploads
 
   frontend:
     build:
       context: ./frontend
       target: prod
+    # Plus exposé directement sur l'hôte : Caddy (ci-dessous) est désormais le
+    # seul point d'entrée public (TLS + redirection HTTP -> HTTPS), voir
+    # README.md "Production / déploiement sur un serveur". `!reset` partout
+    # ici (voir commentaire sur `mongo` plus haut) : sans lui, le port dev
+    # (5173), les bind mounts du code source et les variables d'env de Vite
+    # restaient tous hérités de docker-compose.yml malgré ces lignes.
+    ports: !reset []
+    environment: !reset {}
+    volumes: !reset []
+
+  # Reverse proxy TLS devant `frontend` : HTTPS automatique (certificat Let's
+  # Encrypt émis et renouvelé tout seul) dès que CADDY_DOMAIN pointe vers un
+  # vrai nom de domaine public. Si CADDY_DOMAIN vaut "localhost" (valeur par
+  # défaut, voir .env.example), Caddy bascule seul sur son autorité de
+  # certification interne (certificat auto-signé) — la stack reste donc
+  # utilisable telle quelle sans domaine, pour tester le mode prod en local.
+  caddy:
+    image: caddy:2.11.4-alpine
+    container_name: ygodnd_caddy
+    restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-8080}:80"
-    environment: {}
-    volumes: []
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificats + état ACME : sans ces volumes nommés, un simple
+      # redémarrage du conteneur redemanderait un certificat à Let's Encrypt
+      # à chaque fois (risque réel de plafond de requêtes atteint).
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    networks:
+      - ygodnd
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,16 @@
+# Reverse proxy TLS de production — voir docker-compose.prod.yml (service
+# `caddy`) et README.md "Production / déploiement sur un serveur".
+#
+# Un seul site : tout est relayé vers le conteneur `frontend` (Nginx), qui
+# sait déjà router /api, /uploads et /socket.io (WebSocket compris) vers le
+# backend en interne — Caddy n'a donc besoin de connaître qu'une seule
+# destination. Le certificat (Let's Encrypt si CADDY_DOMAIN est un vrai nom de
+# domaine public, auto-signé si "localhost") et la redirection HTTP -> HTTPS
+# sont automatiques, aucune configuration supplémentaire nécessaire.
+#
+# WebSocket : reverse_proxy détecte et relaie une upgrade WebSocket sans
+# directive dédiée (contrairement à Nginx) — Socket.io fonctionne donc tel
+# quel à travers Caddy.
+{$CADDY_DOMAIN} {
+	reverse_proxy frontend:80
+}
