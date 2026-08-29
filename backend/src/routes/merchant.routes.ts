@@ -34,6 +34,8 @@ function toMerchantDto(merchant: MerchantDocument) {
       image_url: item.image_url,
       price: item.price,
       stock: item.stock,
+      haggle_dc: item.haggle_dc,
+      haggle_discount_percent: item.haggle_discount_percent,
     })),
   };
 }
@@ -173,6 +175,11 @@ const addItemSchema = z.object({
   set_code: z.string().optional(),
   price: z.number().int().min(0),
   stock: z.number().int().min(0).nullable().optional(),
+  // Marchandage propre à cet article (voir Merchant.model.ts) : les deux
+  // ensemble ou aucun des deux — un article négociable a forcément les deux,
+  // sinon `success` ne voudrait jamais rien dire (voir la route .../haggle).
+  haggle_dc: z.number().int().min(1).max(30).nullable().optional(),
+  haggle_discount_percent: z.number().int().min(0).max(100).nullable().optional(),
 });
 
 merchantRouter.post(
@@ -201,6 +208,7 @@ merchantRouter.post(
       if (!cardSet) throw new AppError(404, 'Set introuvable', 'not_found');
       name = cardSet.set_name;
       setCode = cardSet.set_code;
+      imageUrl = cardSet.set_image;
     }
 
     merchant.items.push({
@@ -212,6 +220,8 @@ merchantRouter.post(
       image_url: imageUrl,
       price: body.price,
       stock: body.stock ?? null,
+      haggle_dc: body.haggle_dc ?? null,
+      haggle_discount_percent: body.haggle_discount_percent ?? null,
     });
     await merchant.save();
 
@@ -222,6 +232,8 @@ merchantRouter.post(
 const updateItemSchema = z.object({
   price: z.number().int().min(0).optional(),
   stock: z.number().int().min(0).nullable().optional(),
+  haggle_dc: z.number().int().min(1).max(30).nullable().optional(),
+  haggle_discount_percent: z.number().int().min(0).max(100).nullable().optional(),
 });
 
 merchantRouter.patch(
@@ -234,6 +246,8 @@ merchantRouter.patch(
     const updates = updateItemSchema.parse(req.body);
     if (updates.price !== undefined) item.price = updates.price;
     if (updates.stock !== undefined) item.stock = updates.stock;
+    if (updates.haggle_dc !== undefined) item.haggle_dc = updates.haggle_dc;
+    if (updates.haggle_discount_percent !== undefined) item.haggle_discount_percent = updates.haggle_discount_percent;
     await merchant.save();
 
     res.json({ merchant: toMerchantDto(merchant) });
@@ -270,12 +284,12 @@ function toHaggleDto(haggle: PendingHaggle) {
 
 const haggleRollSchema = z.object({
   character_id: z.string(),
-  // Marchandage (CLAUDE.md §3.5) : le MJ arbitre les deux paramètres avant le
-  // jet, comme à la table — le modificateur appliqué au d20 (contexte du
+  // Le DC à battre et la remise en cas de succès sont désormais configurés
+  // PAR ARTICLE par le MJ (voir Merchant.model.ts, addItemSchema plus haut) —
+  // seul le modificateur reste décidé au moment du jet (contexte du
   // personnage/scène, pas nécessairement le modificateur de Charisme brut de
-  // la fiche) et la remise accordée en cas de succès.
+  // la fiche).
   modifier: z.number().int().min(-20).max(30),
-  discount_percent: z.number().int().min(0).max(100),
 });
 
 /**
@@ -297,6 +311,9 @@ merchantRouter.post(
 
     const item = merchant.items.find((i) => i._id.toString() === req.params.itemId);
     if (!item) throw new AppError(404, 'Article introuvable', 'not_found');
+    if (item.haggle_dc === null || item.haggle_discount_percent === null) {
+      throw new AppError(400, "Cet article n'est pas négociable (le MJ n'a pas configuré de DC/remise)", 'not_negotiable');
+    }
 
     const body = haggleRollSchema.parse(req.body);
     const character = await loadOwnedCharacterOrThrow(body.character_id, merchant.game_session_id.toString(), session, userId);
@@ -307,8 +324,8 @@ merchantRouter.post(
       itemId: item._id.toString(),
       characterId: character._id.toString(),
       modifier: body.modifier,
-      discountPercent: body.discount_percent,
-      dc: merchant.haggle_dc,
+      discountPercent: item.haggle_discount_percent,
+      dc: item.haggle_dc,
       roll,
     });
 
@@ -354,15 +371,11 @@ merchantRouter.post(
 const purchaseSchema = z.object({
   character_id: z.string(),
   quantity: z.number().int().min(1).max(99).default(1),
-  // Marchandage en un seul appel (pas de reroll possible) : le modificateur
-  // appliqué au d20 et la remise accordée en cas de succès. Absent = achat
-  // plein tarif.
-  haggle: z
-    .object({
-      modifier: z.number().int().min(-20).max(30),
-      discount_percent: z.number().int().min(0).max(100),
-    })
-    .optional(),
+  // Marchandage en un seul appel (pas de reroll possible) : seul le
+  // modificateur appliqué au d20 reste à fournir, le DC et la remise sont
+  // ceux configurés par le MJ sur CET article (voir haggle_dc/
+  // haggle_discount_percent, Merchant.model.ts). Absent = achat plein tarif.
+  haggle: z.object({ modifier: z.number().int().min(-20).max(30) }).optional(),
   // Négociation déjà lancée via POST .../haggle (+ éventuels rerolls de
   // Chance, voir POST .../haggle/:haggleId/reroll) — prioritaire sur
   // `haggle` si les deux sont fournis : reflète le résultat déjà VU et
@@ -419,13 +432,16 @@ merchantRouter.post(
       unitPrice = Math.ceil(item.price * (1 - discountPercent / 100));
       haggleResult = { roll: pending.roll, modifier: pending.modifier, total: pending.total, dc: pending.dc, success: pending.success, discount_percent: discountPercent };
     } else if (body.haggle) {
-      const { modifier, discount_percent: chosenDiscount } = body.haggle;
+      if (item.haggle_dc === null || item.haggle_discount_percent === null) {
+        throw new AppError(400, "Cet article n'est pas négociable (le MJ n'a pas configuré de DC/remise)", 'not_negotiable');
+      }
+      const { modifier } = body.haggle;
       const roll = rollDie(20);
       const total = roll + modifier;
-      const success = total >= merchant.haggle_dc;
-      const discountPercent = success ? chosenDiscount : 0;
+      const success = total >= item.haggle_dc;
+      const discountPercent = success ? item.haggle_discount_percent : 0;
       unitPrice = Math.ceil(item.price * (1 - discountPercent / 100));
-      haggleResult = { roll, modifier, total, dc: merchant.haggle_dc, success, discount_percent: discountPercent };
+      haggleResult = { roll, modifier, total, dc: item.haggle_dc, success, discount_percent: discountPercent };
     }
 
     const totalPrice = unitPrice * body.quantity;

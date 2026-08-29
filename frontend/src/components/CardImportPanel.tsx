@@ -83,17 +83,25 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
     setSetsError(null);
     try {
       await api.importCardSet(token, set.set_code);
-      setSets((prev) =>
-        prev.map((s) => (s.set_code === set.set_code ? { ...s, imported: true, imported_at: new Date().toISOString() } : s)),
-      );
-      setCardsSetFilter({ code: set.set_code, name: set.set_name });
-      setCardsSearchInput('');
-      await loadCards(set.set_code);
     } catch (err) {
-      setSetsError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
-    } finally {
+      // Une erreur réseau brute (ex. connexion coupée avant toute réponse,
+      // serveur dev redémarré pendant la requête) n'est PAS une ApiError —
+      // elle porte quand même un vrai message ("Failed to fetch"...) plus
+      // utile que le texte générique, qui ne devrait rester qu'en tout
+      // dernier recours (erreur qui n'est même pas un vrai Error).
+      setSetsError(err instanceof Error ? err.message : 'Une erreur est survenue');
       setImportingCode(null);
+      return;
     }
+    setImportingCode(null);
+    // Import réussi : le rafraîchissement de la liste de cartes a son PROPRE
+    // traitement d'erreur (setCardsError) — volontairement hors du try
+    // ci-dessus pour qu'un souci ici ne s'affiche jamais comme un échec de
+    // l'IMPORT alors que celui-ci a en réalité fonctionné.
+    setSets((prev) => prev.map((s) => (s.set_code === set.set_code ? { ...s, imported: true, imported_at: new Date().toISOString() } : s)));
+    setCardsSetFilter({ code: set.set_code, name: set.set_name });
+    setCardsSearchInput('');
+    await loadCards(set.set_code);
   };
 
   return (
@@ -136,6 +144,13 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
           )}
           {sets.map((set) => (
             <div key={set.set_code} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-arena-800">
+              {set.set_image ? (
+                <img src={set.set_image} alt={set.set_name} className="h-10 w-10 shrink-0 rounded object-contain" />
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-arena-800 text-[8px] text-arena-600">
+                  {set.set_code}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-neutral-200">
                   {set.set_name} <span className="text-neutral-500">({set.set_code})</span>

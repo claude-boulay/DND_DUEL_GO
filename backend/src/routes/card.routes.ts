@@ -23,6 +23,7 @@ function toCardSetDto(set: CardSetDocument) {
     set_name: set.set_name,
     num_of_cards: set.num_of_cards,
     tcg_date: set.tcg_date,
+    set_image: set.set_image,
     imported: set.imported_at !== null,
     imported_at: set.imported_at,
   };

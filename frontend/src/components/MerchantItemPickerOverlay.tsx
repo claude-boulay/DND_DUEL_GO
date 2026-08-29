@@ -457,12 +457,17 @@ function BoosterSelectionPreview({ set }: { set: ApiCardSet | null }) {
   if (!set) return <p className="text-sm text-neutral-500">Cliquez sur un booster pour le sélectionner.</p>;
   return (
     <div className="text-sm">
-      <div className="mb-3 flex aspect-[3/4] flex-col justify-between overflow-hidden rounded-lg border-2 border-accent-500 bg-gradient-to-br from-arena-800 via-arena-900 to-black p-4">
-        <p className="text-xs uppercase tracking-widest text-accent-500">{set.set_code}</p>
-        <p className="font-display text-xl leading-tight text-neutral-100">{set.set_name}</p>
-        <div className="text-xs text-neutral-400">
-          <p>{set.num_of_cards} cartes</p>
-          <p>{set.tcg_date ?? 'date inconnue'}</p>
+      <div className="relative mb-3 flex aspect-[3/4] flex-col justify-between overflow-hidden rounded-lg border-2 border-accent-500 bg-gradient-to-br from-arena-800 via-arena-900 to-black p-4">
+        {set.set_image && <img src={set.set_image} alt={set.set_name} className="absolute inset-0 h-full w-full object-cover" />}
+        <div className="relative flex flex-1 flex-col justify-between bg-gradient-to-t from-black/85 via-black/10 to-black/60">
+          <p className="text-xs uppercase tracking-widest text-accent-500">{set.set_code}</p>
+          <div>
+            <p className="font-display text-xl leading-tight text-neutral-100">{set.set_name}</p>
+            <div className="text-xs text-neutral-300">
+              <p>{set.num_of_cards} cartes</p>
+              <p>{set.tcg_date ?? 'date inconnue'}</p>
+            </div>
+          </div>
         </div>
       </div>
       <span className={`inline-block rounded px-2 py-1 text-xs ${set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'}`}>
@@ -481,20 +486,25 @@ function BoosterTile({ set, selected, onClick }: { set: ApiCardSet; selected: bo
         selected ? 'border-accent-400 bg-arena-800' : 'border-arena-700 bg-gradient-to-br from-arena-800 to-arena-900 hover:border-accent-500'
       }`}
     >
-      <span
-        aria-hidden
-        className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rotate-45 bg-accent-500/10 transition group-hover:bg-accent-500/20"
-      />
-      <div>
-        <p className="text-[10px] uppercase tracking-widest text-accent-500">{set.set_code}</p>
-        <p className="mt-1 font-display text-sm leading-tight text-neutral-100">{set.set_name}</p>
-      </div>
-      <div className="text-[10px] text-neutral-400">
-        <p>{set.num_of_cards} cartes</p>
-        <p>{set.tcg_date ?? 'date inconnue'}</p>
-        <span className={`mt-1 inline-block rounded px-1.5 py-0.5 ${set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'}`}>
-          {set.imported ? 'Importé' : 'À importer'}
-        </span>
+      {set.set_image && <img src={set.set_image} alt={set.set_name} className="absolute inset-0 h-full w-full object-cover" />}
+      {!set.set_image && (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rotate-45 bg-accent-500/10 transition group-hover:bg-accent-500/20"
+        />
+      )}
+      <div className="relative flex flex-1 flex-col justify-between bg-gradient-to-t from-black/85 via-black/5 to-black/50">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-accent-500">{set.set_code}</p>
+          <p className="mt-1 font-display text-sm leading-tight text-neutral-100">{set.set_name}</p>
+        </div>
+        <div className="text-[10px] text-neutral-300">
+          <p>{set.num_of_cards} cartes</p>
+          <p>{set.tcg_date ?? 'date inconnue'}</p>
+          <span className={`mt-1 inline-block rounded px-1.5 py-0.5 ${set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'}`}>
+            {set.imported ? 'Importé' : 'À importer'}
+          </span>
+        </div>
       </div>
     </button>
   );

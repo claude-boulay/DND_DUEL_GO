@@ -1,15 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { socket } from '../lib/socket';
-import {
-  api,
-  ApiError,
-  type ApiCharacter,
-  type ApiMerchant,
-  type ApiMerchantItem,
-  type ApiPendingHaggle,
-  type ApiSealedBooster,
-} from '../lib/api';
-import { MerchantItemPickerOverlay } from './MerchantItemPickerOverlay';
+import { api, ApiError, type ApiCharacter, type ApiMerchant, type ApiSealedBooster } from '../lib/api';
+import { MerchantShopOverlay } from './MerchantShopOverlay';
 
 interface MerchantPanelProps {
   token: string;
@@ -33,6 +25,7 @@ export function MerchantPanel({
   const [merchants, setMerchants] = useState<ApiMerchant[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openMerchantId, setOpenMerchantId] = useState<string | null>(null);
 
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
@@ -73,8 +66,8 @@ export function MerchantPanel({
   }, [token, sessionId]);
 
   // Un autre membre du salon (déjà connecté) peut créer/supprimer un
-  // marchand : sans ça, ce changement resterait invisible ici jusqu'à
-  // quitter/revenir dans le salon.
+  // marchand, ou modifier son stock : sans ça, ce changement resterait
+  // invisible ici jusqu'à quitter/revenir dans le salon.
   useEffect(() => {
     const onChanged = (payload: { resource: string; session_id: string }) => {
       if (payload.resource === 'merchants' && payload.session_id === sessionId) void fetchMerchants({ silent: true });
@@ -103,9 +96,11 @@ export function MerchantPanel({
   };
 
   const handleDeleteMerchant = async (merchantId: string) => {
+    if (!window.confirm('Supprimer ce marchand ?')) return;
     try {
       await api.deleteMerchant(token, merchantId);
       setMerchants((prev) => prev.filter((m) => m.id !== merchantId));
+      if (openMerchantId === merchantId) setOpenMerchantId(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
     }
@@ -114,6 +109,8 @@ export function MerchantPanel({
   const updateMerchantInList = (updated: ApiMerchant) => {
     setMerchants((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
   };
+
+  const openMerchant = merchants.find((m) => m.id === openMerchantId) ?? null;
 
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
@@ -136,8 +133,8 @@ export function MerchantPanel({
             onChange={(e) => setNewDescription(e.target.value)}
             className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
           />
-          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-neutral-400">
-            DC marchandage
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-neutral-400" title="DC proposé par défaut quand un nouvel article négociable est ajouté à ce marchand — chaque article garde ensuite son propre DC/remise.">
+            DC par défaut
             <input
               type="number"
               min={1}
@@ -161,425 +158,45 @@ export function MerchantPanel({
       {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
       {!loading && merchants.length === 0 && <p className="text-xs text-neutral-500">Aucun marchand dans ce salon.</p>}
 
-      <div className="space-y-4">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {merchants.map((merchant) => (
-          <MerchantCard
-            key={merchant.id}
-            token={token}
-            merchant={merchant}
-            currencyName={currencyName}
-            isGm={isGm}
-            characters={characters}
-            currentUserId={currentUserId}
-            onCharacterUpdate={onCharacterUpdate}
-            onUpdated={updateMerchantInList}
-            onDeleted={() => void handleDeleteMerchant(merchant.id)}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function MerchantCard({
-  token,
-  merchant,
-  currencyName,
-  isGm,
-  characters,
-  currentUserId,
-  onCharacterUpdate,
-  onUpdated,
-  onDeleted,
-}: {
-  token: string;
-  merchant: ApiMerchant;
-  currencyName: string;
-  isGm: boolean;
-  characters: ApiCharacter[];
-  currentUserId: string;
-  onCharacterUpdate: (characterId: string, patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[] }) => void;
-  onUpdated: (merchant: ApiMerchant) => void;
-  onDeleted: () => void;
-}) {
-  const [showAddItem, setShowAddItem] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleDeleteItem = async (itemId: string) => {
-    try {
-      const { merchant: updated } = await api.deleteMerchantItem(token, merchant.id, itemId);
-      onUpdated(updated);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
-    }
-  };
-
-  const handleUpdateItem = async (itemId: string, input: { price?: number; stock?: number | null }) => {
-    try {
-      const { merchant: updated } = await api.updateMerchantItem(token, merchant.id, itemId, input);
-      onUpdated(updated);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
-    }
-  };
-
-  return (
-    <article className="rounded-lg border border-arena-700 bg-arena-800 p-4">
-      <header className="mb-2 flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="font-semibold text-accent-400">{merchant.name}</h3>
-          {merchant.description && <p className="text-xs text-neutral-400">{merchant.description}</p>}
-          <p className="text-xs text-neutral-500">DC marchandage : {merchant.haggle_dc}</p>
-        </div>
-        {isGm && (
-          <button type="button" onClick={onDeleted} className="shrink-0 text-xs text-red-400 hover:text-red-300">
-            Supprimer le marchand
-          </button>
-        )}
-      </header>
-
-      {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
-
-      <div className="space-y-2">
-        {merchant.items.length === 0 && <p className="text-xs text-neutral-500">Aucun article en vente.</p>}
-        {merchant.items.map((item) => (
-          <MerchantItemRow
-            key={item.id}
-            token={token}
-            merchantId={merchant.id}
-            item={item}
-            currencyName={currencyName}
-            isGm={isGm}
-            characters={characters}
-            currentUserId={currentUserId}
-            onCharacterUpdate={onCharacterUpdate}
-            onMerchantUpdate={onUpdated}
-            onDelete={() => void handleDeleteItem(item.id)}
-            onUpdate={(input) => void handleUpdateItem(item.id, input)}
-          />
+          <article key={merchant.id} className="flex flex-col rounded-lg border border-arena-700 bg-arena-800 p-3 text-sm">
+            <h3 className="truncate font-semibold text-accent-400">{merchant.name}</h3>
+            {merchant.description && <p className="mt-0.5 line-clamp-2 text-xs text-neutral-400">{merchant.description}</p>}
+            <p className="mt-1 text-xs text-neutral-500">
+              {merchant.items.length} article{merchant.items.length > 1 ? 's' : ''}
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setOpenMerchantId(merchant.id)}
+                className="flex-1 rounded-md bg-accent-500 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400"
+              >
+                Ouvrir la boutique
+              </button>
+              {isGm && (
+                <button type="button" onClick={() => void handleDeleteMerchant(merchant.id)} className="shrink-0 text-xs text-red-400 hover:text-red-300">
+                  Supprimer
+                </button>
+              )}
+            </div>
+          </article>
         ))}
       </div>
 
-      {isGm && (
-        <div className="mt-3">
-          {showAddItem ? (
-            <MerchantItemPickerOverlay
-              token={token}
-              merchant={merchant}
-              onAdded={onUpdated}
-              onClose={() => setShowAddItem(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowAddItem(true)}
-              className="text-xs text-accent-400 underline hover:text-accent-300"
-            >
-              + Ajouter un article
-            </button>
-          )}
-        </div>
-      )}
-    </article>
-  );
-}
-
-function MerchantItemRow({
-  token,
-  merchantId,
-  item,
-  currencyName,
-  isGm,
-  characters,
-  currentUserId,
-  onCharacterUpdate,
-  onMerchantUpdate,
-  onDelete,
-  onUpdate,
-}: {
-  token: string;
-  merchantId: string;
-  item: ApiMerchantItem;
-  currencyName: string;
-  isGm: boolean;
-  characters: ApiCharacter[];
-  currentUserId: string;
-  onCharacterUpdate: (characterId: string, patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[] }) => void;
-  onMerchantUpdate: (merchant: ApiMerchant) => void;
-  onDelete: () => void;
-  onUpdate: (input: { price?: number; stock?: number | null }) => void;
-}) {
-  const [price, setPrice] = useState(item.price);
-  const [stock, setStock] = useState<string>(item.stock === null ? '' : String(item.stock));
-
-  const commitPrice = () => {
-    if (price !== item.price) onUpdate({ price });
-  };
-
-  const commitStock = () => {
-    const parsed = stock.trim() === '' ? null : Number(stock);
-    if (parsed !== item.stock) onUpdate({ stock: parsed });
-  };
-
-  const buyableCharacters = characters.filter((c) => c.user_id === currentUserId);
-
-  return (
-    <div className="rounded-md bg-arena-900 px-2 py-1.5 text-xs">
-      <div className="flex flex-wrap items-center gap-2">
-        {item.image_url && <img src={item.image_url} alt={item.name} className="h-10 w-auto rounded" />}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-neutral-200">{item.name}</div>
-          <div className="text-neutral-500">{item.item_type === 'card' ? 'Carte' : 'Booster'}</div>
-        </div>
-
-        {isGm ? (
-          <>
-            <input
-              type="number"
-              min={0}
-              value={price}
-              onChange={(e) => setPrice(Number(e.target.value))}
-              onBlur={commitPrice}
-              className="w-16 rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-right text-neutral-100"
-            />
-            <span className="text-neutral-500">{currencyName}</span>
-            <input
-              type="number"
-              min={0}
-              placeholder="illimité"
-              value={stock}
-              onChange={(e) => setStock(e.target.value)}
-              onBlur={commitStock}
-              className="w-20 rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-right text-neutral-100"
-            />
-            <span className="text-neutral-500">stock</span>
-            <button type="button" onClick={onDelete} className="text-red-400 hover:text-red-300">
-              Retirer
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="text-accent-400">
-              {item.price} {currencyName}
-            </span>
-            <span className="text-neutral-500">{item.stock === null ? 'stock illimité' : `stock : ${item.stock}`}</span>
-          </>
-        )}
-      </div>
-
-      <PurchaseWidget
-        token={token}
-        merchantId={merchantId}
-        item={item}
-        currencyName={currencyName}
-        buyableCharacters={buyableCharacters}
-        onPurchased={(data) => {
-          onCharacterUpdate(data.character.id, {
-            money: data.character.money,
-            collection: data.character.collection,
-            sealed_boosters: data.character.sealed_boosters,
-          });
-          onMerchantUpdate(data.merchant);
-        }}
-      />
-    </div>
-  );
-}
-
-function PurchaseWidget({
-  token,
-  merchantId,
-  item,
-  currencyName,
-  buyableCharacters,
-  onPurchased,
-}: {
-  token: string;
-  merchantId: string;
-  item: ApiMerchantItem;
-  currencyName: string;
-  buyableCharacters: ApiCharacter[];
-  onPurchased: (data: Awaited<ReturnType<typeof api.purchaseMerchantItem>>) => void;
-}) {
-  const [characterId, setCharacterId] = useState(buyableCharacters[0]?.id ?? '');
-  const [quantity, setQuantity] = useState(1);
-  const [haggling, setHaggling] = useState(false);
-  const [modifier, setModifier] = useState(0);
-  const [discountPercent, setDiscountPercent] = useState(20);
-  // Négociation déjà lancée (roll fait), pas encore utilisée pour acheter —
-  // sépare le jet de la confirmation d'achat pour laisser le temps de voir
-  // le résultat et de dépenser un reroll de Chance avant de valider, comme
-  // pour n'importe quel autre jet (voir DicePanel.tsx).
-  const [pendingHaggle, setPendingHaggle] = useState<ApiPendingHaggle | null>(null);
-  const [rerollsLeft, setRerollsLeft] = useState<number | null>(null);
-  const [feedback, setFeedback] = useState<{ ok: boolean; message: string } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  if (buyableCharacters.length === 0) return null;
-
-  const activeCharacterId = characterId || buyableCharacters[0]!.id;
-
-  const resetHaggle = () => {
-    setPendingHaggle(null);
-    setRerollsLeft(null);
-  };
-
-  const handleRollHaggle = async () => {
-    setSubmitting(true);
-    setFeedback(null);
-    try {
-      const { haggle, remaining_luck_rerolls } = await api.haggleMerchantItem(token, merchantId, item.id, {
-        character_id: activeCharacterId,
-        modifier,
-        discount_percent: discountPercent,
-      });
-      setPendingHaggle(haggle);
-      setRerollsLeft(remaining_luck_rerolls);
-    } catch (err) {
-      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleReroll = async () => {
-    if (!pendingHaggle) return;
-    setSubmitting(true);
-    setFeedback(null);
-    try {
-      const { haggle, remaining_luck_rerolls } = await api.rerollMerchantHaggle(token, merchantId, pendingHaggle.id);
-      setPendingHaggle(haggle);
-      setRerollsLeft(remaining_luck_rerolls);
-    } catch (err) {
-      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleBuy = async () => {
-    setSubmitting(true);
-    setFeedback(null);
-    try {
-      const data = await api.purchaseMerchantItem(token, merchantId, item.id, {
-        character_id: activeCharacterId,
-        quantity,
-        haggle: haggling && !pendingHaggle ? { modifier, discount_percent: discountPercent } : undefined,
-        haggle_id: pendingHaggle?.id,
-      });
-      onPurchased(data);
-      resetHaggle();
-      const h = data.purchase.haggle;
-      const message = h
-        ? `Acheté pour ${data.purchase.total_price} ${currencyName} — marchandage : ${h.roll}+${h.modifier}=${h.total} contre DC ${h.dc} → ${
-            h.success ? `réussi, -${h.discount_percent}%` : 'échoué, prix plein'
-          }`
-        : `Acheté pour ${data.purchase.total_price} ${currencyName}`;
-      setFeedback({ ok: true, message });
-    } catch (err) {
-      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 border-t border-arena-700 pt-1.5">
-      <select
-        value={activeCharacterId}
-        onChange={(e) => {
-          setCharacterId(e.target.value);
-          resetHaggle(); // une négociation en cours est liée au personnage qui l'a lancée
-        }}
-        className="rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-neutral-100"
-      >
-        {buyableCharacters.map((c) => (
-          <option key={c.id} value={c.id}>
-            {c.name} ({c.money} {currencyName})
-          </option>
-        ))}
-      </select>
-      <input
-        type="number"
-        min={1}
-        value={quantity}
-        onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))}
-        className="w-12 rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-right text-neutral-100"
-      />
-      <label className="flex items-center gap-1 text-neutral-400">
-        <input
-          type="checkbox"
-          checked={haggling}
-          onChange={(e) => {
-            setHaggling(e.target.checked);
-            resetHaggle();
-          }}
+      {openMerchant && (
+        <MerchantShopOverlay
+          token={token}
+          merchant={openMerchant}
+          currencyName={currencyName}
+          isGm={isGm}
+          characters={characters}
+          currentUserId={currentUserId}
+          onMerchantUpdate={updateMerchantInList}
+          onCharacterUpdate={onCharacterUpdate}
+          onClose={() => setOpenMerchantId(null)}
         />
-        Marchander
-      </label>
-
-      {haggling && !pendingHaggle && (
-        <span className="flex flex-wrap items-center gap-1 text-neutral-400">
-          <span>modificateur (MJ)</span>
-          <input
-            type="number"
-            value={modifier}
-            onChange={(e) => setModifier(Number(e.target.value))}
-            className="w-12 rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-right text-neutral-100"
-          />
-          <span>remise si succès %</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={discountPercent}
-            onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
-            className="w-14 rounded border border-arena-600 bg-arena-800 px-1 py-0.5 text-right text-neutral-100"
-          />
-        </span>
       )}
-
-      {pendingHaggle && (
-        <span className={`flex flex-wrap items-center gap-1.5 rounded border px-1.5 py-0.5 ${pendingHaggle.success ? 'border-emerald-700 text-emerald-400' : 'border-red-800 text-red-400'}`}>
-          {pendingHaggle.roll}+{pendingHaggle.modifier}={pendingHaggle.total} contre DC {pendingHaggle.dc} →{' '}
-          {pendingHaggle.success ? `réussi, -${pendingHaggle.discount_percent}%` : 'échoué, prix plein'}
-        </span>
-      )}
-
-      {haggling && !pendingHaggle && (
-        <button
-          type="button"
-          onClick={() => void handleRollHaggle()}
-          disabled={submitting}
-          className="rounded border border-accent-500 px-2 py-0.5 text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
-        >
-          Lancer le marchandage
-        </button>
-      )}
-      {pendingHaggle && !pendingHaggle.success && (rerollsLeft ?? 0) > 0 && (
-        <button
-          type="button"
-          onClick={() => void handleReroll()}
-          disabled={submitting}
-          className="rounded border border-accent-500 px-2 py-0.5 text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
-        >
-          Relancer (Chance : {rerollsLeft})
-        </button>
-      )}
-
-      {(!haggling || pendingHaggle) && (
-        <button
-          type="button"
-          onClick={() => void handleBuy()}
-          disabled={submitting}
-          className="rounded bg-accent-500 px-2 py-0.5 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
-        >
-          Acheter
-        </button>
-      )}
-      {feedback && (
-        <p className={`w-full ${feedback.ok ? 'text-emerald-400' : 'text-red-400'}`}>{feedback.message}</p>
-      )}
-    </div>
+    </section>
   );
 }

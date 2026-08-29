@@ -87,6 +87,8 @@ export interface ApiCardSet {
   set_name: string;
   num_of_cards: number;
   tcg_date: string | null;
+  // Visuel officiel du boîtier/pack (YGOPRODeck) — null pour un set custom ou un vieux set sans image fournie.
+  set_image: string | null;
   imported: boolean;
   imported_at: string | null;
 }
@@ -208,6 +210,10 @@ export interface ApiMerchantItem {
   image_url: string | null;
   price: number;
   stock: number | null;
+  // Marchandage propre à CET article (CLAUDE.md §3.5) — null sur l'un ou
+  // l'autre = article non négociable (prix plein uniquement).
+  haggle_dc: number | null;
+  haggle_discount_percent: number | null;
 }
 
 export interface ApiMerchant {
@@ -627,7 +633,15 @@ export const api = {
   addMerchantItem: (
     token: string,
     merchantId: string,
-    input: { item_type: ApiMerchantItemType; card_id?: string; set_code?: string; price: number; stock?: number | null },
+    input: {
+      item_type: ApiMerchantItemType;
+      card_id?: string;
+      set_code?: string;
+      price: number;
+      stock?: number | null;
+      haggle_dc?: number | null;
+      haggle_discount_percent?: number | null;
+    },
   ) =>
     request<{ merchant: ApiMerchant }>(
       `/merchants/${encodeURIComponent(merchantId)}/items`,
@@ -635,7 +649,12 @@ export const api = {
       token,
     ),
 
-  updateMerchantItem: (token: string, merchantId: string, itemId: string, input: { price?: number; stock?: number | null }) =>
+  updateMerchantItem: (
+    token: string,
+    merchantId: string,
+    itemId: string,
+    input: { price?: number; stock?: number | null; haggle_dc?: number | null; haggle_discount_percent?: number | null },
+  ) =>
     request<{ merchant: ApiMerchant }>(
       `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}`,
       { method: 'PATCH', body: JSON.stringify(input) },
@@ -653,7 +672,7 @@ export const api = {
     token: string,
     merchantId: string,
     itemId: string,
-    input: { character_id: string; quantity?: number; haggle?: { modifier: number; discount_percent: number }; haggle_id?: string },
+    input: { character_id: string; quantity?: number; haggle?: { modifier: number }; haggle_id?: string },
   ) =>
     request<ApiPurchaseResponse>(
       `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}/purchase`,
@@ -666,7 +685,7 @@ export const api = {
     token: string,
     merchantId: string,
     itemId: string,
-    input: { character_id: string; modifier: number; discount_percent: number },
+    input: { character_id: string; modifier: number },
   ) =>
     request<{ haggle: ApiPendingHaggle; remaining_luck_rerolls: number }>(
       `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}/haggle`,

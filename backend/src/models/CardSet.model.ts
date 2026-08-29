@@ -5,6 +5,9 @@ export interface CardSetAttrs {
   set_code: string;
   num_of_cards: number;
   tcg_date: string | null;
+  // Visuel officiel du boîtier/pack (YGOPRODeck) — null pour un set custom ou
+  // un vieux set officiel dont YGOPRODeck ne fournit pas d'image.
+  set_image: string | null;
   imported_at: Date | null;
   // Booster custom créé par un MJ (par opposition à un set officiel YGOPRODeck).
   is_custom: boolean;
@@ -19,6 +22,7 @@ const cardSetSchema = new Schema<CardSetAttrs>(
     set_code: { type: String, required: true, unique: true, trim: true },
     num_of_cards: { type: Number, default: 0 },
     tcg_date: { type: String, default: null },
+    set_image: { type: String, default: null },
     // null tant que les cartes du set n'ont pas encore été importées dans Card.
     // Pour un set custom, non pertinent : traité comme "toujours prêt".
     imported_at: { type: Date, default: null },

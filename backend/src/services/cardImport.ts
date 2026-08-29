@@ -32,6 +32,7 @@ export async function syncCardSets(): Promise<number> {
             set_name: decodeSetName(set.set_name),
             num_of_cards: set.num_of_cards,
             tcg_date: set.tcg_date ?? null,
+            set_image: set.set_image ?? null,
           },
         },
         { upsert: true },

@@ -16,13 +16,23 @@ export interface MerchantItemAttrs {
   price: number;
   // null = stock illimité.
   stock: number | null;
+  // Marchandage PROPRE à cet article (CLAUDE.md §3.5) : le DC à battre et la
+  // remise accordée en cas de succès sont configurés par le MJ une fois,
+  // pour CET article précis — pas retapés à chaque tentative d'achat. null
+  // sur l'un ou l'autre = article non négociable (prix plein uniquement).
+  haggle_dc: number | null;
+  haggle_discount_percent: number | null;
 }
 
 export interface MerchantAttrs {
   game_session_id: Types.ObjectId;
   name: string;
   description: string;
-  // DC du jet de Charisme pour le marchandage (CLAUDE.md §3.5).
+  // DC "par défaut" proposé au MJ quand il ajoute un nouvel article (voir
+  // MerchantShopOverlay.tsx côté front) — n'est plus consulté par le
+  // marchandage lui-même depuis que le DC/la remise sont configurés PAR
+  // ARTICLE (voir MerchantItemAttrs.haggle_dc), un même marchand pouvant
+  // avoir des articles à négocier très différemment les uns des autres.
   haggle_dc: number;
   items: MerchantItemAttrs[];
 }
@@ -37,6 +47,8 @@ const merchantItemSchema = new Schema<MerchantItemAttrs>({
   image_url: { type: String, default: null },
   price: { type: Number, required: true, min: 0 },
   stock: { type: Number, default: null, min: 0 },
+  haggle_dc: { type: Number, default: null, min: 1, max: 30 },
+  haggle_discount_percent: { type: Number, default: null, min: 0, max: 100 },
 });
 
 const merchantSchema = new Schema<MerchantAttrs>(

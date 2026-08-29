@@ -16,6 +16,9 @@ export interface YgoCardSet {
   set_code: string;
   num_of_cards: number;
   tcg_date?: string;
+  // Visuel officiel du boîtier/pack, hébergé par YGOPRODeck — absent pour de
+  // très vieux sets (pas systématiquement fourni côté YGOPRODeck).
+  set_image?: string;
 }
 
 export interface YgoCardSetRef {
