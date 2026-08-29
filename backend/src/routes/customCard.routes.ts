@@ -1,0 +1,276 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { Types } from 'mongoose';
+import { Card, type CardDocument } from '../models/Card.model';
+import { CardSet } from '../models/CardSet.model';
+import { AppError } from '../middleware/errorHandler';
+import { asyncHandler } from '../middleware/asyncHandler';
+import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
+import { isSessionGm, isSessionMember } from '../utils/sessionMembership';
+import { loadSessionOrThrow } from '../utils/loaders';
+import { CUSTOM_RARITIES, customCardInputSchema, deriveCardFields } from '../utils/customCardRules';
+import { allocateEngineCode } from '../utils/engineCardCode';
+
+export const customCardRouter = Router();
+customCardRouter.use(requireAuth);
+
+function toCustomCardDto(card: CardDocument, viewedFromSessionId?: string) {
+  return {
+    id: card._id.toString(),
+    name: card.name,
+    type: card.type,
+    frame_type: card.frame_type,
+    description: card.description,
+    atk: card.atk,
+    def: card.def,
+    level_rank: card.level_rank,
+    race: card.race,
+    attribute: card.attribute,
+    archetype: card.archetype,
+    pendulum_scale: card.pendulum_scale,
+    link_arrows: card.link_arrows,
+    card_sets: card.card_sets,
+    card_images: card.card_images,
+    is_custom: true as const,
+    // Le MJ doit pouvoir relire/corriger son script (voir CLAUDE.md §3.4 :
+    // aucune carte custom automatisée sans un vrai script Lua fourni).
+    lua_script: card.lua_script,
+    owner_id: card.owner_id ? card.owner_id.toString() : null,
+    created_in_session_id: card.created_in_session_id ? card.created_in_session_id.toString() : null,
+    created_in_this_session: viewedFromSessionId
+      ? card.created_in_session_id?.toString() === viewedFromSessionId
+      : undefined,
+  };
+}
+
+async function loadCustomCardOrThrow(cardId: string): Promise<CardDocument> {
+  if (!Types.ObjectId.isValid(cardId)) throw new AppError(404, 'Carte introuvable', 'not_found');
+  const card = await Card.findOne({ _id: cardId, is_custom: true });
+  if (!card) throw new AppError(404, 'Carte introuvable', 'not_found');
+  return card;
+}
+
+function assertOwner(card: CardDocument, userId: string): void {
+  if (card.owner_id?.toString() !== userId) {
+    throw new AppError(403, "Vous n'êtes pas le créateur de cette carte custom", 'forbidden');
+  }
+}
+
+// Un vrai script Lua est obligatoire (CLAUDE.md §3.4) : l'automatisation
+// fiable d'un effet à partir d'un texte libre n'est pas possible, mais
+// EXIGER le script réel du MJ l'est — il est chargé et exécuté par le
+// moteur exactement comme un script officiel Project Ignis (voir
+// engine/ocgcore/poc/server.cpp, commande CUSTOMSCRIPT). Vérification
+// légère seulement (présence d'initial_effect) : pas de compilateur Lua
+// disponible côté validation d'entrée, la vraie vérification a lieu quand
+// le moteur charge le script au premier duel qui utilise la carte.
+const luaScriptSchema = z
+  .string()
+  .trim()
+  .min(1, 'Un script Lua est obligatoire pour automatiser cette carte')
+  .max(20_000)
+  .refine((s) => s.includes('initial_effect'), {
+    message: "Le script doit définir initial_effect (voir la convention Project Ignis, ex. function s.initial_effect(c) ... end)",
+  });
+
+const createCustomCardSchema = z.object({
+  game_session_id: z.string(),
+  card: customCardInputSchema,
+  lua_script: luaScriptSchema,
+});
+
+customCardRouter.post(
+  '/',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = createCustomCardSchema.parse(req.body);
+    const userId = req.user!.sub;
+
+    if (!Types.ObjectId.isValid(body.game_session_id)) {
+      throw new AppError(400, 'game_session_id invalide', 'invalid_input');
+    }
+    const session = await loadSessionOrThrow(body.game_session_id);
+    if (!isSessionGm(session, userId)) {
+      throw new AppError(403, 'Seul le MJ peut créer une carte custom', 'forbidden');
+    }
+
+    const derived = deriveCardFields(body.card);
+    const imageUrl = body.card.image_url?.trim();
+    const engineCode = await allocateEngineCode();
+
+    const card = await Card.create({
+      name: body.card.name,
+      type: derived.type,
+      frame_type: derived.frame_type,
+      description: body.card.effect_text,
+      atk: derived.atk,
+      def: derived.def,
+      level_rank: derived.level_rank,
+      race: derived.race,
+      attribute: derived.attribute,
+      archetype: body.card.archetype?.trim() || null,
+      pendulum_scale: derived.pendulum_scale,
+      link_arrows: derived.link_arrows,
+      card_sets: [],
+      card_images: imageUrl
+        ? [{ image_id: 0, image_url: imageUrl, image_url_small: imageUrl, image_url_cropped: imageUrl }]
+        : [],
+      is_custom: true,
+      owner_id: new Types.ObjectId(userId),
+      created_in_session_id: session._id,
+      engine_code: engineCode,
+      lua_script: body.lua_script,
+    });
+
+    res.status(201).json({ card: toCustomCardDto(card, session._id.toString()) });
+  }),
+);
+
+customCardRouter.get(
+  '/session/:sessionId',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const sessionId = req.params.sessionId!;
+    if (!Types.ObjectId.isValid(sessionId)) throw new AppError(400, 'Identifiant de salon invalide', 'invalid_input');
+
+    const session = await loadSessionOrThrow(sessionId);
+    if (!isSessionMember(session, req.user!.sub)) {
+      throw new AppError(403, "Vous n'êtes pas membre de ce salon", 'forbidden');
+    }
+
+    // Réutilisation inter-parties : toute carte custom créée par CE MJ, quelle
+    // que soit la partie où elle est née, est disponible ici.
+    const cards = await Card.find({ is_custom: true, owner_id: session.gm_id }).sort({ name: 1 });
+    res.json({ cards: cards.map((c) => toCustomCardDto(c, sessionId)) });
+  }),
+);
+
+customCardRouter.patch(
+  '/:id',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const card = await loadCustomCardOrThrow(req.params.id!);
+    assertOwner(card, req.user!.sub);
+
+    const body = z.object({ card: customCardInputSchema, lua_script: luaScriptSchema }).parse(req.body);
+    const derived = deriveCardFields(body.card);
+    const imageUrl = body.card.image_url?.trim();
+
+    card.name = body.card.name;
+    card.type = derived.type;
+    card.frame_type = derived.frame_type;
+    card.description = body.card.effect_text;
+    card.atk = derived.atk;
+    card.def = derived.def;
+    card.level_rank = derived.level_rank;
+    card.race = derived.race;
+    card.attribute = derived.attribute;
+    card.archetype = body.card.archetype?.trim() || null;
+    card.pendulum_scale = derived.pendulum_scale;
+    card.link_arrows = derived.link_arrows;
+    card.card_images = imageUrl
+      ? [{ image_id: 0, image_url: imageUrl, image_url_small: imageUrl, image_url_cropped: imageUrl }]
+      : [];
+    card.lua_script = body.lua_script;
+    // Pas de réallocation d'engine_code : le passcode synthétique reste
+    // stable pour cette carte même si son contenu change.
+
+    await card.save();
+    res.json({ card: toCustomCardDto(card) });
+  }),
+);
+
+customCardRouter.delete(
+  '/:id',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const card = await loadCustomCardOrThrow(req.params.id!);
+    assertOwner(card, req.user!.sub);
+    await card.deleteOne();
+    res.status(204).send();
+  }),
+);
+
+function randomSetCode(seed: string): string {
+  const slug = seed
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 8);
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `CUSTOM-${slug || 'SET'}-${suffix}`;
+}
+
+async function generateUniqueCustomSetCode(setName: string): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const code = randomSetCode(setName);
+    const exists = await CardSet.exists({ set_code: code });
+    if (!exists) return code;
+  }
+  throw new Error('Impossible de générer un code de booster custom unique');
+}
+
+const boosterLinkSchema = z
+  .object({
+    set_code: z.string().trim().min(1).optional(),
+    new_set_name: z.string().trim().min(1).max(64).optional(),
+    rarity: z.enum(CUSTOM_RARITIES).default('Common'),
+  })
+  .refine((v) => !!v.set_code !== !!v.new_set_name, {
+    message: 'Fournissez soit set_code (booster existant), soit new_set_name (nouveau booster custom), pas les deux',
+  });
+
+customCardRouter.post(
+  '/:id/booster-link',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const card = await loadCustomCardOrThrow(req.params.id!);
+    assertOwner(card, req.user!.sub);
+
+    const body = boosterLinkSchema.parse(req.body);
+    const userId = req.user!.sub;
+
+    let cardSet;
+    if (body.new_set_name) {
+      const setCode = await generateUniqueCustomSetCode(body.new_set_name);
+      cardSet = await CardSet.create({
+        set_name: body.new_set_name,
+        set_code: setCode,
+        num_of_cards: 0,
+        tcg_date: null,
+        imported_at: new Date(), // un booster custom n'a pas d'étape d'import
+        is_custom: true,
+        owner_id: new Types.ObjectId(userId),
+      });
+    } else {
+      cardSet = await CardSet.findOne({ set_code: body.set_code });
+      if (!cardSet) throw new AppError(404, 'Set introuvable', 'not_found');
+    }
+
+    if (card.card_sets.some((s) => s.set_code === cardSet.set_code)) {
+      throw new AppError(400, 'Cette carte est déjà liée à ce booster', 'already_linked');
+    }
+
+    card.card_sets.push({
+      set_name: cardSet.set_name,
+      set_code: cardSet.set_code,
+      set_rarity: body.rarity,
+      set_rarity_code: '',
+      set_price: '0',
+    });
+    await card.save();
+
+    res.status(201).json({ card: toCustomCardDto(card), card_set: { set_code: cardSet.set_code, set_name: cardSet.set_name } });
+  }),
+);
+
+customCardRouter.delete(
+  '/:id/booster-link/:setCode',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const card = await loadCustomCardOrThrow(req.params.id!);
+    assertOwner(card, req.user!.sub);
+
+    const before = card.card_sets.length;
+    card.card_sets = card.card_sets.filter((s) => s.set_code !== req.params.setCode);
+    if (card.card_sets.length === before) {
+      throw new AppError(404, 'Cette carte n’est pas liée à ce booster', 'not_found');
+    }
+
+    await card.save();
+    res.json({ card: toCustomCardDto(card) });
+  }),
+);
