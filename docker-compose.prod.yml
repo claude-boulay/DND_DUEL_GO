@@ -1,0 +1,24 @@
+# Override de production : images buildées, aucun code monté, aucun hot-reload.
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+services:
+  mongo:
+    ports: []
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: prod
+    environment:
+      NODE_ENV: production
+    volumes:
+      - card_images:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      target: prod
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    environment: {}
+    volumes: []

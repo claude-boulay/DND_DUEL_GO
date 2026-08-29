@@ -1,0 +1,40 @@
+# Dépendances (backend/, frontend/, et tout autre niveau)
+node_modules/
+
+# Builds (TypeScript compilé, bundle Vite, etc.)
+dist/
+build/
+*.tsbuildinfo
+.vite/
+
+# Secrets et config locale — jamais commit, voir .env.example pour le modèle
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Fichiers utilisateur uploadés (images de cartes custom) — voir backend/src/routes/upload.routes.ts
+uploads/
+
+# Rapports de tests/couverture
+coverage/
+.eslintcache
+
+# Claude Code : réglages/permissions locaux à CETTE machine, pas partagés
+.claude/settings.local.json
+
+# Éditeurs / IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
