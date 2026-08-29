@@ -8,6 +8,13 @@ interface DuelPanelProps {
   session: ApiSession;
   characters: ApiCharacter[];
   currentUserId: string;
+  // Ouverture pilotée depuis l'extérieur (ex. clic sur "Voir le duel" dans la
+  // bannière de convocation, App.tsx) — en plus de l'ouverture normale via un
+  // clic direct dans la liste ci-dessous, gérée en interne (openedId). Un
+  // simple effet applique la demande puis prévient le parent qu'elle a été
+  // traitée, sans faire de cet id la source de vérité en continu.
+  requestedOpenDuelId?: string | null;
+  onRequestedOpenDuelHandled?: () => void;
 }
 
 /**
@@ -18,12 +25,18 @@ interface DuelPanelProps {
  * "chacun pour soi" à PV individuels (battle royale au sens strict) n'est
  * pas possible : le moteur ocgcore n'a que 2 réservoirs de PV, en dur.
  */
-export function DuelPanel({ token, session, characters, currentUserId }: DuelPanelProps) {
+export function DuelPanel({ token, session, characters, currentUserId, requestedOpenDuelId, onRequestedOpenDuelHandled }: DuelPanelProps) {
   const [duels, setDuels] = useState<ApiDuel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [openedId, setOpenedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!requestedOpenDuelId) return;
+    setOpenedId(requestedOpenDuelId);
+    onRequestedOpenDuelHandled?.();
+  }, [requestedOpenDuelId, onRequestedOpenDuelHandled]);
 
   const loadDuels = useCallback(
     (opts?: { silent?: boolean }) => {

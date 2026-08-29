@@ -13,7 +13,7 @@ import { isExtraDeckFrameType } from '../utils/deckRules';
 import { shuffle } from '../utils/duelBoard';
 import { engineStatsForCustomCard } from '../utils/engineCardMapping';
 import { toCardDto } from '../utils/cardDto';
-import { broadcastSessionResourceChanged } from '../utils/broadcast';
+import { broadcastSessionResourceChanged, notifyDuelInvite } from '../utils/broadcast';
 import {
   applyMessages,
   createInitialState,
@@ -438,6 +438,9 @@ interface DeckCardPlan {
   characterId: Types.ObjectId;
   characterName: string;
   isNpc: boolean;
+  // Propriétaire du personnage — sert uniquement à cibler la notification
+  // duel_invite ci-dessous (jamais envoyé au moteur ni stocké sur le duel).
+  userId: string;
   deckId: Types.ObjectId;
   mainCodes: number[];
   extraCodes: number[];
@@ -489,6 +492,7 @@ async function loadDeckPlan(characterId: string, deckId: string, session: GameSe
     characterId: character._id,
     characterName: character.name,
     isNpc: character.is_npc,
+    userId: character.user_id.toString(),
     deckId: deck._id,
     mainCodes: shuffle(mainCodes),
     extraCodes,
@@ -595,6 +599,27 @@ duelRouter.post(
       await duel.save();
 
       broadcastSessionResourceChanged(req, session._id.toString(), 'duels');
+
+      // Convoque explicitement chaque joueur concerné (pas les PNJ — aucun
+      // utilisateur humain n'attend derrière — ni le MJ créateur lui-même,
+      // déjà au courant puisqu'il vient de le créer). Dédupliqué par
+      // user_id : un même joueur pilotant 2 participants dans ce duel (rare,
+      // mais permis) ne reçoit qu'UNE convocation.
+      const inviteTargets = new Map<string, { user_id: string; character_id: string; character_name: string; team: 0 | 1 }>();
+      for (const team of [0, 1] as const) {
+        for (const plan of plans[team]) {
+          if (plan.isNpc || plan.userId === userId || inviteTargets.has(plan.userId)) continue;
+          inviteTargets.set(plan.userId, { user_id: plan.userId, character_id: plan.characterId.toString(), character_name: plan.characterName, team });
+        }
+      }
+      if (inviteTargets.size > 0) {
+        notifyDuelInvite(req, session._id.toString(), {
+          duel_id: duel._id.toString(),
+          duel_name: duel.name,
+          participants: [...inviteTargets.values()],
+        });
+      }
+
       res.status(201).json({ duel: await toDuelDto(duel, userId, session) });
     } catch (err) {
       ocgDuel.quit();

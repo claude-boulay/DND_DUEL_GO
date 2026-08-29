@@ -41,6 +41,19 @@ export interface ServerToClientEvents {
   // temps réel les actions du moteur ocgcore (prompt suivant, PV, phase...)
   // à tout participant qui n'est pas l'auteur de l'action.
   session_resource_changed: (payload: { resource: SessionResource; session_id: string }) => void;
+  // Émis UNE FOIS à la création d'un duel, en plus de session_resource_changed
+  // ci-dessus (qui ne fait que dire "la liste a changé" — celui-ci dit
+  // explicitement "vous y êtes attendu"). Diffusé à tout le salon ; chaque
+  // client filtre sur son propre user_id dans `participants` pour savoir s'il
+  // est concerné (pas de salle Socket.io par utilisateur, cohérent avec le
+  // reste — voir sockets/index.ts). Les PNJ et le MJ créateur lui-même ne
+  // génèrent jamais d'entrée ici (voir duel.routes.ts).
+  duel_invite: (payload: {
+    session_id: string;
+    duel_id: string;
+    duel_name: string;
+    participants: Array<{ user_id: string; character_id: string; character_name: string; team: 0 | 1 }>;
+  }) => void;
 }
 
 /** Client -> Serveur */

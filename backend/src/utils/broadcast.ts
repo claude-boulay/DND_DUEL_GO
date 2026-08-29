@@ -14,3 +14,24 @@ export function broadcastSessionResourceChanged(req: Request, sessionId: string,
   const io = req.app.get('io') as GameServer | undefined;
   io?.to(sessionId).emit('session_resource_changed', { resource, session_id: sessionId });
 }
+
+/**
+ * Prévient explicitement chaque joueur convoqué (pas le MJ créateur, pas les
+ * PNJ — voir duel.routes.ts) qu'un duel vient d'être créé et qu'il y
+ * participe, en plus du `session_resource_changed('duels')` déjà émis (qui ne
+ * dit que "la liste a changé", pas "c'est VOUS qu'on attend"). Diffusé à tout
+ * le salon comme le reste (pas de salle par utilisateur) : chaque client
+ * filtre sur son propre user_id dans `participants`.
+ */
+export function notifyDuelInvite(
+  req: Request,
+  sessionId: string,
+  payload: {
+    duel_id: string;
+    duel_name: string;
+    participants: Array<{ user_id: string; character_id: string; character_name: string; team: 0 | 1 }>;
+  },
+): void {
+  const io = req.app.get('io') as GameServer | undefined;
+  io?.to(sessionId).emit('duel_invite', { session_id: sessionId, ...payload });
+}
