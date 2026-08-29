@@ -381,6 +381,12 @@ function CreateCustomCardForm({
   const [archetype, setArchetype] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
+  // Script Lua réel obligatoire (CLAUDE.md §3.4) : sans lui, la carte ne
+  // peut pas tourner dans un vrai duel (voir customCard.routes.ts, jamais de
+  // repli "vanille"). Fournissable en collant le texte directement, ou en
+  // important un fichier .lua (son contenu remplit le même champ).
+  const [luaScript, setLuaScript] = useState('');
+  const [luaFileName, setLuaFileName] = useState<string | null>(null);
 
   const [monsterKind, setMonsterKind] = useState<MonsterKind>('normal');
   const [attribute, setAttribute] = useState<CardAttribute>('DARK');
@@ -411,6 +417,23 @@ function CreateCustomCardForm({
       onError(err instanceof ApiError ? err.message : "Échec de l'envoi de l'image");
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Lit le fichier .lua choisi directement dans le navigateur (pas d'envoi
+  // au serveur ici : le script part avec le reste du formulaire à la
+  // soumission, comme s'il avait été tapé/collé dans le champ).
+  const handleLuaFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setLuaScript(text);
+      setLuaFileName(file.name);
+    } catch {
+      onError('Impossible de lire ce fichier');
+    } finally {
+      event.target.value = ''; // permet de resélectionner le même fichier après une modif manuelle
     }
   };
 
@@ -445,7 +468,7 @@ function CreateCustomCardForm({
         card = { category: 'trap', trap_type: trapType, ...common };
       }
 
-      const { card: created } = await api.createCustomCard(token, sessionId, card);
+      const { card: created } = await api.createCustomCard(token, sessionId, card, luaScript);
       onCreated(created);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
@@ -636,6 +659,32 @@ function CreateCustomCardForm({
         rows={3}
         className={`w-full ${inputClass}`}
       />
+
+      <div className="space-y-1 rounded border border-arena-700 p-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="flex items-center gap-2 text-neutral-400">
+            Script Lua (.lua)
+            <input type="file" accept=".lua,text/x-lua,text/plain" onChange={(e) => void handleLuaFileChange(e)} className="text-neutral-300" />
+          </label>
+          {luaFileName && <span className="text-neutral-500">{luaFileName} chargé</span>}
+        </div>
+        <textarea
+          placeholder="function s.initial_effect(c) ... end — obligatoire, voir scrapi-book / CardScripts pour la syntaxe Project Ignis"
+          value={luaScript}
+          onChange={(e) => {
+            setLuaScript(e.target.value);
+            setLuaFileName(null); // édité à la main : le nom de fichier affiché n'a plus de sens
+          }}
+          required
+          rows={8}
+          spellCheck={false}
+          className={`w-full font-mono ${inputClass}`}
+        />
+        <p className="text-[10px] leading-snug text-neutral-500">
+          Obligatoire — sans lui la carte ne peut pas tourner dans un vrai duel (pas de repli "vanille"). Importez un fichier .lua ci-dessus ou collez le
+          script directement ; il doit définir <code>initial_effect</code> (convention Project Ignis).
+        </p>
+      </div>
 
       <button
         type="submit"

@@ -844,17 +844,21 @@ export const api = {
   listCustomCards: (token: string, sessionId: string) =>
     request<{ cards: ApiCustomCard[] }>(`/custom-cards/session/${encodeURIComponent(sessionId)}`, {}, token),
 
-  createCustomCard: (token: string, sessionId: string, card: CustomCardInput) =>
+  // lua_script est obligatoire côté serveur (CLAUDE.md §3.4 : jamais de repli
+  // "vanille" pour une carte custom) — un paramètre séparé de `card` plutôt
+  // qu'un champ dedans, pour matcher exactement la forme attendue par la
+  // route ({ game_session_id, card, lua_script }).
+  createCustomCard: (token: string, sessionId: string, card: CustomCardInput, luaScript: string) =>
     request<{ card: ApiCustomCard }>(
       '/custom-cards',
-      { method: 'POST', body: JSON.stringify({ game_session_id: sessionId, card }) },
+      { method: 'POST', body: JSON.stringify({ game_session_id: sessionId, card, lua_script: luaScript }) },
       token,
     ),
 
-  updateCustomCard: (token: string, cardId: string, card: CustomCardInput) =>
+  updateCustomCard: (token: string, cardId: string, card: CustomCardInput, luaScript: string) =>
     request<{ card: ApiCustomCard }>(
       `/custom-cards/${encodeURIComponent(cardId)}`,
-      { method: 'PATCH', body: JSON.stringify({ card }) },
+      { method: 'PATCH', body: JSON.stringify({ card, lua_script: luaScript }) },
       token,
     ),
 
