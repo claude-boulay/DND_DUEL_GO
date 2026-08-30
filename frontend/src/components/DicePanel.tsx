@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { socket } from '../lib/socket';
 import type { ActionLogEntry } from '../types/socket';
 import type { ApiCharacter, ApiSession } from '../lib/api';
@@ -28,6 +29,7 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
   const [sides, setSides] = useState(20);
   const [characterId, setCharacterId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const rollableCharacters = characters.filter((c) => session.is_gm || c.user_id === currentUserId);
 
@@ -153,24 +155,57 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
 
       {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
 
-      <div className="max-h-64 space-y-1 overflow-y-auto font-mono text-xs text-neutral-300">
+      {/* Demande utilisateur : ne montrer que les 5 derniers lancers ici —
+          l'historique complet a sa propre vue (voir DiceHistoryOverlay
+          ci-dessous), pour ne pas noyer le bloc classique dans un long journal. */}
+      <div className="space-y-1 font-mono text-xs text-neutral-300">
         {log.length === 0 && <p className="text-neutral-500">Aucun lancer pour l'instant.</p>}
-        {[...log].reverse().map((entry, index) => (
-          <div key={`${entry.roll_id}-${entry.is_reroll ? 'r' : 'o'}-${index}`} className="flex flex-wrap items-center gap-2">
-            <span className="text-neutral-500">{new Date(entry.rolled_at).toLocaleTimeString()}</span>
-            <span className="text-neutral-200">{entry.username}</span>
-            {entry.character_name && <span className="text-accent-400">({entry.character_name})</span>}
-            <span>
-              {formatDieLabel(entry.sides)} → <span className="font-bold text-neutral-100">{formatRollResult(entry.sides, entry.result)}</span>
-            </span>
-            {entry.is_reroll && (
-              <span className="text-neutral-500">
-                (reroll, était {formatRollResult(entry.sides, entry.previous_result ?? 0)})
-              </span>
-            )}
-          </div>
+        {[...log].reverse().slice(0, 5).map((entry, index) => (
+          <DiceLogRow key={`${entry.roll_id}-${entry.is_reroll ? 'r' : 'o'}-${index}`} entry={entry} />
         ))}
+        {log.length > 5 && (
+          <button type="button" onClick={() => setShowHistory(true)} className="pt-1 text-accent-400 underline hover:text-accent-300">
+            Voir l'historique complet ({log.length})
+          </button>
+        )}
       </div>
+
+      {showHistory && <DiceHistoryOverlay log={log} onClose={() => setShowHistory(false)} />}
     </section>
+  );
+}
+
+function DiceLogRow({ entry }: { entry: ActionLogEntry }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-neutral-500">{new Date(entry.rolled_at).toLocaleTimeString()}</span>
+      <span className="text-neutral-200">{entry.username}</span>
+      {entry.character_name && <span className="text-accent-400">({entry.character_name})</span>}
+      <span>
+        {formatDieLabel(entry.sides)} → <span className="font-bold text-neutral-100">{formatRollResult(entry.sides, entry.result)}</span>
+      </span>
+      {entry.is_reroll && <span className="text-neutral-500">(reroll, était {formatRollResult(entry.sides, entry.previous_result ?? 0)})</span>}
+    </div>
+  );
+}
+
+function DiceHistoryOverlay({ log, onClose }: { log: ActionLogEntry[]; onClose: () => void }) {
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="flex h-full max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-arena-700 bg-arena-900 shadow-2xl">
+        <header className="flex shrink-0 items-center justify-between border-b border-arena-700 p-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Historique complet des lancers ({log.length})</h2>
+          <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
+            ✕
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-4 font-mono text-xs text-neutral-300">
+          {[...log].reverse().map((entry, index) => (
+            <DiceLogRow key={`${entry.roll_id}-${entry.is_reroll ? 'r' : 'o'}-${index}`} entry={entry} />
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
