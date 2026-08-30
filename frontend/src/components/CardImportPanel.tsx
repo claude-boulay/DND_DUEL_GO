@@ -219,22 +219,32 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
           <p className="mb-2 text-xs text-neutral-500">{cardsTotal} carte(s) au total</p>
         )}
 
-        <div className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
-          {cards.map((card) => (
-            <figure key={card.id} className="rounded-md border border-arena-700 bg-arena-800 p-1.5">
-              {card.card_images[0] && (
-                <img
-                  src={card.card_images[0].image_url_small}
-                  alt={card.name}
-                  loading="lazy"
-                  className="w-full rounded"
-                />
-              )}
-              <figcaption className="mt-1 truncate text-center text-[10px] text-neutral-300" title={card.name}>
-                {card.name}
-              </figcaption>
-            </figure>
-          ))}
+        {/* max-h/overflow sur ce conteneur EXTÉRIEUR seulement (pas la
+            grille) : la grille garde overflow:visible pour ne pas tronquer
+            l'agrandissement au survol — même pattern que
+            BoosterOpeningOverlay.tsx/SettledSlot. */}
+        <div className="max-h-80 overflow-y-auto">
+          <div className="grid grid-cols-3 gap-2 [overflow:visible] sm:grid-cols-4">
+            {cards.map((card) => (
+              <figure key={card.id} className="rounded-md border border-arena-700 bg-arena-800 p-1.5">
+                {card.card_images[0] && (
+                  // image_url (pleine résolution), pas _small : le survol
+                  // grossit la carte pour lire son texte sans problème (demande
+                  // utilisateur) — un agrandissement CSS d'une petite miniature
+                  // serait flou.
+                  <img
+                    src={card.card_images[0].image_url}
+                    alt={card.name}
+                    loading="lazy"
+                    className="w-full rounded transition duration-150 hover:z-20 hover:scale-[2.5] hover:cursor-zoom-in"
+                  />
+                )}
+                <figcaption className="mt-1 truncate text-center text-[10px] text-neutral-300" title={card.name}>
+                  {card.name}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
         </div>
       </section>
     </div>
