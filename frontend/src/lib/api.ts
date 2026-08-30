@@ -112,6 +112,10 @@ export interface ApiCardImage {
 export interface ApiCard {
   id: string;
   ygoprodeck_id: number | null;
+  // Passcode moteur — identique à ygoprodeck_id pour une carte officielle,
+  // synthétique pour une carte custom (voir CLAUDE.md §5). Utilisé pour
+  // l'export YDK, qui a besoin d'un vrai passcode même pour une carte custom.
+  engine_code: number | null;
   name: string;
   type: string;
   frame_type: string;

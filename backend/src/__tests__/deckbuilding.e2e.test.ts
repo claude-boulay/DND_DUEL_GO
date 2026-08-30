@@ -217,6 +217,12 @@ describe('Deckbuilding : cartes limitées à la collection, PNJ dispensés (E2E)
     expect(res.body.deck.main[0].card.description).toBe('Carte de test deckbuilding');
     expect(res.body.deck.main[0].card.atk).toBe(1000);
     expect(res.body.deck.main[0].card.def).toBe(1000);
+
+    // ygoprodeck_id doublant comme passcode moteur (voir CLAUDE.md §5) :
+    // c'est ce que l'export .ydk (frontend/src/lib/ydk.ts) utilise comme
+    // repli quand engine_code n'est pas encore renseigné (cartes seedées en
+    // base directement dans ce test, sans passer par le vrai import).
+    expect(res.body.deck.main[0].card.ygoprodeck_id).toBe(910_000_000 + rand);
   });
 
   it('retire un exemplaire de carte du deck', async () => {

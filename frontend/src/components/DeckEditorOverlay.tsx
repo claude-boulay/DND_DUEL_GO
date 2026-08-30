@@ -22,6 +22,7 @@ import {
   type SortKey,
 } from '../lib/cardFilters';
 import { CollectionFilterModal } from './CollectionFilterModal';
+import { downloadYdk } from '../lib/ydk';
 
 interface DeckEditorOverlayProps {
   token: string;
@@ -206,6 +207,14 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
                 Extra {deck.extra_count}/{deck.extra_max}
               </span>
               {deck.is_valid && <span className="text-emerald-400">✓ deck légal</span>}
+              <button
+                type="button"
+                onClick={() => downloadYdk(deck)}
+                title="Exporter ce deck au format .ydk (utilisable dans un autre émulateur EDOPro/YGOPro)"
+                className="rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+              >
+                Exporter en .ydk
+              </button>
             </>
           )}
           <button

@@ -11,6 +11,11 @@ export function toCardDto(card: CardDocument) {
   return {
     id: card._id.toString(),
     ygoprodeck_id: card.ygoprodeck_id,
+    // Passcode moteur (identique à ygoprodeck_id pour une carte officielle,
+    // synthétique pour une carte custom — voir Card.model.ts) : exposé pour
+    // l'export YDK (demande utilisateur), qui a besoin d'un vrai passcode
+    // même pour une carte custom sans ygoprodeck_id.
+    engine_code: card.engine_code,
     name: card.name,
     type: card.type,
     frame_type: card.frame_type,
