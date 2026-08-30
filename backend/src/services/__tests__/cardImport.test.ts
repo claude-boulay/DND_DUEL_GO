@@ -143,23 +143,45 @@ describe('syncCardSets : collision de set_code (garde le set avec le plus de car
     // dernier reçu (pas forcément le plus gros) gagnait avant ce correctif.
     vi.mocked(fetchCardSets).mockResolvedValue([reprint, original]);
 
-    await syncCardSets();
+    const { collidedSetCodes } = await syncCardSets();
 
     const stored = await CardSet.find({ set_code: code });
     expect(stored).toHaveLength(1); // toujours un seul doc par set_code (schéma unique inchangé, fix minimal)
     expect(stored[0]?.num_of_cards).toBe(355);
     expect(stored[0]?.set_name).toBe('Legend of Blue Eyes White Dragon (test)');
+    // Demande de suivi utilisateur (booster ouvert en prod avec les
+    // mauvaises cartes) : repérer quels sets réimporter, pas juste les
+    // corriger silencieusement en base.
+    expect(stored[0]?.had_code_collision).toBe(true);
+    expect(collidedSetCodes).toContain(code);
   });
 
-  it('un set sans collision de code est importé normalement', async () => {
+  it('un set sans collision de code est importé normalement, sans être marqué', async () => {
     const code = `SOLO-${rand}`;
     const solo: YgoCardSet = { set_name: 'Set Sans Collision (test)', set_code: code, num_of_cards: 42, tcg_date: '2020-01-01' };
     vi.mocked(fetchCardSets).mockResolvedValue([solo]);
 
-    await syncCardSets();
+    const { collidedSetCodes } = await syncCardSets();
 
     const stored = await CardSet.findOne({ set_code: code });
     expect(stored?.num_of_cards).toBe(42);
     expect(stored?.set_name).toBe('Set Sans Collision (test)');
+    expect(stored?.had_code_collision).toBe(false);
+    expect(collidedSetCodes).not.toContain(code);
+  });
+
+  it('un set qui collisionnait avant est démarqué si une resync ultérieure ne montre plus de collision', async () => {
+    const code = `WASCOLL-${rand}`;
+    const a: YgoCardSet = { set_name: 'A (test)', set_code: code, num_of_cards: 10, tcg_date: '2020-01-01' };
+    const b: YgoCardSet = { set_name: 'B (test)', set_code: code, num_of_cards: 5, tcg_date: '2020-01-02' };
+    vi.mocked(fetchCardSets).mockResolvedValue([a, b]);
+    await syncCardSets();
+    expect((await CardSet.findOne({ set_code: code }))?.had_code_collision).toBe(true);
+
+    // Une resync ultérieure où "B" a disparu de l'API (cas réel possible) ne
+    // doit pas laisser le flag figé à true pour toujours.
+    vi.mocked(fetchCardSets).mockResolvedValue([a]);
+    await syncCardSets();
+    expect((await CardSet.findOne({ set_code: code }))?.had_code_collision).toBe(false);
   });
 });

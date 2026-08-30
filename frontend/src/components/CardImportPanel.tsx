@@ -10,6 +10,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
   const [setsSearchInput, setSetsSearchInput] = useState('');
   const [loadingSets, setLoadingSets] = useState(false);
   const [importingCode, setImportingCode] = useState<string | null>(null);
+  const [reimportingAll, setReimportingAll] = useState(false);
   const [setsError, setSetsError] = useState<string | null>(null);
 
   const [cards, setCards] = useState<ApiCard[]>([]);
@@ -98,10 +99,39 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
     // traitement d'erreur (setCardsError) — volontairement hors du try
     // ci-dessus pour qu'un souci ici ne s'affiche jamais comme un échec de
     // l'IMPORT alors que celui-ci a en réalité fonctionné.
-    setSets((prev) => prev.map((s) => (s.set_code === set.set_code ? { ...s, imported: true, imported_at: new Date().toISOString() } : s)));
+    setSets((prev) =>
+      prev.map((s) => (s.set_code === set.set_code ? { ...s, imported: true, imported_at: new Date().toISOString(), had_code_collision: false } : s)),
+    );
     setCardsSetFilter({ code: set.set_code, name: set.set_name });
     setCardsSearchInput('');
     await loadCards(set.set_code);
+  };
+
+  // Sets déjà importés dont le set_code était partagé lors de la dernière
+  // synchro (voir CLAUDE.md) — ce sont ceux qui peuvent porter les mauvaises
+  // cartes suite à ce bug et méritent un réimport. Demande utilisateur
+  // directe : reproduit en production via un booster déjà ouvert.
+  const collidedImportedSets = sets.filter((s) => s.imported && s.had_code_collision);
+
+  const handleReimportAll = async () => {
+    setReimportingAll(true);
+    setSetsError(null);
+    // Séquentiel, pas Promise.all : ygoprodeck.ts throttle déjà les appels en
+    // interne (un seul compteur partagé), mais autant rester lisible/prévisible
+    // plutôt que de lancer N requêtes concurrentes qui finiraient de toute
+    // façon en file d'attente.
+    for (const set of collidedImportedSets) {
+      try {
+        await api.importCardSet(token, set.set_code);
+        setSets((prev) =>
+          prev.map((s) => (s.set_code === set.set_code ? { ...s, imported_at: new Date().toISOString(), had_code_collision: false } : s)),
+        );
+      } catch (err) {
+        setSetsError(`Échec du réimport de "${set.set_name}" : ${err instanceof Error ? err.message : 'erreur inconnue'}`);
+        break;
+      }
+    }
+    setReimportingAll(false);
   };
 
   return (
@@ -138,6 +168,31 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
         {setsError && <p className="mb-2 text-xs text-red-400">{setsError}</p>}
         {loadingSets && <p className="text-xs text-neutral-500">Chargement...</p>}
 
+        {/* Bug réel corrigé (voir CLAUDE.md) : le set_code YGOPRODeck n'est
+            pas toujours unique, ce qui pouvait faire importer les mauvaises
+            cartes sous un set déjà importé (rapporté par l'utilisateur :
+            booster déjà ouvert en production avec les mauvaises cartes).
+            Ce bandeau ne liste QUE les sets déjà importés concernés — pas la
+            centaine de codes partagés jamais importés localement, qui n'ont
+            jamais pu contenir de mauvaises données. */}
+        {collidedImportedSets.length > 0 && (
+          <div className="mb-3 rounded-md border border-amber-700 bg-amber-950/30 p-2.5 text-xs">
+            <p className="mb-1.5 text-amber-400">
+              ⚠️ {collidedImportedSets.length} set{collidedImportedSets.length > 1 ? 's' : ''} déjà importé
+              {collidedImportedSets.length > 1 ? 's' : ''} partage{collidedImportedSets.length > 1 ? 'nt' : ''} son code avec un
+              autre set — les cartes importées peuvent être celles du mauvais set.
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleReimportAll()}
+              disabled={reimportingAll}
+              className="rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-arena-950 transition hover:bg-amber-500 disabled:opacity-50"
+            >
+              {reimportingAll ? 'Réimport en cours...' : `Réimporter ces ${collidedImportedSets.length} set${collidedImportedSets.length > 1 ? 's' : ''}`}
+            </button>
+          </div>
+        )}
+
         <div className="max-h-80 space-y-1 overflow-y-auto font-mono text-xs">
           {!loadingSets && sets.length === 0 && (
             <p className="text-neutral-500">Aucun set trouvé, essayez une autre recherche.</p>
@@ -160,7 +215,24 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
                 </div>
               </div>
               {set.imported ? (
-                <span className="shrink-0 rounded border border-emerald-700 px-2 py-1 text-emerald-400">Importé</span>
+                <div className="flex shrink-0 flex-col items-end gap-0.5">
+                  <span
+                    className={`rounded border px-2 py-1 ${
+                      set.had_code_collision ? 'border-amber-600 text-amber-400' : 'border-emerald-700 text-emerald-400'
+                    }`}
+                    title={set.had_code_collision ? 'Ce code de set était partagé par un autre set lors de la dernière synchro — un réimport est recommandé.' : undefined}
+                  >
+                    {set.had_code_collision ? '⚠️ Code partagé' : 'Importé'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleImport(set)}
+                    disabled={importingCode === set.set_code}
+                    className="text-[10px] text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
+                  >
+                    {importingCode === set.set_code ? 'Réimport...' : 'Réimporter'}
+                  </button>
+                </div>
               ) : (
                 <button
                   type="button"

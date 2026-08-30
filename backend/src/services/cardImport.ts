@@ -45,13 +45,23 @@ function decodeSetName(name: string): string {
  * reste invisible — un vrai besoin de le voir séparément demanderait de
  * cesser d'utiliser `set_code` seul comme identifiant partout dans l'app,
  * un chantier plus large délibérément pas fait ici.
+ *
+ * `had_code_collision` (sur chaque `CardSet`) et `collidedSetCodes` (valeur
+ * de retour) : demande utilisateur de suivi — après avoir compris le bug via
+ * un booster LOB déjà ouvert en PRODUCTION avec les mauvaises cartes, il faut
+ * pouvoir repérer ET réimporter les sets concernés sans avoir à deviner
+ * lesquels parmi les ~600 sets connus. Recalculé à CHAQUE sync (pas un état
+ * figé une fois posé) : reflète toujours la réalité de la dernière requête à
+ * cardsets.php.
  */
-export async function syncCardSets(): Promise<number> {
+export async function syncCardSets(): Promise<{ syncedCount: number; collidedSetCodes: string[] }> {
   const sets = await fetchCardSets();
 
   const bestByCode = new Map<string, (typeof sets)[number]>();
+  const collidedCodes = new Set<string>();
   for (const set of sets) {
     const current = bestByCode.get(set.set_code);
+    if (current) collidedCodes.add(set.set_code);
     if (!current || set.num_of_cards > current.num_of_cards) {
       bestByCode.set(set.set_code, set);
     }
@@ -67,6 +77,7 @@ export async function syncCardSets(): Promise<number> {
             num_of_cards: set.num_of_cards,
             tcg_date: set.tcg_date ?? null,
             set_image: set.set_image ?? null,
+            had_code_collision: collidedCodes.has(set.set_code),
           },
         },
         { upsert: true },
@@ -74,7 +85,7 @@ export async function syncCardSets(): Promise<number> {
     ),
   );
 
-  return bestByCode.size;
+  return { syncedCount: bestByCode.size, collidedSetCodes: [...collidedCodes] };
 }
 
 /**

@@ -92,6 +92,12 @@ export interface ApiCardSet {
   imported: boolean;
   imported_at: string | null;
   is_custom: boolean;
+  // Voir CLAUDE.md — bug réel du set_code YGOPRODeck non-unique (ex. "LOB"
+  // partagé entre le vrai set et sa réédition 25th Anniversary) : true si ce
+  // set_code était partagé par 2+ sets lors de la dernière synchronisation.
+  // Un set déjà importé (imported: true) avec ce flag peut porter les
+  // mauvaises cartes et mérite un réimport.
+  had_code_collision: boolean;
 }
 
 export interface ApiCardSetRef {

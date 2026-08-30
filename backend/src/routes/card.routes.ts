@@ -27,6 +27,11 @@ function toCardSetDto(set: CardSetDocument) {
     imported: set.imported_at !== null,
     imported_at: set.imported_at,
     is_custom: set.is_custom,
+    // Voir syncCardSets : true si ce set_code était partagé par 2+ sets
+    // réellement différents lors de la dernière synchronisation — un set déjà
+    // importé (imported_at non-null) avec ce flag pourrait porter les
+    // mauvaises cartes suite à ce bug et mérite un réimport.
+    had_code_collision: set.had_code_collision,
   };
 }
 

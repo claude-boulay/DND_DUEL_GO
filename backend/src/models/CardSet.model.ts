@@ -12,6 +12,14 @@ export interface CardSetAttrs {
   // Booster custom créé par un MJ (par opposition à un set officiel YGOPRODeck).
   is_custom: boolean;
   owner_id: Types.ObjectId | null;
+  // true si, lors de la DERNIÈRE synchronisation, ce set_code était partagé
+  // par 2+ sets réellement différents côté YGOPRODeck (voir syncCardSets —
+  // bug réel corrigé : "LOB" partagé entre le vrai set et sa réédition 25th
+  // Anniversary). Recalculé à chaque sync (jamais un état figé) : un code
+  // qui cesse de collisionner un jour se voit remis à false automatiquement.
+  // Sert à repérer, côté GM, quels sets DÉJÀ IMPORTÉS localement pourraient
+  // porter les mauvaises cartes suite à ce bug et méritent un réimport.
+  had_code_collision: boolean;
 }
 
 export type CardSetDocument = HydratedDocument<CardSetAttrs>;
@@ -28,6 +36,7 @@ const cardSetSchema = new Schema<CardSetAttrs>(
     imported_at: { type: Date, default: null },
     is_custom: { type: Boolean, default: false },
     owner_id: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    had_code_collision: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
