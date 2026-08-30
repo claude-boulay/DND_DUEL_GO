@@ -444,7 +444,6 @@ function PurchaseWidget({
   const [characterId, setCharacterId] = useState(buyableCharacters[0]?.id ?? '');
   const [quantity, setQuantity] = useState(1);
   const [haggling, setHaggling] = useState(false);
-  const [modifier, setModifier] = useState(0);
   // Négociation déjà lancée (roll fait), pas encore utilisée pour acheter —
   // sépare le jet de la confirmation d'achat pour laisser le temps de voir
   // le résultat et de dépenser un reroll de Chance avant de valider.
@@ -467,7 +466,6 @@ function PurchaseWidget({
     try {
       const { haggle, remaining_luck_rerolls } = await api.haggleMerchantItem(token, merchantId, item.id, {
         character_id: activeCharacterId,
-        modifier,
       });
       setPendingHaggle(haggle);
       setRerollsLeft(remaining_luck_rerolls);
@@ -500,7 +498,7 @@ function PurchaseWidget({
       const data = await api.purchaseMerchantItem(token, merchantId, item.id, {
         character_id: activeCharacterId,
         quantity,
-        haggle: haggling && !pendingHaggle ? { modifier } : undefined,
+        haggle: haggling && !pendingHaggle ? {} : undefined,
         haggle_id: pendingHaggle?.id,
       });
       onPurchased(data);
@@ -557,18 +555,6 @@ function PurchaseWidget({
             }}
           />
           Marchander (dé {item.haggle_dc}+ → -{item.haggle_discount_percent}%)
-        </label>
-      )}
-
-      {haggling && !pendingHaggle && (
-        <label className="flex items-center gap-1.5 text-neutral-400">
-          Modificateur
-          <input
-            type="number"
-            value={modifier}
-            onChange={(e) => setModifier(Number(e.target.value))}
-            className="w-14 rounded border border-arena-600 bg-arena-800 px-1.5 py-1 text-right text-neutral-100"
-          />
         </label>
       )}
 

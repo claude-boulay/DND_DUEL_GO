@@ -16,6 +16,16 @@ export interface ActionLogEntry {
   character_name: string | null;
   sides: number;
   result: number;
+  // Modificateur automatique de la stat choisie (voir sockets/index.ts
+  // roll_dice) : +1 tous les 2 points au-dessus de 10 (CLAUDE.md, même
+  // formule que les rerolls de Chance) — null si le jet n'est lié à aucune
+  // stat (jet "classique" sans personnage/stat sélectionnée).
+  modifier: number | null;
+  // Nom de la stat en anglais (history/perception/intelligence/charisma/luck),
+  // null si aucune stat choisie — voir lib/pointBuy.ts StatName côté front.
+  stat: string | null;
+  // result + modifier, déjà calculé côté serveur — null si modifier est null.
+  total: number | null;
   is_reroll: boolean;
   previous_result: number | null;
   rerolls_remaining: number | null;
@@ -60,7 +70,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   ping_server: (payload: { sent_at: number }) => void;
   join_game: (payload: { token: string; code: string }) => void;
-  roll_dice: (payload: { sides?: number; character_id?: string; label?: string }) => void;
+  roll_dice: (payload: { sides?: number; character_id?: string; label?: string; stat?: string }) => void;
   reroll_dice: (payload: { roll_id: string }) => void;
 }
 

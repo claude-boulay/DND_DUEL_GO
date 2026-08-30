@@ -13,6 +13,8 @@ import { isSessionGm, isSessionMember } from '../utils/sessionMembership';
 import { loadSessionOrThrow } from '../utils/loaders';
 import { rollDie } from '../utils/dice';
 import { broadcastSessionResourceChanged } from '../utils/broadcast';
+import { effectiveStat } from '../utils/luck';
+import { abilityModifier } from '../utils/abilityScore';
 import { consumeHaggle, getHaggle, recordHaggle, updateHaggleRoll, type PendingHaggle } from '../utils/haggleStore';
 
 export const merchantRouter = Router();
@@ -284,13 +286,21 @@ function toHaggleDto(haggle: PendingHaggle) {
 
 const haggleRollSchema = z.object({
   character_id: z.string(),
-  // Le DC à battre et la remise en cas de succès sont désormais configurés
-  // PAR ARTICLE par le MJ (voir Merchant.model.ts, addItemSchema plus haut) —
-  // seul le modificateur reste décidé au moment du jet (contexte du
-  // personnage/scène, pas nécessairement le modificateur de Charisme brut de
-  // la fiche).
-  modifier: z.number().int().min(-20).max(30),
 });
+
+/**
+ * Modificateur de marchandage = modificateur de Charisme du personnage,
+ * calculé côté serveur (jamais fourni par le client — "never trust client
+ * state", CLAUDE.md §4) : +1 tous les 2 points au-dessus de 10 dans la
+ * Charisme EFFECTIVE (avec le bonus de niveau, voir effectiveStat).
+ * Remplace l'ancien modificateur libre saisi par le joueur à chaque
+ * marchandage — demande utilisateur explicite (feedback de ses amis) pour
+ * automatiser ce calcul, cohérent avec ce qui existe déjà pour les rerolls
+ * de Chance (même formule, voir maxLuckRerolls).
+ */
+function haggleModifierFor(character: CharacterDocument): number {
+  return abilityModifier(effectiveStat(character.stats.charisma, character.level));
+}
 
 /**
  * Lance le marchandage SANS acheter — sépare le jet de la confirmation
@@ -323,7 +333,7 @@ merchantRouter.post(
       merchantId: merchant._id.toString(),
       itemId: item._id.toString(),
       characterId: character._id.toString(),
-      modifier: body.modifier,
+      modifier: haggleModifierFor(character),
       discountPercent: item.haggle_discount_percent,
       dc: item.haggle_dc,
       roll,
@@ -371,11 +381,12 @@ merchantRouter.post(
 const purchaseSchema = z.object({
   character_id: z.string(),
   quantity: z.number().int().min(1).max(99).default(1),
-  // Marchandage en un seul appel (pas de reroll possible) : seul le
-  // modificateur appliqué au d20 reste à fournir, le DC et la remise sont
-  // ceux configurés par le MJ sur CET article (voir haggle_dc/
-  // haggle_discount_percent, Merchant.model.ts). Absent = achat plein tarif.
-  haggle: z.object({ modifier: z.number().int().min(-20).max(30) }).optional(),
+  // Marchandage en un seul appel (pas de reroll possible) : juste "je
+  // marchande ou pas" — le modificateur (Charisme du personnage) et la
+  // remise sont calculés/configurés côté serveur (voir haggleModifierFor,
+  // haggle_dc/haggle_discount_percent sur Merchant.model.ts). Absent = achat
+  // plein tarif.
+  haggle: z.object({}).optional(),
   // Négociation déjà lancée via POST .../haggle (+ éventuels rerolls de
   // Chance, voir POST .../haggle/:haggleId/reroll) — prioritaire sur
   // `haggle` si les deux sont fournis : reflète le résultat déjà VU et
@@ -435,7 +446,7 @@ merchantRouter.post(
       if (item.haggle_dc === null || item.haggle_discount_percent === null) {
         throw new AppError(400, "Cet article n'est pas négociable (le MJ n'a pas configuré de DC/remise)", 'not_negotiable');
       }
-      const { modifier } = body.haggle;
+      const modifier = haggleModifierFor(character);
       const roll = rollDie(20);
       const total = roll + modifier;
       const success = total >= item.haggle_dc;

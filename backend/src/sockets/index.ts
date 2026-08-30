@@ -9,6 +9,9 @@ import { User } from '../models/User.model';
 import { GameSession } from '../models/GameSession.model';
 import { Character } from '../models/Character.model';
 import { isSessionGm, isSessionMember } from '../utils/sessionMembership';
+import { effectiveStat } from '../utils/luck';
+import { abilityModifier } from '../utils/abilityScore';
+import { STAT_NAMES } from '../utils/pointBuy';
 import { recordRoll, getRoll, updateRollResult } from './rollStore';
 import { appendAction, getRecentActions } from './actionLog';
 import type {
@@ -47,6 +50,12 @@ const rollDiceSchema = z.object({
   sides: z.number().int().min(2).max(1000).optional(),
   character_id: z.string().optional(),
   label: z.string().max(200).optional(),
+  // Choix de la stat qui gouverne ce jet (demande utilisateur : "dé de
+  // charisme, histoire..."). Implique un d20 (convention de test de
+  // caractéristique) : `sides`, s'il est fourni en plus, est ignoré tant
+  // qu'une stat est choisie. Nécessite character_id (pas de stat sans
+  // personnage à qui elle appartient).
+  stat: z.enum(STAT_NAMES as [string, ...string[]]).optional(),
 });
 
 const rerollDiceSchema = z.object({ roll_id: z.string().min(1) });
@@ -104,7 +113,8 @@ export function createSocketServer(httpServer: HttpServer): GameServer {
     socket.on('roll_dice', async (payload) => {
       try {
         const sessionId = requireJoinedSession(socket);
-        const { sides = 20, character_id, label } = rollDiceSchema.parse(payload);
+        const { sides: requestedSides = 20, character_id, label, stat } = rollDiceSchema.parse(payload);
+        if (stat && !character_id) throw new Error("Un personnage est nécessaire pour lancer un dé lié à une statistique");
 
         let character = null;
         if (character_id) {
@@ -120,8 +130,14 @@ export function createSocketServer(httpServer: HttpServer): GameServer {
           if (!isOwner && !isGm) throw new Error('Vous ne pouvez pas lancer les dés pour ce personnage');
         }
 
+        // Un jet lié à une stat est toujours un d20 (convention de test de
+        // caractéristique) — `sides` n'a alors plus de sens à choisir.
+        const sides = stat ? 20 : requestedSides;
+        const modifier =
+          stat && character ? abilityModifier(effectiveStat(character.stats[stat as keyof typeof character.stats], character.level)) : null;
+
         const result = rollDie(sides);
-        const pending = recordRoll(sessionId, character ? character._id.toString() : null, sides, result);
+        const pending = recordRoll(sessionId, character ? character._id.toString() : null, sides, result, modifier, stat ?? null);
 
         const entry: ActionLogEntry = {
           roll_id: pending.rollId,
@@ -131,6 +147,9 @@ export function createSocketServer(httpServer: HttpServer): GameServer {
           character_name: character ? character.name : null,
           sides,
           result,
+          modifier,
+          stat: stat ?? null,
+          total: modifier !== null ? result + modifier : null,
           is_reroll: false,
           previous_result: null,
           rerolls_remaining: character ? character.remaining_luck_rerolls : null,
@@ -185,6 +204,9 @@ export function createSocketServer(httpServer: HttpServer): GameServer {
           character_name: updated.name,
           sides: pending.sides,
           result: newResult,
+          modifier: pending.modifier,
+          stat: pending.stat,
+          total: pending.modifier !== null ? newResult + pending.modifier : null,
           is_reroll: true,
           previous_result: previousResult,
           rerolls_remaining: updated.remaining_luck_rerolls,

@@ -6,6 +6,11 @@ export interface PendingRoll {
   characterId: string | null;
   sides: number;
   result: number;
+  // Modificateur de stat + nom de la stat (voir sockets/index.ts) figés au
+  // moment du premier jet — un reroll ré-utilise CES valeurs (le personnage
+  // ne change pas entre-temps), pas besoin de re-résoudre la stat d'origine.
+  modifier: number | null;
+  stat: string | null;
   createdAt: number;
 }
 
@@ -22,9 +27,16 @@ function pruneExpired(): void {
   }
 }
 
-export function recordRoll(sessionId: string, characterId: string | null, sides: number, result: number): PendingRoll {
+export function recordRoll(
+  sessionId: string,
+  characterId: string | null,
+  sides: number,
+  result: number,
+  modifier: number | null = null,
+  stat: string | null = null,
+): PendingRoll {
   pruneExpired();
-  const roll: PendingRoll = { rollId: randomUUID(), sessionId, characterId, sides, result, createdAt: Date.now() };
+  const roll: PendingRoll = { rollId: randomUUID(), sessionId, characterId, sides, result, modifier, stat, createdAt: Date.now() };
   rolls.set(roll.rollId, roll);
   return roll;
 }

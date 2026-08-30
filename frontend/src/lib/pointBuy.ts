@@ -42,3 +42,18 @@ export const POINT_BUY_BUDGET = 27;
 export function totalPointBuyCost(stats: CharacterStats): number {
   return STAT_NAMES.reduce((sum, stat) => sum + (stats[stat] - STAT_MIN), 0);
 }
+
+/**
+ * Copie de backend/src/utils/luck.ts effectiveStat + abilityScore.ts
+ * abilityModifier — juste pour un aperçu client avant de lancer le dé (voir
+ * DicePanel.tsx) ; le serveur recalcule et reste seul faisant foi (jamais
+ * transmis par le client, voir sockets/index.ts roll_dice).
+ */
+export function effectiveStat(base: number, level: number): number {
+  return base + (level - 1) * 0.5;
+}
+
+/** Modificateur D&D standard : floor((valeur - 10) / 2). */
+export function abilityModifier(effectiveValue: number): number {
+  return Math.floor((effectiveValue - 10) / 2);
+}

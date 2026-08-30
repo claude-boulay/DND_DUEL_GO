@@ -311,44 +311,54 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
   });
 
   it("marchandage réussi : la remise CONFIGURÉE SUR L'ARTICLE (30%, pas retapée par le joueur) est appliquée au prix", async () => {
-    // Modificateur choisi par le MJ assez haut pour garantir le succès contre
-    // le DC de l'article (5) quel que soit le jet (min 1+15=16 >= 5).
+    // Le modificateur n'est plus fourni par le joueur : calculé côté serveur
+    // depuis la Charisme du personnage (20 -> modificateur +5, voir
+    // haggleModifierFor/abilityModifier). Contre le DC de l'article (5), le
+    // pire jet possible (1) donne déjà 1+5=6 >= 5 : succès garanti.
     const res = await request(app)
       .post(`/api/merchants/${merchantId}/items/${cardItemId}/purchase`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, quantity: 1, haggle: { modifier: 15 } })
+      .send({ character_id: characterId, quantity: 1, haggle: {} })
       .expect(200);
 
-    expect(res.body.purchase.haggle).toMatchObject({ dc: 5, modifier: 15, success: true, discount_percent: 30 });
+    expect(res.body.purchase.haggle).toMatchObject({ dc: 5, modifier: 5, success: true, discount_percent: 30 });
     expect(res.body.purchase.unit_price).toBe(70); // ceil(100 * (1 - 0.30))
     expect(res.body.character.collection).toHaveLength(2);
   });
 
   it("marchandage raté : la remise configurée sur l'article ne compte pas, prix plein appliqué", async () => {
-    // Modificateur assez bas pour garantir l'échec quel que soit le jet
-    // (max 20-20=0 < DC de l'article, 5).
+    // Le modificateur de Charisme de ce personnage (+5) rend un échec contre
+    // le DC 5 de cardItemId impossible à garantir (même un jet de 1 réussit).
+    // Article dédié avec un DC au plafond autorisé (30) : même le meilleur
+    // jet possible (20) plus le modificateur (+5) = 25 < 30, échec garanti.
+    const highDcItem = await request(app)
+      .post(`/api/merchants/${merchantId}/items`)
+      .set('Authorization', `Bearer ${gm.token}`)
+      .send({ item_type: 'card', card_id: cardMongoId, price: 100, stock: 5, haggle_dc: 30, haggle_discount_percent: 30 })
+      .expect(201);
+    const highDcItemId = highDcItem.body.merchant.items[highDcItem.body.merchant.items.length - 1].id as string;
+
     const res = await request(app)
-      .post(`/api/merchants/${merchantId}/items/${cardItemId}/purchase`)
+      .post(`/api/merchants/${merchantId}/items/${highDcItemId}/purchase`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, quantity: 1, haggle: { modifier: -20 } })
+      .send({ character_id: characterId, quantity: 1, haggle: {} })
       .expect(200);
 
-    expect(res.body.purchase.haggle).toMatchObject({ dc: 5, modifier: -20, success: false, discount_percent: 0 });
+    expect(res.body.purchase.haggle).toMatchObject({ dc: 30, modifier: 5, success: false, discount_percent: 0 });
     expect(res.body.purchase.unit_price).toBe(100); // prix plein, la remise configurée ne s'applique qu'au succès
-    expect(res.body.character.collection).toHaveLength(3);
   });
 
   it("un article sans haggle_dc configuré n'est pas négociable : POST .../haggle et l'achat inline avec `haggle` sont tous les deux refusés", async () => {
     await request(app)
       .post(`/api/merchants/${merchantId}/items/${boosterItemId}/haggle`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, modifier: 10 })
+      .send({ character_id: characterId })
       .expect(400);
 
     await request(app)
       .post(`/api/merchants/${merchantId}/items/${boosterItemId}/purchase`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, quantity: 1, haggle: { modifier: 10 } })
+      .send({ character_id: characterId, quantity: 1, haggle: {} })
       .expect(400);
   });
 
@@ -513,20 +523,24 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
     // (8, sous le seuil de la formule CLAUDE.md §3.3 — 0 reroll naturel).
     await Character.updateOne({ _id: characterId }, { $set: { remaining_luck_rerolls: 1 } });
 
-    // Modificateur garanti en échec (max total = 20-20=0 < DC 5, quel que
-    // soit le jet réel) : le premier jet ET le reroll échouent tous les
-    // deux de façon déterministe — la remise négociée ne s'applique jamais,
-    // seul le comptage du reroll et la consommation de la négociation sont
-    // testés ici (pas l'issue du hasard, déjà couverte par les tests
-    // "marchandage réussi/raté" plus haut).
-    // stockTestItemId (prix 10, stock 1) plutôt que cardItemId : ce dernier
-    // est déjà à sec (stock 3 entièrement consommé par les 3 achats plus
-    // haut) — stockTestItemId, lui, n'a encore jamais été acheté avec
-    // succès (les tests le concernant ne font que vérifier le refus 409).
+    // Le modificateur de Charisme de ce personnage (+5, voir les tests
+    // "marchandage réussi/raté" plus haut) rend un échec garanti impossible
+    // contre un DC bas — article dédié avec le DC au plafond autorisé (30) :
+    // même le meilleur jet (20) + 5 = 25 < 30, échec garanti pour le jet ET
+    // le reroll — seuls le comptage du reroll et la consommation de la
+    // négociation sont testés ici (pas l'issue du hasard, déjà couverte par
+        // les tests "marchandage réussi/raté" plus haut).
+    const failItem = await request(app)
+      .post(`/api/merchants/${merchantId}/items`)
+      .set('Authorization', `Bearer ${gm.token}`)
+      .send({ item_type: 'card', card_id: cardMongoId, price: 10, stock: 5, haggle_dc: 30, haggle_discount_percent: 50 })
+      .expect(201);
+    const failItemId = failItem.body.merchant.items[failItem.body.merchant.items.length - 1].id as string;
+
     const rolled = await request(app)
-      .post(`/api/merchants/${merchantId}/items/${stockTestItemId}/haggle`)
+      .post(`/api/merchants/${merchantId}/items/${failItemId}/haggle`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, modifier: -20 })
+      .send({ character_id: characterId })
       .expect(201);
     expect(rolled.body.haggle.success).toBe(false);
     expect(rolled.body.remaining_luck_rerolls).toBe(1);
@@ -537,7 +551,7 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
       .set('Authorization', `Bearer ${player.token}`)
       .send({})
       .expect(200);
-    expect(rerolled.body.haggle.success).toBe(false); // même modificateur -20, échec garanti aussi après reroll
+    expect(rerolled.body.haggle.success).toBe(false); // même DC 30 hors de portée, échec garanti aussi après reroll
     expect(rerolled.body.remaining_luck_rerolls).toBe(0);
 
     // Plus de reroll disponible pour ce personnage : refusé.
@@ -551,17 +565,17 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
     const collectionBefore = (before.body.character.collection as string[]).length;
 
     const purchased = await request(app)
-      .post(`/api/merchants/${merchantId}/items/${stockTestItemId}/purchase`)
+      .post(`/api/merchants/${merchantId}/items/${failItemId}/purchase`)
       .set('Authorization', `Bearer ${player.token}`)
       .send({ character_id: characterId, quantity: 1, haggle_id: haggleId })
       .expect(200);
     expect(purchased.body.purchase.haggle).toMatchObject({ success: false, discount_percent: 0 });
-    expect(purchased.body.purchase.unit_price).toBe(10); // prix plein (stockTestItemId), l'échec est resté un échec
+    expect(purchased.body.purchase.unit_price).toBe(10); // prix plein, l'échec est resté un échec
     expect(purchased.body.character.collection).toHaveLength(collectionBefore + 1);
 
     // La négociation vient d'être consommée par cet achat : pas rejouable.
     await request(app)
-      .post(`/api/merchants/${merchantId}/items/${stockTestItemId}/purchase`)
+      .post(`/api/merchants/${merchantId}/items/${failItemId}/purchase`)
       .set('Authorization', `Bearer ${player.token}`)
       .send({ character_id: characterId, quantity: 1, haggle_id: haggleId })
       .expect(404);
@@ -571,14 +585,14 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
     await request(app)
       .post(`/api/merchants/${merchantId}/items/${cardItemId}/haggle`)
       .set('Authorization', `Bearer ${outsider.token}`)
-      .send({ character_id: characterId, modifier: 0 })
+      .send({ character_id: characterId })
       .expect(403);
 
     await Character.updateOne({ _id: characterId }, { $set: { remaining_luck_rerolls: 1 } });
     const rolled = await request(app)
       .post(`/api/merchants/${merchantId}/items/${cardItemId}/haggle`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, modifier: 0 })
+      .send({ character_id: characterId })
       .expect(201);
 
     await request(app)

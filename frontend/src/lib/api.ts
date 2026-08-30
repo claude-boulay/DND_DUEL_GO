@@ -724,11 +724,13 @@ export const api = {
       token,
     ),
 
+  // haggle: {} (juste "je marchande") suffit — le modificateur (Charisme du
+  // personnage) est désormais calculé côté serveur, jamais fourni ici.
   purchaseMerchantItem: (
     token: string,
     merchantId: string,
     itemId: string,
-    input: { character_id: string; quantity?: number; haggle?: { modifier: number }; haggle_id?: string },
+    input: { character_id: string; quantity?: number; haggle?: object; haggle_id?: string },
   ) =>
     request<ApiPurchaseResponse>(
       `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}/purchase`,
@@ -736,12 +738,12 @@ export const api = {
       token,
     ),
 
-  /** Lance le marchandage SANS acheter — le résultat peut être relancé (Chance) avant de confirmer l'achat via purchaseMerchantItem's haggle_id. */
+  /** Lance le marchandage SANS acheter — le résultat peut être relancé (Chance) avant de confirmer l'achat via purchaseMerchantItem's haggle_id. Le modificateur (Charisme du personnage) est calculé côté serveur. */
   haggleMerchantItem: (
     token: string,
     merchantId: string,
     itemId: string,
-    input: { character_id: string; modifier: number },
+    input: { character_id: string },
   ) =>
     request<{ haggle: ApiPendingHaggle; remaining_luck_rerolls: number }>(
       `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}/haggle`,

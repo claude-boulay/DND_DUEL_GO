@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { socket } from '../lib/socket';
 import type { ActionLogEntry } from '../types/socket';
 import type { ApiCharacter, ApiSession } from '../lib/api';
+import { STAT_LABELS, STAT_NAMES, abilityModifier, effectiveStat, type StatName } from '../lib/pointBuy';
 
 interface DicePanelProps {
   token: string;
@@ -13,6 +14,10 @@ interface DicePanelProps {
 }
 
 const DICE_SIDES = [2, 4, 6, 8, 10, 12, 20, 100];
+
+function formatModifier(modifier: number): string {
+  return modifier >= 0 ? `+${modifier}` : String(modifier);
+}
 
 function formatDieLabel(sides: number): string {
   return sides === 2 ? 'Pièce (Pile/Face)' : `d${sides}`;
@@ -28,10 +33,20 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
   const [log, setLog] = useState<ActionLogEntry[]>([]);
   const [sides, setSides] = useState(20);
   const [characterId, setCharacterId] = useState('');
+  // Stat choisie (demande utilisateur : "dé de charisme, histoire...") —
+  // force un d20 et fait calculer le modificateur automatiquement côté
+  // serveur (voir sockets/index.ts). '' = jet classique, comme avant.
+  const [stat, setStat] = useState<StatName | ''>('');
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const rollableCharacters = characters.filter((c) => session.is_gm || c.user_id === currentUserId);
+  const selectedCharacter = characters.find((c) => c.id === characterId) ?? null;
+  // Aperçu client uniquement (le serveur recalcule et reste seul faisant foi,
+  // voir CLAUDE.md §4 "never trust client state") : montrer au joueur ce à
+  // quoi s'attendre avant de cliquer sur "Lancer".
+  const previewModifier =
+    stat && selectedCharacter ? abilityModifier(effectiveStat(selectedCharacter.stats[stat], selectedCharacter.level)) : null;
 
   // Ref plutôt que dépendance d'effet : App ne mémoïse pas ce callback, l'inclure
   // dans les deps ferait rejoindre le salon à chaque re-render.
@@ -81,7 +96,7 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
 
   const rollDice = () => {
     setError(null);
-    socket.emit('roll_dice', { sides, character_id: characterId || undefined });
+    socket.emit('roll_dice', { sides, character_id: characterId || undefined, stat: stat || undefined });
   };
 
   const lastEntry = log[log.length - 1];
@@ -108,21 +123,30 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
       </header>
 
       <div className="mb-3 flex flex-wrap gap-2">
-        <select
-          value={sides}
-          onChange={(e) => setSides(Number(e.target.value))}
-          className="rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
-        >
-          {DICE_SIDES.map((n) => (
-            <option key={n} value={n}>
-              {formatDieLabel(n)}
-            </option>
-          ))}
-        </select>
+        {/* Une stat choisie force un d20 (test de caractéristique) : le
+            sélecteur de faces devient inutile, remplacé par l'indication. */}
+        {stat ? (
+          <span className="rounded-md border border-arena-700 bg-arena-800 px-2 py-1.5 text-sm text-neutral-400">d20</span>
+        ) : (
+          <select
+            value={sides}
+            onChange={(e) => setSides(Number(e.target.value))}
+            className="rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
+          >
+            {DICE_SIDES.map((n) => (
+              <option key={n} value={n}>
+                {formatDieLabel(n)}
+              </option>
+            ))}
+          </select>
+        )}
 
         <select
           value={characterId}
-          onChange={(e) => setCharacterId(e.target.value)}
+          onChange={(e) => {
+            setCharacterId(e.target.value);
+            if (!e.target.value) setStat(''); // pas de personnage -> pas de stat possible (voir sockets/index.ts)
+          }}
           className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
         >
           <option value="">Sans personnage</option>
@@ -132,6 +156,24 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
             </option>
           ))}
         </select>
+
+        <select
+          value={stat}
+          onChange={(e) => setStat(e.target.value as StatName | '')}
+          disabled={!characterId}
+          title={!characterId ? 'Choisissez un personnage pour lier une stat au jet' : undefined}
+          className="rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500 disabled:opacity-40"
+        >
+          <option value="">Jet classique</option>
+          {STAT_NAMES.map((s) => (
+            <option key={s} value={s}>
+              {STAT_LABELS[s]}
+            </option>
+          ))}
+        </select>
+        {previewModifier !== null && (
+          <span className="self-center text-xs text-neutral-500">modificateur {formatModifier(previewModifier)}</span>
+        )}
 
         <button
           type="button"
@@ -176,13 +218,20 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
 }
 
 function DiceLogRow({ entry }: { entry: ActionLogEntry }) {
+  const statLabel = entry.stat && entry.stat in STAT_LABELS ? STAT_LABELS[entry.stat as StatName] : entry.stat;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-neutral-500">{new Date(entry.rolled_at).toLocaleTimeString()}</span>
       <span className="text-neutral-200">{entry.username}</span>
       {entry.character_name && <span className="text-accent-400">({entry.character_name})</span>}
       <span>
-        {formatDieLabel(entry.sides)} → <span className="font-bold text-neutral-100">{formatRollResult(entry.sides, entry.result)}</span>
+        {formatDieLabel(entry.sides)}
+        {entry.modifier !== null && `${formatModifier(entry.modifier)}`} →{' '}
+        <span className="font-bold text-neutral-100">
+          {formatRollResult(entry.sides, entry.result)}
+          {entry.total !== null && ` = ${entry.total}`}
+        </span>
+        {statLabel && <span className="text-neutral-500"> ({statLabel})</span>}
       </span>
       {entry.is_reroll && <span className="text-neutral-500">(reroll, était {formatRollResult(entry.sides, entry.previous_result ?? 0)})</span>}
     </div>
