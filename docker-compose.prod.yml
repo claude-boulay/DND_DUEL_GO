@@ -29,8 +29,17 @@ services:
   # le port 27017 restait exposé côté hôte malgré ce bloc). `!reset` est la
   # syntaxe Compose Specification qui vide réellement l'attribut hérité — même
   # correctif appliqué à `frontend` ci-dessous, pour la même raison.
+  # MONGO_INITDB_ROOT_USERNAME/PASSWORD (image officielle Mongo) : ne créent
+  # l'utilisateur root qu'au tout premier démarrage sur un volume `mongo_data`
+  # VIDE — voir .env.example pour ce que ça implique sur un volume déjà
+  # peuplé. `authSource=admin` côté `backend.MONGO_URI` ci-dessous est
+  # obligatoire pour s'authentifier avec cet utilisateur (il vit dans la base
+  # `admin`, pas dans `${MONGO_DB}`).
   mongo:
     ports: !reset []
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
 
   backend:
     image: ghcr.io/claude-boulay/dnd_duel_go-backend:${IMAGE_TAG:-latest}
@@ -40,6 +49,11 @@ services:
       target: prod
     environment:
       NODE_ENV: production
+      # Remplace l'URI sans authentification hérité de docker-compose.yml —
+      # une seule clé réécrite dans cette map (fusion par clé, contrairement
+      # aux listes ports/volumes plus haut : pas besoin de !reset/!override
+      # ici, déjà vérifié pour NODE_ENV avant l'ajout de cette ligne).
+      MONGO_URI: mongodb://${MONGO_ROOT_USER:-admin}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DB:-yugioh_dnd}?authSource=admin
     # Plus exposé directement sur l'hôte non plus (même logique que `frontend`
     # ci-dessous) : `frontend` (Nginx) proxifie déjà /api, /uploads et
     # /socket.io vers backend:3000 EN INTERNE (voir frontend/nginx.conf) —

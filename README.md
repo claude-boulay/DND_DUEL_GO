@@ -192,7 +192,11 @@ Actions) suffit pour publier sur GHCR.
 ## À faire avant toute mise en ligne
 
 - [ ] Remplacer `JWT_SECRET` par une valeur aléatoire forte.
-- [ ] Activer l'authentification MongoDB (le dev tourne sans identifiants).
+- [ ] Renseigner `MONGO_ROOT_USER`/`MONGO_ROOT_PASSWORD` dans `.env` (le dev
+      tourne sans identifiants ; `docker-compose.prod.yml` crée l'utilisateur
+      root Mongo et bascule `MONGO_URI` avec authentification — voir
+      `.env.example` pour la limite importante : ne prend effet qu'au tout
+      premier démarrage sur un volume `mongo_data` vide).
 - [ ] Passer `CORS_ORIGIN` sur le domaine réel.
 - [ ] Renseigner `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE`/`SMTP_USER`/`SMTP_PASS`/`SMTP_FROM`
       (mot de passe oublié) — sans ça le code de réinitialisation part seulement
