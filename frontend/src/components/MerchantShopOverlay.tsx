@@ -140,6 +140,35 @@ export function MerchantShopOverlay({
   );
 }
 
+/**
+ * Zoom au survol centré au milieu de l'écran, en grand — demande utilisateur
+ * (le zoom en place existant, ex. BoosterContentsPreview ci-dessous, restait
+ * trop petit/coupé en bordure de grille). `pointer-events-none` sur l'overlay
+ * : c'est le survol de la MINIATURE qui déclenche/arrête l'affichage, jamais
+ * l'agrandissement lui-même — il ne doit intercepter aucun clic/survol.
+ */
+function HoverZoomImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <>
+      <img
+        src={src}
+        alt={alt}
+        className={className}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
+      {hovered &&
+        createPortal(
+          <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-10">
+            <img src={src} alt={alt} className="max-h-[85vh] max-w-[85vw] rounded-xl shadow-2xl" />
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
 function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected: boolean; onClick: () => void }) {
   const soldOut = item.stock === 0;
   return (
@@ -152,7 +181,7 @@ function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected
     >
       <div className="min-h-0 flex-1 overflow-hidden bg-arena-800">
         {item.image_url ? (
-          <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+          <HoverZoomImage src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-arena-800 via-arena-900 to-black p-2 text-center">
             <span className="text-[9px] uppercase tracking-widest text-accent-500">{item.set_code}</span>
@@ -406,18 +435,15 @@ function BoosterContentsPreview({ token, setCode }: { token: string; setCode: st
           {!loading && cards && cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte trouvée pour ce set.</p>}
           {!loading && cards && cards.length > 0 && (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
-              {cards.map((card) => (
-                // image_url (pleine résolution), pas _small : un agrandissement
-                // CSS d'une petite miniature serait flou (même pattern que
-                // BoosterOpeningOverlay.tsx/SettledSlot et CardImportPanel.tsx).
-                <img
-                  key={card.id}
-                  src={card.card_images[0]?.image_url}
-                  alt={card.name}
-                  title={card.name}
-                  className="w-full rounded transition duration-150 hover:z-20 hover:scale-[2.5] hover:cursor-zoom-in"
-                />
-              ))}
+              {cards.map((card) =>
+                card.card_images[0] ? (
+                  // image_url (pleine résolution), pas _small : le zoom centré
+                  // (HoverZoomImage) affiche la carte en grand au milieu de
+                  // l'écran au survol (demande utilisateur), une petite
+                  // miniature serait floue une fois agrandie.
+                  <HoverZoomImage key={card.id} src={card.card_images[0].image_url} alt={card.name} className="w-full cursor-zoom-in rounded" />
+                ) : null,
+              )}
             </div>
           )}
         </div>
