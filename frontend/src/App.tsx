@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { socket } from './lib/socket';
 import { useAuth } from './hooks/useAuth';
 import { api, ApiError, type ApiCharacter, type ApiDeck, type ApiSealedBooster, type ApiSession } from './lib/api';
@@ -19,15 +19,6 @@ interface DuelInvite {
   characterName: string;
 }
 
-interface HealthResponse {
-  status: string;
-  service: string;
-  env: string;
-  database: string;
-  uptime_seconds: number;
-  server_time: string;
-}
-
 type Status = 'pending' | 'ok' | 'error';
 
 function StatusDot({ status }: { status: Status }) {
@@ -36,80 +27,24 @@ function StatusDot({ status }: { status: Status }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} aria-hidden />;
 }
 
-function Card({
-  title,
-  status,
-  children,
-}: {
-  title: string;
-  status: Status;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
-      <header className="mb-3 flex items-center gap-2">
-        <StatusDot status={status} />
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{title}</h2>
-      </header>
-      <div className="space-y-1 font-mono text-sm text-neutral-300">{children}</div>
-    </section>
-  );
-}
-
 export default function App() {
   const auth = useAuth();
-
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [healthStatus, setHealthStatus] = useState<Status>('pending');
-  const [healthError, setHealthError] = useState<string | null>(null);
-
-  const [socketId, setSocketId] = useState<string | null>(null);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   const [session, setSession] = useState<ApiSession | null>(null);
   const [characters, setCharacters] = useState<ApiCharacter[]>([]);
   const [charactersError, setCharactersError] = useState<string | null>(null);
 
-  const fetchHealth = useCallback(async () => {
-    setHealthStatus('pending');
-    try {
-      const response = await fetch('/api/health');
-      const data = (await response.json()) as HealthResponse;
-      setHealth(data);
-      setHealthStatus(response.ok ? 'ok' : 'error');
-      setHealthError(response.ok ? null : `HTTP ${response.status}`);
-    } catch (error) {
-      setHealthStatus('error');
-      setHealthError(error instanceof Error ? error.message : String(error));
-    }
-  }, []);
-
+  // Connexion Socket.io de l'app (nécessaire dès le départ : DicePanel,
+  // duel_invite, session_resource_changed... en dépendent tous) — les cartes
+  // de diagnostic santé API / latence socket qui vivaient ici ont été
+  // retirées (pas adapté à un affichage vu par de vrais joueurs), mais la
+  // connexion elle-même reste indispensable.
   useEffect(() => {
-    void fetchHealth();
-  }, [fetchHealth]);
-
-  useEffect(() => {
-    const onHello = (payload: { socket_id: string }) => setSocketId(payload.socket_id);
-    const onPong = (payload: { sent_at: number }) => setLatencyMs(Date.now() - payload.sent_at);
-    const onDisconnect = () => {
-      setSocketId(null);
-      setLatencyMs(null);
-    };
-
-    socket.on('server_hello', onHello);
-    socket.on('pong_server', onPong);
-    socket.on('disconnect', onDisconnect);
     socket.connect();
-
     return () => {
-      socket.off('server_hello', onHello);
-      socket.off('pong_server', onPong);
-      socket.off('disconnect', onDisconnect);
       socket.disconnect();
     };
   }, []);
-
-  const sendPing = () => socket.emit('ping_server', { sent_at: Date.now() });
 
   const fetchCharacters = useCallback(() => {
     if (!auth.token || !session) return;
@@ -242,44 +177,9 @@ export default function App() {
         <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Plateforme JDR</p>
         <h1 className="mt-2 text-4xl font-bold text-accent-400">Yu-Gi-Oh! D&amp;D</h1>
         <p className="mt-3 text-sm text-neutral-400">
-          Socle technique en place. Vérification de bout en bout de la stack.
+          Fiches de personnage, duels et boutiques pour vos parties JDR Yu-Gi-Oh!
         </p>
       </header>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card title="API & Base de données" status={healthStatus}>
-          {health ? (
-            <>
-              <p>statut : {health.status}</p>
-              <p>mongodb : {health.database}</p>
-              <p>env : {health.env}</p>
-              <p>uptime : {health.uptime_seconds}s</p>
-            </>
-          ) : (
-            <p>{healthError ?? 'Interrogation du backend...'}</p>
-          )}
-          <button
-            type="button"
-            onClick={() => void fetchHealth()}
-            className="mt-3 rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-accent-500 hover:text-accent-400"
-          >
-            Rafraîchir
-          </button>
-        </Card>
-
-        <Card title="Temps réel (Socket.io)" status={socketId ? 'ok' : 'pending'}>
-          <p>socket : {socketId ?? 'connexion...'}</p>
-          <p>latence : {latencyMs === null ? '—' : `${latencyMs} ms`}</p>
-          <button
-            type="button"
-            onClick={sendPing}
-            disabled={!socketId}
-            className="mt-3 rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-accent-500 hover:text-accent-400 disabled:opacity-40"
-          >
-            Envoyer un ping
-          </button>
-        </Card>
-      </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
         {auth.loading ? (
@@ -380,10 +280,6 @@ export default function App() {
       )}
 
       {auth.user && auth.token && <CardImportPanel token={auth.token} />}
-
-      <footer className="text-center text-xs text-neutral-500">
-        Prochaine étape : peaufinage de l'interface de duel multi-PNJ.
-      </footer>
     </main>
   );
 }
