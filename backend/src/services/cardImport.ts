@@ -20,11 +20,45 @@ function decodeSetName(name: string): string {
   return name.replace(/&(apos|quot|amp|lt|gt|#39);/g, (match) => HTML_ENTITIES[match] ?? match);
 }
 
+/**
+ * Réel bug corrigé ici (rapporté par l'utilisateur : "Legend of Blue Eyes
+ * White Dragon (LOB)" invisible, seule sa réédition 25th Anniversary
+ * apparaissait, avec seulement des Magies dedans) : `CardSet.set_code` est
+ * `unique` côté schéma, mais NE L'EST PAS dans les vraies données
+ * YGOPRODeck — confirmé en direct contre `cardsets.php` : 142 des 644
+ * `set_code` distincts sont partagés par 2+ sets réellement différents (ex.
+ * "LOB" = l'édition originale 2002 à 355 cartes ET sa réédition 25th
+ * Anniversary à 14 cartes ; le cas le plus courant étant un set principal
+ * partageant son code avec son propre mini-set Sneak Peek/Special Edition
+ * promotionnel). `(set_code, set_name)`, en revanche, est bien unique sur
+ * les 1032 sets réels. Avant ce correctif, l'upsert par `set_code` seul
+ * faisait gagner arbitrairement le DERNIER set reçu de l'API pour un code
+ * donné, écrasant silencieusement l'autre.
+ *
+ * Fix choisi (rapide, sans refonte du modèle ni des routes qui utilisent
+ * déjà `set_code` comme identifiant unique côté marchand/booster/etc.) : en
+ * cas de collision, on ne garde que le set avec le PLUS de cartes — presque
+ * toujours le "vrai" set principal, puisque la collision vient quasi
+ * toujours d'un mini-set promo/Sneak Peek/Special Edition partageant le code
+ * du set principal, jamais l'inverse. Limite connue et acceptée : un set
+ * minoritaire dans une collision (le plus souvent un simple bonus promo)
+ * reste invisible — un vrai besoin de le voir séparément demanderait de
+ * cesser d'utiliser `set_code` seul comme identifiant partout dans l'app,
+ * un chantier plus large délibérément pas fait ici.
+ */
 export async function syncCardSets(): Promise<number> {
   const sets = await fetchCardSets();
 
+  const bestByCode = new Map<string, (typeof sets)[number]>();
+  for (const set of sets) {
+    const current = bestByCode.get(set.set_code);
+    if (!current || set.num_of_cards > current.num_of_cards) {
+      bestByCode.set(set.set_code, set);
+    }
+  }
+
   await Promise.all(
-    sets.map((set) =>
+    [...bestByCode.values()].map((set) =>
       CardSet.updateOne(
         { set_code: set.set_code },
         {
@@ -40,7 +74,7 @@ export async function syncCardSets(): Promise<number> {
     ),
   );
 
-  return sets.length;
+  return bestByCode.size;
 }
 
 /**

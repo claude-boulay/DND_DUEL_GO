@@ -4,8 +4,8 @@ import { env } from '../../config/env';
 import { connectMongo, disconnectMongo } from '../../db/mongo';
 import { Card } from '../../models/Card.model';
 import { CardSet } from '../../models/CardSet.model';
-import { importCardsForSet } from '../cardImport';
-import { fetchCardsBySet, type YgoCard } from '../ygoprodeck';
+import { importCardsForSet, syncCardSets } from '../cardImport';
+import { fetchCardSets, fetchCardsBySet, type YgoCard, type YgoCardSet } from '../ygoprodeck';
 
 // Réel bug corrigé (rapporté par l'utilisateur : invocation Pendule
 // impossible) : `pendulum_scale`/`link_arrows` n'étaient JAMAIS renseignés
@@ -17,7 +17,7 @@ import { fetchCardsBySet, type YgoCard } from '../ygoprodeck';
 // pour Decode Talker) plutôt que de dépendre du réseau ici.
 vi.mock('../ygoprodeck', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../ygoprodeck')>();
-  return { ...actual, fetchCardsBySet: vi.fn() };
+  return { ...actual, fetchCardsBySet: vi.fn(), fetchCardSets: vi.fn() };
 });
 
 const rand = Math.floor(Math.random() * 1e6);
@@ -106,5 +106,60 @@ describe("importCardsForSet : mapping des champs YGOPRODeck (échelle Pendule, f
     const saved = await Card.findOne({ ygoprodeck_id: normalCard.id });
     expect(saved?.pendulum_scale).toBeNull();
     expect(saved?.link_arrows).toEqual([]);
+  });
+});
+
+// Réel bug corrigé (rapporté par l'utilisateur : "Legend of Blue Eyes White
+// Dragon (LOB)" invisible, seule sa réédition 25th Anniversary apparaissait)
+// — confirmé en direct contre le vrai cardsets.php : `set_code` seul N'EST
+// PAS unique dans les vraies données YGOPRODeck (142 des 644 codes réels
+// sont partagés par 2+ sets distincts), contrairement à ce que suppose le
+// schéma `CardSet` (`set_code: { unique: true }`). `syncCardSets` doit donc
+// choisir un gagnant déterministe en cas de collision plutôt que de laisser
+// le dernier reçu de l'API écraser silencieusement l'autre.
+describe('syncCardSets : collision de set_code (garde le set avec le plus de cartes)', () => {
+  beforeAll(async () => {
+    if (!env.MONGO_URI.endsWith('_test')) {
+      throw new Error('Les tests doivent tourner sur une base dédiée se terminant par "_test". Utilisez "npm test".');
+    }
+    await connectMongo();
+  });
+
+  afterAll(async () => {
+    await mongoose.connection.dropDatabase();
+    await disconnectMongo();
+  });
+
+  it('deux sets réels partageant le même set_code (cas LOB) : le plus grand gagne, peu importe l\'ordre reçu', async () => {
+    const code = `LOBTEST-${rand}`;
+    const original: YgoCardSet = { set_name: 'Legend of Blue Eyes White Dragon (test)', set_code: code, num_of_cards: 355, tcg_date: '2002-03-08' };
+    const reprint: YgoCardSet = {
+      set_name: 'Legend of Blue Eyes White Dragon (25th Anniversary Edition) (test)',
+      set_code: code,
+      num_of_cards: 14,
+      tcg_date: '2023-04-20',
+    };
+    // Ordre "reprint avant l'original" délibéré : reproduit le cas réel où le
+    // dernier reçu (pas forcément le plus gros) gagnait avant ce correctif.
+    vi.mocked(fetchCardSets).mockResolvedValue([reprint, original]);
+
+    await syncCardSets();
+
+    const stored = await CardSet.find({ set_code: code });
+    expect(stored).toHaveLength(1); // toujours un seul doc par set_code (schéma unique inchangé, fix minimal)
+    expect(stored[0]?.num_of_cards).toBe(355);
+    expect(stored[0]?.set_name).toBe('Legend of Blue Eyes White Dragon (test)');
+  });
+
+  it('un set sans collision de code est importé normalement', async () => {
+    const code = `SOLO-${rand}`;
+    const solo: YgoCardSet = { set_name: 'Set Sans Collision (test)', set_code: code, num_of_cards: 42, tcg_date: '2020-01-01' };
+    vi.mocked(fetchCardSets).mockResolvedValue([solo]);
+
+    await syncCardSets();
+
+    const stored = await CardSet.findOne({ set_code: code });
+    expect(stored?.num_of_cards).toBe(42);
+    expect(stored?.set_name).toBe('Set Sans Collision (test)');
   });
 });
