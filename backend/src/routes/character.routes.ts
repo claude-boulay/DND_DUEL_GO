@@ -159,6 +159,41 @@ characterRouter.get(
   }),
 );
 
+/**
+ * "Long repos" (demande utilisateur) : le MJ recharge d'un coup les rerolls
+ * de Chance de TOUS les personnages du salon (joueurs et PNJ) à leur
+ * maximum — même formule/calcul que le rechargement individuel déjà fait à
+ * la création ou à un changement de stats/niveau (`maxLuckRerolls`, voir la
+ * route PATCH /:id ci-dessus), juste appliqué à tout le salon en une seule
+ * action plutôt qu'individuellement. Réservé au MJ (une ressource partagée
+ * du salon, pas celle d'un personnage précis — pas de notion de
+ * "propriétaire" pertinente ici, contrairement à PATCH/DELETE /:id).
+ */
+characterRouter.post(
+  '/session/:sessionId/long-rest',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const sessionId = req.params.sessionId!;
+    if (!Types.ObjectId.isValid(sessionId)) {
+      throw new AppError(400, 'Identifiant de salon invalide', 'invalid_input');
+    }
+    const session = await loadSessionOrThrow(sessionId);
+    if (!isSessionGm(session, req.user!.sub)) {
+      throw new AppError(403, 'Seul le MJ peut déclencher un long repos', 'forbidden');
+    }
+
+    const characters = await Character.find({ game_session_id: session._id }).sort({ createdAt: 1 });
+    await Promise.all(
+      characters.map((character) => {
+        character.remaining_luck_rerolls = maxLuckRerolls(character.stats.luck, character.level);
+        return character.save();
+      }),
+    );
+
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
+    res.json({ characters: characters.map(toCharacterDto) });
+  }),
+);
+
 characterRouter.get(
   '/:id',
   asyncHandler(async (req: AuthenticatedRequest, res) => {

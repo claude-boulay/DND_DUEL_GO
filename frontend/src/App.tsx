@@ -137,6 +137,23 @@ export default function App() {
     setCharacters((prev) => prev.map((c) => (c.id === characterId ? { ...c, ...patch } : c)));
   };
 
+  // "Long repos" (demande utilisateur) : le MJ recharge en une action les
+  // rerolls de Chance de tout le salon plutôt qu'un par un — voir
+  // characterRouter POST /session/:sessionId/long-rest.
+  const [longResting, setLongResting] = useState(false);
+  const handleLongRest = async () => {
+    if (!auth.token || !session) return;
+    setLongResting(true);
+    try {
+      const { characters: rested } = await api.longRestSession(auth.token, session.id);
+      setCharacters(rested);
+    } catch (err) {
+      setCharactersError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setLongResting(false);
+    }
+  };
+
   return (
     <main className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-8 px-6 py-16">
       {duelInvites.length > 0 && (
@@ -228,7 +245,20 @@ export default function App() {
             onCreated={handleCharacterCreated}
           />
           <div>
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-200">Personnages du salon</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Personnages du salon</h2>
+              {session.is_gm && characters.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleLongRest()}
+                  disabled={longResting}
+                  title="Recharge les rerolls de Chance de tous les personnages du salon à leur maximum"
+                  className="shrink-0 rounded-md border border-accent-500 px-2.5 py-1 text-xs text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
+                >
+                  {longResting ? 'Repos en cours...' : '🌙 Long repos'}
+                </button>
+              )}
+            </div>
             {charactersError && <p className="mb-2 text-xs text-red-400">{charactersError}</p>}
             <CharacterList
               token={auth.token}

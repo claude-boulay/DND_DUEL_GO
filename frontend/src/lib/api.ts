@@ -601,6 +601,14 @@ export const api = {
   deleteCharacter: (token: string, characterId: string) =>
     request<null>(`/characters/${encodeURIComponent(characterId)}`, { method: 'DELETE' }, token),
 
+  /** GM-only — "long repos" : recharge les rerolls de Chance de TOUS les personnages du salon à leur maximum en une seule action. */
+  longRestSession: (token: string, sessionId: string) =>
+    request<{ characters: ApiCharacter[] }>(
+      `/characters/session/${encodeURIComponent(sessionId)}/long-rest`,
+      { method: 'POST' },
+      token,
+    ),
+
   updateCharacterMoney: (token: string, characterId: string, money: number) =>
     request<{ character: ApiCharacter }>(
       `/characters/${encodeURIComponent(characterId)}`,
