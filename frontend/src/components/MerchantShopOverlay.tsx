@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   api,
   ApiError,
+  type ApiCard,
   type ApiCharacter,
   type ApiMerchant,
   type ApiMerchantItem,
@@ -236,7 +237,9 @@ function ItemDetailPanel({
         </div>
       )}
       <h3 className="font-display text-lg text-accent-400">{item.name}</h3>
-      <p className="mb-3 text-xs text-neutral-500">{item.item_type === 'card' ? 'Carte' : 'Booster'}</p>
+      <p className="mb-1 text-xs text-neutral-500">{item.item_type === 'card' ? 'Carte' : 'Booster'}</p>
+
+      {item.item_type === 'booster' && item.set_code && <BoosterContentsPreview token={token} setCode={item.set_code} />}
 
       {isGm && (
         <div className="space-y-2 border-t border-arena-700 pt-3">
@@ -353,6 +356,70 @@ function ItemDetailPanel({
               onMerchantUpdate(data.merchant);
             }}
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Voir le contenu possible d'un booster avant de l'acheter — demande
+ * utilisateur (feedback de ses amis) : jusqu'ici il fallait acheter à
+ * l'aveugle pour savoir ce qu'un set pouvait contenir. Grille avec zoom au
+ * survol pour lire les cartes, chargée à la demande (pas au premier rendu du
+ * panneau détail) pour ne pas interroger le catalogue pour rien tant que
+ * personne ne clique.
+ */
+function BoosterContentsPreview({ token, setCode }: { token: string; setCode: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [cards, setCards] = useState<ApiCard[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const toggle = () => {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setExpanded(true);
+    if (cards !== null) return; // déjà chargé une fois
+    setLoading(true);
+    api
+      .listCards(token, { set_code: setCode, limit: 100 })
+      .then(({ cards: fetched }) => setCards(fetched))
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+      .finally(() => setLoading(false));
+  };
+
+  return (
+    <div className="mb-3">
+      <button type="button" onClick={toggle} className="text-xs text-accent-400 underline hover:text-accent-300">
+        {expanded ? 'Masquer le contenu possible' : 'Voir le contenu possible'}
+      </button>
+      {expanded && (
+        // Pas de scroll/overflow imbriqué ici : le panneau détail (le
+        // <aside> parent) défile déjà lui-même — un conteneur overflow-auto
+        // ici couperait le zoom au survol des cartes en bordure.
+        <div className="mt-2 rounded-md border border-arena-700 bg-arena-800/60 p-2">
+          {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          {!loading && cards && cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte trouvée pour ce set.</p>}
+          {!loading && cards && cards.length > 0 && (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
+              {cards.map((card) => (
+                // image_url (pleine résolution), pas _small : un agrandissement
+                // CSS d'une petite miniature serait flou (même pattern que
+                // BoosterOpeningOverlay.tsx/SettledSlot et CardImportPanel.tsx).
+                <img
+                  key={card.id}
+                  src={card.card_images[0]?.image_url}
+                  alt={card.name}
+                  title={card.name}
+                  className="w-full rounded transition duration-150 hover:z-20 hover:scale-[2.5] hover:cursor-zoom-in"
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
