@@ -77,3 +77,28 @@ export async function fetchCardsBySet(setName: string): Promise<YgoCard[]> {
   const body = (await res.json()) as { data?: YgoCard[] };
   return body.data ?? [];
 }
+
+// Taille de lot conservatrice (longueur d'URL GET, pas de limite connue côté
+// YGOPRODeck mais mieux vaut rester prudent pour un import CSV pouvant
+// contenir des centaines de passcodes distincts).
+const ID_BATCH_SIZE = 50;
+
+/**
+ * Un seul appel `cardinfo.php?id=a,b,c` par lot de ID_BATCH_SIZE passcodes —
+ * confirmé en direct que YGOPRODeck accepte une liste d'id séparés par des
+ * virgules et omet silencieusement (pas d'erreur, juste absent de `data`)
+ * tout id inconnu, plutôt que de faire échouer tout le lot.
+ */
+export async function fetchCardsByIds(ids: number[]): Promise<YgoCard[]> {
+  const results: YgoCard[] = [];
+  for (let i = 0; i < ids.length; i += ID_BATCH_SIZE) {
+    const batch = ids.slice(i, i + ID_BATCH_SIZE);
+    const url = `${env.YGOPRODECK_API_URL}/cardinfo.php?id=${batch.join(',')}`;
+    const res = await throttledFetch(url);
+    if (res.status === 400) continue; // aucun id du lot n'a matché
+    if (!res.ok) throw new Error(`YGOPRODeck cardinfo.php a répondu ${res.status}`);
+    const body = (await res.json()) as { data?: YgoCard[] };
+    results.push(...(body.data ?? []));
+  }
+  return results;
+}

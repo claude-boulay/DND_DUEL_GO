@@ -11,6 +11,7 @@ import {
 import { STAT_NAMES, STAT_SHORT_LABELS } from '../lib/pointBuy';
 import { DeckManager } from './DeckManager';
 import { BoosterOpeningOverlay } from './BoosterOpeningOverlay';
+import { GrantCardsOverlay } from './GrantCardsOverlay';
 
 interface CharacterListProps {
   token: string;
@@ -26,9 +27,13 @@ interface CharacterListProps {
 }
 
 export function CharacterList({ token, characters, currentUserId, isGm, currencyName, onDelete, onCharacterUpdate }: CharacterListProps) {
+  const [grantCardsFor, setGrantCardsFor] = useState<string | null>(null);
+
   if (characters.length === 0) {
     return <p className="text-sm text-neutral-500">Aucun personnage dans ce salon pour l'instant.</p>;
   }
+
+  const grantCardsCharacter = characters.find((c) => c.id === grantCardsFor) ?? null;
 
   return (
     <div className="space-y-3">
@@ -70,13 +75,31 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
             </p>
 
             {isGm && (
-              <MoneyEditor token={token} character={character} currencyName={currencyName} onCharacterUpdate={onCharacterUpdate} />
+              <>
+                <MoneyEditor token={token} character={character} currencyName={currencyName} onCharacterUpdate={onCharacterUpdate} />
+                <button
+                  type="button"
+                  onClick={() => setGrantCardsFor(character.id)}
+                  className="mt-2 text-xs text-accent-400 underline hover:text-accent-300"
+                >
+                  + Ajouter des cartes (MJ)
+                </button>
+              </>
             )}
 
             {canManage && <CharacterEconomy token={token} character={character} onCharacterUpdate={onCharacterUpdate} />}
           </article>
         );
       })}
+
+      {grantCardsCharacter && (
+        <GrantCardsOverlay
+          token={token}
+          character={grantCardsCharacter}
+          onCharacterUpdate={onCharacterUpdate}
+          onClose={() => setGrantCardsFor(null)}
+        />
+      )}
     </div>
   );
 }

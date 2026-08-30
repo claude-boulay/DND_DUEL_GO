@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { Types } from 'mongoose';
+import multer from 'multer';
+import { parse as csvParse } from 'csv-parse/sync';
 import { Character, type CharacterDocument } from '../models/Character.model';
 import { Card } from '../models/Card.model';
 import { CardSet } from '../models/CardSet.model';
@@ -12,7 +14,7 @@ import { validatePointBuy } from '../utils/pointBuy';
 import { maxLuckRerolls } from '../utils/luck';
 import { loadSessionOrThrow } from '../utils/loaders';
 import { drawBoosterPack, isRareReveal, rarityForSet } from '../utils/boosterOpening';
-import { importCardsForSet } from '../services/cardImport';
+import { importCardsForSet, importCardsByIds } from '../services/cardImport';
 import { broadcastSessionResourceChanged } from '../utils/broadcast';
 import { toCardDto } from '../utils/cardDto';
 import { EXTRA_DECK_MAX, MAIN_DECK_MAX, MAIN_DECK_MIN, MAX_COPIES_PER_CARD, isExtraDeckFrameType } from '../utils/deckRules';
@@ -290,6 +292,148 @@ characterRouter.post(
           is_rare_reveal: isRareReveal(rarity),
         };
       }),
+    });
+  }),
+);
+
+const addCardSchema = z.object({
+  card_id: z.string(),
+  quantity: z.number().int().min(1).max(999).default(1),
+});
+
+/**
+ * Le MJ ajoute N exemplaires d'une carte précise (choisie via recherche côté
+ * front) à la collection d'un personnage — CLAUDE.md §3.5 "Option pour le MJ
+ * d'ajouter une ou plusieurs cartes à un joueur". Volontairement GM-only
+ * (pas `assertCanManageCharacter`, qui autorise aussi le propriétaire) : un
+ * joueur ne doit jamais pouvoir se créditer lui-même des cartes, exactement
+ * la même logique déjà appliquée à `PATCH /:id` pour l'argent.
+ */
+characterRouter.post(
+  '/:id/collection/add-card',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const character = await loadCharacterOrThrow(req.params.id!);
+    const session = await loadSessionOrThrow(character.game_session_id.toString());
+    if (!isSessionGm(session, req.user!.sub)) {
+      throw new AppError(403, 'Seul le MJ peut ajouter des cartes à la collection d’un personnage', 'forbidden');
+    }
+
+    const { card_id: cardId, quantity } = addCardSchema.parse(req.body);
+    if (!Types.ObjectId.isValid(cardId)) throw new AppError(400, 'Identifiant de carte invalide', 'invalid_input');
+    const card = await Card.findById(cardId);
+    if (!card) throw new AppError(404, 'Carte introuvable', 'not_found');
+
+    character.collection.push(...Array(quantity).fill(cardId));
+    await character.save();
+
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
+    res.json({ character: toCharacterDto(character), added: { card: toCardDto(card), quantity } });
+  }),
+);
+
+const csvImportUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+
+interface CsvImportRowResult {
+  cardname: string;
+  cardid: string;
+  quantity: number;
+}
+interface CsvImportSkipped {
+  row: number;
+  cardname: string;
+  reason: string;
+}
+
+/**
+ * Migration d'une collection déjà existante (autre outil/partie précédente)
+ * via un CSV — colonnes confirmées en direct : c'est exactement le format
+ * d'export "My Collection" de YGOPRODeck (cardname,cardq,cardrarity,
+ * card_edition,cardset,cardcode,cardid,print_id). On matche par `cardid`
+ * (= ygoprodeck_id, le passcode officiel — bien plus fiable qu'un
+ * rapprochement par nom/set) ; toute carte absente de notre base est
+ * importée à la volée (voir importCardsByIds) plutôt que de bloquer toute la
+ * migration sur des sets jamais importés manuellement ici.
+ */
+characterRouter.post(
+  '/:id/collection/import-csv',
+  (req, res, next) => {
+    csvImportUpload.single('csv')(req, res, (err: unknown) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+          next(new AppError(400, 'Fichier CSV trop lourd (2 Mo maximum)', 'invalid_input'));
+          return;
+        }
+        next(err instanceof AppError ? err : new AppError(400, 'Envoi du fichier CSV impossible', 'invalid_input'));
+        return;
+      }
+      next();
+    });
+  },
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const character = await loadCharacterOrThrow(req.params.id!);
+    const session = await loadSessionOrThrow(character.game_session_id.toString());
+    if (!isSessionGm(session, req.user!.sub)) {
+      throw new AppError(403, 'Seul le MJ peut importer une collection pour un personnage', 'forbidden');
+    }
+    if (!req.file) throw new AppError(400, 'Aucun fichier CSV reçu', 'invalid_input');
+
+    let records: Record<string, string>[];
+    try {
+      // bom: true retire le BOM UTF-8 en tête de fichier (présent dans
+      // l'export YGOPRODeck réel, confirmé sur un exemple fourni).
+      records = csvParse(req.file.buffer, { columns: true, skip_empty_lines: true, trim: true, bom: true });
+    } catch (err) {
+      throw new AppError(400, `CSV invalide : ${err instanceof Error ? err.message : String(err)}`, 'invalid_input');
+    }
+
+    const parsed: CsvImportRowResult[] = [];
+    const skipped: CsvImportSkipped[] = [];
+    records.forEach((row, index) => {
+      const cardname = row.cardname?.trim() || '(sans nom)';
+      const cardidRaw = row.cardid?.trim();
+      const cardid = cardidRaw ? Number(cardidRaw) : NaN;
+      const quantityRaw = row.cardq?.trim();
+      const quantity = quantityRaw ? Number(quantityRaw) : 1;
+      if (!cardidRaw || !Number.isInteger(cardid) || cardid <= 0) {
+        skipped.push({ row: index + 2, cardname, reason: 'colonne cardid manquante ou invalide' });
+        return;
+      }
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        skipped.push({ row: index + 2, cardname, reason: 'colonne cardq manquante ou invalide' });
+        return;
+      }
+      parsed.push({ cardname, cardid: String(cardid), quantity });
+    });
+
+    const uniqueIds = [...new Set(parsed.map((r) => Number(r.cardid)))];
+    const { foundIds } = await importCardsByIds(uniqueIds);
+
+    const notFound = parsed.filter((r) => !foundIds.has(Number(r.cardid)));
+    const toAdd = parsed.filter((r) => foundIds.has(Number(r.cardid)));
+
+    const cards = toAdd.length > 0 ? await Card.find({ ygoprodeck_id: { $in: toAdd.map((r) => Number(r.cardid)) } }) : [];
+    const cardByYgoId = new Map(cards.map((c) => [c.ygoprodeck_id, c]));
+
+    let totalCopiesAdded = 0;
+    const added: Array<{ card_name: string; quantity: number }> = [];
+    for (const row of toAdd) {
+      const card = cardByYgoId.get(Number(row.cardid));
+      if (!card) continue; // ne devrait jamais arriver (foundIds vient de la même requête), garde défensive
+      character.collection.push(...Array(row.quantity).fill(card._id.toString()));
+      totalCopiesAdded += row.quantity;
+      added.push({ card_name: card.name, quantity: row.quantity });
+    }
+    if (totalCopiesAdded > 0) await character.save();
+
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
+    res.json({
+      character: toCharacterDto(character),
+      summary: {
+        total_copies_added: totalCopiesAdded,
+        added,
+        not_found: notFound.map((r) => ({ cardname: r.cardname, cardid: r.cardid })),
+        skipped,
+      },
     });
   }),
 );

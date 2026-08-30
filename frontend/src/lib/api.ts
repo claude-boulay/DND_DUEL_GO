@@ -273,6 +273,14 @@ export interface ApiCollectionEntry {
   acquired_order: number;
 }
 
+/** Résultat d'un import CSV de collection (voir CharacterList.tsx/GrantCardsOverlay.tsx). */
+export interface ApiCsvImportSummary {
+  total_copies_added: number;
+  added: Array<{ card_name: string; quantity: number }>;
+  not_found: Array<{ cardname: string; cardid: string }>;
+  skipped: Array<{ row: number; cardname: string; reason: string }>;
+}
+
 export interface ApiOpenedCard {
   id: string;
   name: string;
@@ -599,6 +607,31 @@ export const api = {
       { method: 'PATCH', body: JSON.stringify({ money }) },
       token,
     ),
+
+  /** GM-only — voir CLAUDE.md §3.5 "le MJ ajoute une ou plusieurs cartes à un joueur". */
+  addCardToCollection: (token: string, characterId: string, cardId: string, quantity: number) =>
+    request<{ character: ApiCharacter; added: { card: ApiCard; quantity: number } }>(
+      `/characters/${encodeURIComponent(characterId)}/collection/add-card`,
+      { method: 'POST', body: JSON.stringify({ card_id: cardId, quantity }) },
+      token,
+    ),
+
+  /** GM-only — migration d'une collection existante (export "My Collection" YGOPRODeck). Upload multipart : ne passe pas par `request()`. */
+  importCollectionCsv: async (token: string, characterId: string, file: File): Promise<{ character: ApiCharacter; summary: ApiCsvImportSummary }> => {
+    const formData = new FormData();
+    formData.append('csv', file);
+    const response = await fetch(`/api/characters/${encodeURIComponent(characterId)}/collection/import-csv`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = body?.error?.message ?? `Erreur HTTP ${response.status}`;
+      throw new ApiError(response.status, message);
+    }
+    return body as { character: ApiCharacter; summary: ApiCsvImportSummary };
+  },
 
   listCardSets: (token: string, params?: { refresh?: boolean; search?: string; include_custom?: boolean }) =>
     request<{ sets: ApiCardSet[] }>(`/cards/sets${buildQuery(params)}`, {}, token),
