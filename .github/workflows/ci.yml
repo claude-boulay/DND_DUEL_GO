@@ -16,9 +16,58 @@ permissions:
   contents: read
 
 jobs:
+  # Job séparé (pas dans backend-test) : compile le moteur de duel en C++
+  # UNE fois sur le runner nu (accès Docker nécessaire pour buildx — pas
+  # possible depuis l'intérieur du conteneur `node:22-alpine` de
+  # backend-test), puis exporte juste le binaire + les données pour que
+  # backend-test le télécharge. RÉEL BUG que ce job corrige : sans lui,
+  # backend-test lançait `npm test` sans que `/ocgcore/ocgcore_server`
+  # n'existe jamais (seule l'image Docker du backend, construite plus tard
+  # dans `build-images`, compile ce binaire) — `ocgcoreClient.ts` spawne ce
+  # chemin en dur sans jamais écouter l'évènement `error` du child process,
+  # donc un ENOENT silencieux y plantait tout duel créé pendant les tests
+  # (constaté en CI : tous les tests de `duel.e2e.test.ts`/
+  # `duelInvite.e2e.test.ts` en cascade, chacun réutilisant l'id d'un duel
+  # jamais réellement créé).
+  build-ocgcore:
+    name: Compiler le moteur de duel (ocgcore) — partagé avec backend-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      # Même scope de cache que l'image backend complète dans build-images
+      # ci-dessous : les deux réutilisent le même stage `ocgcore-build`, pas
+      # besoin de recompiler ygopro-core/Lua deux fois par run.
+      - name: Compiler uniquement le stage ocgcore-build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          target: ocgcore-build
+          push: false
+          load: true
+          tags: ocgcore-build-artifact:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Extraire /ocgcore (binaire + données) de l'image compilée
+        run: |
+          id=$(docker create ocgcore-build-artifact:latest)
+          docker cp "$id:/ocgcore" ./ocgcore-artifact
+          docker rm "$id"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ocgcore-binary
+          path: ocgcore-artifact
+          retention-days: 1
+
   backend-test:
     name: Backend — typecheck + tests (Vitest, vraie base Mongo)
     runs-on: ubuntu-latest
+    needs: build-ocgcore
     # Job conteneurisé (pas juste le runner nu) : c'est ce qui permet au
     # service `mongo` ci-dessous d'être joignable par son nom de service
     # ("mongo") — exactement l'hôte déjà en dur dans `npm test`
@@ -41,6 +90,18 @@ jobs:
       JWT_SECRET: ci_test_secret_do_not_use_in_prod
     steps:
       - uses: actions/checkout@v4
+
+      # Voir le commentaire sur build-ocgcore ci-dessus : sans ce binaire à
+      # l'exact chemin attendu (OCGCORE_BINARY/OCGCORE_CWD dans
+      # ocgcoreClient.ts), toute création de duel plante silencieusement.
+      - name: Télécharger le moteur ocgcore compilé
+        uses: actions/download-artifact@v4
+        with:
+          name: ocgcore-binary
+          path: /ocgcore
+
+      - name: Rendre le binaire exécutable
+        run: chmod +x /ocgcore/ocgcore_server
 
       - name: Cache npm
         uses: actions/cache@v4
@@ -84,9 +145,16 @@ jobs:
       # forcément (elles restent visibles dans les logs ci-dessous) — voir
       # CLAUDE.md pour un exemple réel (nodemailer) traité manuellement cette
       # façon plutôt qu'en bloquant toute la CI pour ça.
-      - name: npm audit — backend
+      # --omit=dev : les vulnérabilités actuelles (high/critical) sont toutes
+      # dans la chaîne vite/vitest/esbuild — des devDependencies qui ne
+      # partent jamais en prod (le stage `prod` du Dockerfile fait lui aussi
+      # `npm install --omit=dev`) et dont l'exploitation suppose un serveur de
+      # dev/UI Vitest exposé sur le réseau, jamais le cas ici (`vitest run`,
+      # pas `vitest --ui`). Vérifié en direct : `npm audit --omit=dev` ne
+      # remonte 0 vulnérabilité côté backend.
+      - name: npm audit — backend (dépendances de production uniquement)
         working-directory: backend
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
       - name: npm audit — frontend
         working-directory: frontend
