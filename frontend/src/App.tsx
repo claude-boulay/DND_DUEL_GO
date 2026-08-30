@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { socket } from './lib/socket';
 import { useAuth } from './hooks/useAuth';
-import { api, ApiError, type ApiCharacter, type ApiDeck, type ApiSealedBooster, type ApiSession } from './lib/api';
+import { api, ApiError, type ApiCharacter, type ApiSession } from './lib/api';
 import { AuthPanel } from './components/AuthPanel';
 import { SessionPanel } from './components/SessionPanel';
 import { CharacterSheetForm } from './components/CharacterSheetForm';
@@ -132,7 +132,7 @@ export default function App() {
 
   const handleCharacterUpdate = (
     characterId: string,
-    patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[]; decks?: ApiDeck[] },
+    patch: Partial<Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'inventory'>>,
   ) => {
     setCharacters((prev) => prev.map((c) => (c.id === characterId ? { ...c, ...patch } : c)));
   };

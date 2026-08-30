@@ -12,6 +12,11 @@ import { STAT_NAMES, STAT_SHORT_LABELS } from '../lib/pointBuy';
 import { DeckManager } from './DeckManager';
 import { BoosterOpeningOverlay } from './BoosterOpeningOverlay';
 import { GrantCardsOverlay } from './GrantCardsOverlay';
+import { CharacterSheetOverlay } from './CharacterSheetOverlay';
+
+type CharacterUpdatePatch = Partial<
+  Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'inventory'>
+>;
 
 interface CharacterListProps {
   token: string;
@@ -20,23 +25,42 @@ interface CharacterListProps {
   isGm: boolean;
   currencyName: string;
   onDelete: (id: string) => void;
-  onCharacterUpdate: (
-    characterId: string,
-    patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[]; decks?: ApiDeck[] },
-  ) => void;
+  onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
 }
 
 export function CharacterList({ token, characters, currentUserId, isGm, currencyName, onDelete, onCharacterUpdate }: CharacterListProps) {
   const [grantCardsFor, setGrantCardsFor] = useState<string | null>(null);
+  // Fiche de personnage stylisée (demande utilisateur) : ouvrable depuis
+  // n'importe quelle carte compacte ci-dessous, ou depuis le bouton flottant
+  // toujours visible (voir plus bas) pour le joueur sur son propre personnage.
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+
+  // Un joueur n'a jamais qu'un seul personnage joueur par salon (règle déjà
+  // en place, voir CLAUDE.md) : ce bouton flottant n'a donc jamais besoin de
+  // choisir entre plusieurs — il cible directement ce personnage unique.
+  // Absent pour le MJ (qui n'a pas "son" personnage) et pour un joueur sans
+  // personnage dans ce salon.
+  const ownCharacter = characters.find((c) => !c.is_npc && c.user_id === currentUserId) ?? null;
 
   if (characters.length === 0) {
     return <p className="text-sm text-neutral-500">Aucun personnage dans ce salon pour l'instant.</p>;
   }
 
   const grantCardsCharacter = characters.find((c) => c.id === grantCardsFor) ?? null;
+  const sheetCharacter = characters.find((c) => c.id === sheetFor) ?? null;
 
   return (
     <div className="space-y-3">
+      {ownCharacter && (
+        <button
+          type="button"
+          onClick={() => setSheetFor(ownCharacter.id)}
+          className="fixed right-4 top-4 z-40 flex items-center gap-2 rounded-full border border-accent-500 bg-arena-900/95 px-4 py-2 text-sm font-semibold text-accent-400 shadow-xl backdrop-blur transition hover:bg-accent-500 hover:text-arena-950"
+        >
+          <span aria-hidden>🧙</span> {ownCharacter.name}
+        </button>
+      )}
+
       {characters.map((character) => {
         const canManage = isGm || character.user_id === currentUserId;
         return (
@@ -48,6 +72,9 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
               </h3>
               <div className="flex items-center gap-2 text-xs text-neutral-500">
                 <span>niv. {character.level}</span>
+                <button type="button" onClick={() => setSheetFor(character.id)} className="text-accent-400 underline hover:text-accent-300">
+                  Voir la fiche
+                </button>
                 {canManage && (
                   <button
                     type="button"
@@ -100,6 +127,18 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
           onClose={() => setGrantCardsFor(null)}
         />
       )}
+
+      {sheetCharacter && (
+        <CharacterSheetOverlay
+          token={token}
+          character={sheetCharacter}
+          currentUserId={currentUserId}
+          isGm={isGm}
+          currencyName={currencyName}
+          onCharacterUpdate={onCharacterUpdate}
+          onClose={() => setSheetFor(null)}
+        />
+      )}
     </div>
   );
 }
@@ -110,7 +149,7 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
  * chez un marchand (route distincte, server-authoritative). Comme le
  * niveau/l'XP, l'argent reste sous le contrôle du MJ, comme à la table.
  */
-function MoneyEditor({
+export function MoneyEditor({
   token,
   character,
   currencyName,

@@ -620,6 +620,18 @@ export const api = {
       token,
     ),
 
+  /** Champs RP/inventaire uniquement (voir la fiche de personnage stylisée) — le nom/le niveau/l'argent/les stats restent gérés par leurs propres contrôles dédiés. */
+  updateCharacterProfile: (
+    token: string,
+    characterId: string,
+    input: Partial<{ name: string; backstory: string; personality: string; visual_description: string; inventory: string[] }>,
+  ) =>
+    request<{ character: ApiCharacter }>(
+      `/characters/${encodeURIComponent(characterId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+      token,
+    ),
+
   /** GM-only — voir CLAUDE.md §3.5 "le MJ ajoute une ou plusieurs cartes à un joueur". */
   addCardToCollection: (token: string, characterId: string, cardId: string, quantity: number) =>
     request<{ character: ApiCharacter; added: { card: ApiCard; quantity: number } }>(
