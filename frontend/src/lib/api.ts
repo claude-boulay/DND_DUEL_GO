@@ -735,6 +735,14 @@ export const api = {
       token,
     ),
 
+  /** Rattrapage pour les articles carte ajoutés avant le passage à l'image pleine résolution (voir CLAUDE.md) — sans effet sur les articles booster. */
+  refreshMerchantCardImages: (token: string, merchantId: string) =>
+    request<{ merchant: ApiMerchant; updated_count: number }>(
+      `/merchants/${encodeURIComponent(merchantId)}/refresh-card-images`,
+      { method: 'POST' },
+      token,
+    ),
+
   updateMerchantItem: (
     token: string,
     merchantId: string,

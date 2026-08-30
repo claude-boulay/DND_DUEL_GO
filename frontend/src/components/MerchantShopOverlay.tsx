@@ -39,6 +39,7 @@ export function MerchantShopOverlay({
   const [selectedItemId, setSelectedItemId] = useState<string | null>(merchant.items[0]?.id ?? null);
   const [showAddItem, setShowAddItem] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshingImages, setRefreshingImages] = useState(false);
 
   // Reste calé sur un article encore présent si la liste change (achat qui
   // épuise le stock, suppression par le MJ...) — jamais un id fantôme.
@@ -63,6 +64,23 @@ export function MerchantShopOverlay({
     }
   };
 
+  // Rattrapage pour les articles carte ajoutés avant le passage à l'image
+  // pleine résolution (demande utilisateur : le zoom au survol restait flou)
+  // — voir merchant.routes.ts POST /:id/refresh-card-images.
+  const hasCardItems = merchant.items.some((i) => i.item_type === 'card');
+  const handleRefreshImages = async () => {
+    setRefreshingImages(true);
+    setError(null);
+    try {
+      const { merchant: updated } = await api.refreshMerchantCardImages(token, merchant.id);
+      onMerchantUpdate(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setRefreshingImages(false);
+    }
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
@@ -71,13 +89,26 @@ export function MerchantShopOverlay({
           <h2 className="font-display text-2xl text-accent-400">{merchant.name}</h2>
           {merchant.description && <p className="mt-0.5 max-w-xl truncate text-sm text-neutral-400">{merchant.description}</p>}
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
-        >
-          Fermer
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {isGm && hasCardItems && (
+            <button
+              type="button"
+              onClick={() => void handleRefreshImages()}
+              disabled={refreshingImages}
+              title="Réimporte les images des articles carte ajoutés avant le passage à la pleine résolution — sans effet sur les boosters"
+              className="rounded-md border border-arena-600 px-3 py-2 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400 disabled:opacity-50"
+            >
+              {refreshingImages ? 'Rafraîchissement...' : 'Rafraîchir les images'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+          >
+            Fermer
+          </button>
+        </div>
       </header>
 
       {error && <p className="border-b border-red-900 bg-red-950/40 px-6 py-2 text-sm text-red-400">{error}</p>}
@@ -181,7 +212,14 @@ function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected
     >
       <div className="min-h-0 flex-1 overflow-hidden bg-arena-800">
         {item.image_url ? (
-          <HoverZoomImage src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+          // Zoom au survol réservé aux cartes (leur texte a besoin d'être
+          // lu en grand) — demande utilisateur : l'illustration d'un
+          // booster est déjà assez visible telle quelle, pas de zoom dessus.
+          item.item_type === 'card' ? (
+            <HoverZoomImage src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+          ) : (
+            <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+          )
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-arena-800 via-arena-900 to-black p-2 text-center">
             <span className="text-[9px] uppercase tracking-widest text-accent-500">{item.set_code}</span>

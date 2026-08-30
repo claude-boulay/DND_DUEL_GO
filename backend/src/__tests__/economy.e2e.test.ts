@@ -242,6 +242,11 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
     const cardItem = cardItemRes.body.merchant.items.find((i: { item_type: string }) => i.item_type === 'card');
     cardItemId = cardItem.id;
     expect(cardItem).toMatchObject({ haggle_dc: 5, haggle_discount_percent: 30 });
+    // Réel bug corrigé (rapporté par l'utilisateur : zoom flou sur une carte
+    // vendue chez un marchand) : l'image stockée doit être la pleine
+    // résolution (`card_images[0].image_url`), pas la miniature
+    // `image_url_small` — sinon un zoom au survol reste illisible.
+    expect(cardItem.image_url).toBe('https://images.ygoprodeck.com/images/cards/test.jpg');
 
     const boosterItemRes = await request(app)
       .post(`/api/merchants/${merchantId}/items`)
@@ -272,6 +277,49 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
     fundsTestItemId = fundsTestRes.body.merchant.items[fundsTestRes.body.merchant.items.length - 1].id;
 
     expect(fundsTestRes.body.merchant.items).toHaveLength(4);
+  });
+
+  it("POST .../refresh-card-images rattrape un article carte ajouté avant le correctif (miniature stockée), sans toucher au booster", async () => {
+    const { Merchant } = await import('../models/Merchant.model');
+    // Simule un article ajouté AVANT le correctif : image_url encore en
+    // miniature, écrit directement en base (contourne la route POST .../items
+    // qui, elle, stocke déjà la pleine résolution depuis ce correctif).
+    await Merchant.updateOne(
+      { _id: merchantId, 'items._id': cardItemId },
+      { $set: { 'items.$.image_url': 'https://images.ygoprodeck.com/images/cards_small/test.jpg' } },
+    );
+
+    const before = await request(app)
+      .get(`/api/merchants/session/${sessionId}`)
+      .set('Authorization', `Bearer ${gm.token}`)
+      .expect(200);
+    const merchantBefore = before.body.merchants[0];
+    expect(merchantBefore.items.find((i: { id: string }) => i.id === cardItemId).image_url).toBe(
+      'https://images.ygoprodeck.com/images/cards_small/test.jpg',
+    );
+    const boosterImageBefore = merchantBefore.items.find((i: { id: string }) => i.id === boosterItemId).image_url;
+
+    const res = await request(app)
+      .post(`/api/merchants/${merchantId}/refresh-card-images`)
+      .set('Authorization', `Bearer ${gm.token}`)
+      .expect(200);
+
+    // 3 articles carte partagent le même cardMongoId (stockTestItemId,
+    // fundsTestItemId inclus) : seul cardItemId avait été désynchronisé
+    // ci-dessus, mais tous pointent vers la même Card donc tous sont réécrits
+    // à l'identique — updated_count reflète ceux qui ont RÉELLEMENT changé.
+    expect(res.body.updated_count).toBe(1);
+    const items = res.body.merchant.items;
+    expect(items.find((i: { id: string }) => i.id === cardItemId).image_url).toBe('https://images.ygoprodeck.com/images/cards/test.jpg');
+    // Un article booster n'a pas de card_id : jamais concerné par ce rattrapage.
+    expect(items.find((i: { id: string }) => i.id === boosterItemId).image_url).toBe(boosterImageBefore);
+  });
+
+  it("un joueur (pas MJ) ne peut pas déclencher le rattrapage d'images", async () => {
+    await request(app)
+      .post(`/api/merchants/${merchantId}/refresh-card-images`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .expect(403);
   });
 
   it("l'inventaire est visible par un membre du salon, refusé à un tiers", async () => {

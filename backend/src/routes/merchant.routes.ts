@@ -202,7 +202,14 @@ merchantRouter.post(
       const card = await Card.findById(body.card_id);
       if (!card) throw new AppError(404, 'Carte introuvable', 'not_found');
       name = card.name;
-      imageUrl = card.card_images[0]?.image_url_small ?? null;
+      // Réel bug corrigé (rapporté par l'utilisateur : le zoom au survol d'une
+      // carte vendue directement chez un marchand restait flou/illisible,
+      // contrairement au zoom sur les cartes d'un contenu de booster, qui
+      // lit `image_url` — pleine résolution — en direct) : `image_url_small`
+      // est une miniature, jamais assez nette une fois agrandie à l'écran.
+      // Voir aussi POST /:id/refresh-card-images pour les articles déjà
+      // ajoutés avant ce correctif.
+      imageUrl = card.card_images[0]?.image_url ?? null;
       cardId = card._id;
     } else {
       if (!body.set_code) throw new AppError(400, 'set_code requis pour un article de type booster', 'invalid_input');
@@ -228,6 +235,39 @@ merchantRouter.post(
     await merchant.save();
 
     res.status(201).json({ merchant: toMerchantDto(merchant) });
+  }),
+);
+
+/**
+ * Rattrapage pour les articles de type carte ajoutés AVANT le correctif
+ * ci-dessus (voir POST /:id/items) : leur `image_url` stocké est encore la
+ * miniature `image_url_small`, jamais assez nette pour le zoom au survol
+ * (demande utilisateur directe). Ré-résout chaque article carte depuis sa
+ * `Card` en base et réécrit `image_url` en pleine résolution. Les articles
+ * booster ne sont jamais concernés (leur image vient de `CardSet.set_image`,
+ * déjà en résolution normale, pas une miniature de carte).
+ */
+merchantRouter.post(
+  '/:id/refresh-card-images',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const merchant = await loadMerchantAsGmOrThrow(req.params.id!, req.user!.sub);
+
+    const cardItemIds = merchant.items.filter((item) => item.item_type === 'card' && item.card_id).map((item) => item.card_id!);
+    const cards = await Card.find({ _id: { $in: cardItemIds } }).select('card_images');
+    const imageById = new Map(cards.map((c) => [c._id.toString(), c.card_images[0]?.image_url ?? null]));
+
+    let updatedCount = 0;
+    for (const item of merchant.items) {
+      if (item.item_type !== 'card' || !item.card_id) continue;
+      const freshImage = imageById.get(item.card_id.toString());
+      if (freshImage && freshImage !== item.image_url) {
+        item.image_url = freshImage;
+        updatedCount++;
+      }
+    }
+    if (updatedCount > 0) await merchant.save();
+
+    res.json({ merchant: toMerchantDto(merchant), updated_count: updatedCount });
   }),
 );
 
