@@ -101,6 +101,21 @@ characterRouter.post(
     if (body.is_npc && !isSessionGm(session, userId)) {
       throw new AppError(403, 'Seul le MJ peut créer un NPC', 'forbidden');
     }
+    // Un seul personnage JOUEUR par utilisateur et par salon (demande
+    // utilisateur explicite, en vue du calcul automatique du modificateur de
+    // stat lors des lancers de dés — plusieurs personnages joueurs pour un
+    // même compte rendrait "le" modificateur ambigu). Le MJ, lui, ne peut
+    // JAMAIS créer de personnage joueur, uniquement des NPC — il n'a donc
+    // jamais besoin d'être exempté de cette règle.
+    if (!body.is_npc) {
+      if (isSessionGm(session, userId)) {
+        throw new AppError(403, 'Le MJ ne peut créer que des PNJ, pas de personnage joueur', 'forbidden');
+      }
+      const existingPlayerCharacter = await Character.findOne({ game_session_id: session._id, user_id: userId, is_npc: false });
+      if (existingPlayerCharacter) {
+        throw new AppError(409, 'Vous avez déjà un personnage joueur dans ce salon', 'already_has_character');
+      }
+    }
 
     validatePointBuy(body.stats);
 

@@ -48,6 +48,21 @@ async function createCharacter(token: string, sessionId: string, name: string, i
   return res.body.character as { id: string };
 }
 
+/**
+ * Un seul personnage joueur par utilisateur et par salon (voir
+ * characterCreation.e2e.test.ts) — plusieurs scénarios indépendants de ce
+ * fichier réutilisaient auparavant le même `player` partagé pour créer
+ * chacun LEUR propre personnage joueur dans `sessionA`, ce qui collisionne
+ * désormais. Un nouveau joueur dédié, qui rejoint la session, pour chaque
+ * scénario qui a besoin d'un personnage joueur bien à lui.
+ */
+async function createFreshPlayerCharacter(usernamePrefix: string, session: { id: string; code: string }, name: string) {
+  const user = await registerUser(usernamePrefix);
+  await request(app).post(`/api/sessions/${session.code}/join`).set('Authorization', `Bearer ${user.token}`).expect(200);
+  const character = await createCharacter(user.token, session.id, name);
+  return { user, character };
+}
+
 const normalMonster = {
   category: 'monster',
   monster_kind: 'normal',
@@ -604,17 +619,17 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
       // .trim() côté validation (luaScriptSchema) : le script stocké perd les espaces/retours en trop.
       expect(monster.body.card.lua_script).toBe(DUMMY_LUA_SCRIPT.trim());
 
-      const duellist = await createCharacter(player.token, sessionA.id, 'Duelliste de Jonction');
+      const { user: duellistUser, character: duellist } = await createFreshPlayerCharacter('cc_duellist_jonction', sessionA, 'Duelliste de Jonction');
       await Character.updateOne({ _id: duellist.id }, { $set: { collection: Array(40).fill(monsterId) } });
       const deckRes = await request(app)
         .post(`/api/characters/${duellist.id}/decks`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${duellistUser.token}`)
         .send({ name: 'Deck de Jonction' })
         .expect(201);
       const deckId = deckRes.body.character.decks[0].id;
       await request(app)
         .post(`/api/characters/${duellist.id}/decks/${deckId}/cards`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${duellistUser.token}`)
         .send({ card_id: monsterId, quantity: 3 })
         .expect(201);
 
@@ -670,17 +685,17 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
         lua_script: null,
       });
 
-      const duellist = await createCharacter(player.token, sessionA.id, 'Duelliste Sans Script');
+      const { user: duellistUser, character: duellist } = await createFreshPlayerCharacter('cc_duellist_sans_script', sessionA, 'Duelliste Sans Script');
       await Character.updateOne({ _id: duellist.id }, { $set: { collection: Array(40).fill(scriptless._id.toString()) } });
       const deckRes = await request(app)
         .post(`/api/characters/${duellist.id}/decks`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${duellistUser.token}`)
         .send({ name: 'Deck Sans Script' })
         .expect(201);
       const deckId = deckRes.body.character.decks[0].id;
       await request(app)
         .post(`/api/characters/${duellist.id}/decks/${deckId}/cards`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${duellistUser.token}`)
         .send({ card_id: scriptless._id.toString(), quantity: 3 })
         .expect(201);
 
@@ -759,13 +774,13 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
         is_custom: false,
       });
 
-      const caster = await createCharacter(player.token, sessionA.id, 'Lanceuse de Purge');
+      const { user: casterUser, character: caster } = await createFreshPlayerCharacter('cc_lanceuse_purge', sessionA, 'Lanceuse de Purge');
       const target = await createCharacter(gm1.token, sessionA.id, 'Porteur de Cible', true);
 
       await Character.updateOne({ _id: caster.id }, { $set: { collection: Array(3).fill(spellId) } });
-      const casterDeck = await request(app).post(`/api/characters/${caster.id}/decks`).set('Authorization', `Bearer ${player.token}`).send({ name: 'Deck Purge' }).expect(201);
+      const casterDeck = await request(app).post(`/api/characters/${caster.id}/decks`).set('Authorization', `Bearer ${casterUser.token}`).send({ name: 'Deck Purge' }).expect(201);
       const casterDeckId = casterDeck.body.character.decks[0].id as string;
-      await request(app).post(`/api/characters/${caster.id}/decks/${casterDeckId}/cards`).set('Authorization', `Bearer ${player.token}`).send({ card_id: spellId, quantity: 3 }).expect(201);
+      await request(app).post(`/api/characters/${caster.id}/decks/${casterDeckId}/cards`).set('Authorization', `Bearer ${casterUser.token}`).send({ card_id: spellId, quantity: 3 }).expect(201);
 
       const targetDeck = await request(app).post(`/api/characters/${target.id}/decks`).set('Authorization', `Bearer ${gm1.token}`).send({ name: 'Deck Cible' }).expect(201);
       const targetDeckId = targetDeck.body.character.decks[0].id as string;
@@ -786,7 +801,7 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
         .expect(201);
       const duelId = created.body.duel.id as string;
 
-      const tokenFor = (characterId: string) => (characterId === target.id ? gm1.token : player.token);
+      const tokenFor = (characterId: string) => (characterId === target.id ? gm1.token : casterUser.token);
       const participantByTeam = (duel: { participants: Array<{ team: number; is_active: boolean; character_id: string; id: string }> }, team: number) =>
         duel.participants.find((p) => p.team === team && p.is_active)!;
 
@@ -845,7 +860,7 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
           }
         }
         if (acting.character_id === caster.id && targetSummoned) {
-          const current = await request(app).get(`/api/duels/${duelId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+          const current = await request(app).get(`/api/duels/${duelId}`).set('Authorization', `Bearer ${casterUser.token}`).expect(200);
           const activateOpt = current.body.duel.pending_prompt?.activatable?.find((o: { card: { name: string } | null }) => o.card?.name === 'Purge de Test');
           if (activateOpt) {
             duel = current.body.duel;
@@ -862,7 +877,7 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
 
       const activateRes = await request(app)
         .post(`/api/duels/${duelId}/idle-action`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${casterUser.token}`)
         .send({ participant_id: casterParticipant.id, category: IdleCmdCategory.ACTIVATE, index: duel.pending_prompt.activatable.indexOf(activateOpt) })
         .expect(200);
 
@@ -873,7 +888,7 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
         const place = firstAvailablePlace(afterActivate.pending_prompt.flag);
         const placeRes = await request(app)
           .post(`/api/duels/${duelId}/select-place`)
-          .set('Authorization', `Bearer ${player.token}`)
+          .set('Authorization', `Bearer ${casterUser.token}`)
           .send({ participant_id: casterParticipant.id, selections: [{ player: casterParticipant.team, location: place!.location, sequence: place!.sequence }] })
           .expect(200);
         afterActivate = placeRes.body.duel;
@@ -886,7 +901,7 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
 
       const targetRes = await request(app)
         .post(`/api/duels/${duelId}/select-card`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${casterUser.token}`)
         .send({ participant_id: casterParticipant.id, indices: [0] })
         .expect(200);
       // Résolu : la chaîne se termine, un nouveau prompt (jamais null) suit.
@@ -986,13 +1001,13 @@ end
         is_custom: false,
       });
 
-      const caster = await createCharacter(player.token, sessionA.id, 'Lanceuse Aveugle');
+      const { user: casterUser, character: caster } = await createFreshPlayerCharacter('cc_lanceuse_aveugle', sessionA, 'Lanceuse Aveugle');
       const target = await createCharacter(gm1.token, sessionA.id, 'Porteur Aveugle', true);
 
       await Character.updateOne({ _id: caster.id }, { $set: { collection: Array(3).fill(spellId) } });
-      const casterDeck = await request(app).post(`/api/characters/${caster.id}/decks`).set('Authorization', `Bearer ${player.token}`).send({ name: 'Deck Aveugle' }).expect(201);
+      const casterDeck = await request(app).post(`/api/characters/${caster.id}/decks`).set('Authorization', `Bearer ${casterUser.token}`).send({ name: 'Deck Aveugle' }).expect(201);
       const casterDeckId = casterDeck.body.character.decks[0].id as string;
-      await request(app).post(`/api/characters/${caster.id}/decks/${casterDeckId}/cards`).set('Authorization', `Bearer ${player.token}`).send({ card_id: spellId, quantity: 3 }).expect(201);
+      await request(app).post(`/api/characters/${caster.id}/decks/${casterDeckId}/cards`).set('Authorization', `Bearer ${casterUser.token}`).send({ card_id: spellId, quantity: 3 }).expect(201);
 
       const targetDeck = await request(app).post(`/api/characters/${target.id}/decks`).set('Authorization', `Bearer ${gm1.token}`).send({ name: 'Deck Cible Aveugle' }).expect(201);
       const targetDeckId = targetDeck.body.character.decks[0].id as string;
@@ -1013,7 +1028,7 @@ end
         .expect(201);
       const duelId = created.body.duel.id as string;
 
-      const tokenFor = (characterId: string) => (characterId === target.id ? gm1.token : player.token);
+      const tokenFor = (characterId: string) => (characterId === target.id ? gm1.token : casterUser.token);
       const participantByTeam = (duel: { participants: Array<{ team: number; is_active: boolean; character_id: string; id: string }> }, team: number) =>
         duel.participants.find((p) => p.team === team && p.is_active)!;
 
@@ -1072,7 +1087,7 @@ end
           }
         }
         if (acting.character_id === caster.id && targetSet) {
-          const current = await request(app).get(`/api/duels/${duelId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+          const current = await request(app).get(`/api/duels/${duelId}`).set('Authorization', `Bearer ${casterUser.token}`).expect(200);
           const activateOpt = current.body.duel.pending_prompt?.activatable?.find((o: { card: { name: string } | null }) => o.card?.name === 'Purge Aveugle');
           if (activateOpt) {
             duel = current.body.duel;
@@ -1089,7 +1104,7 @@ end
 
       const activateRes = await request(app)
         .post(`/api/duels/${duelId}/idle-action`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${casterUser.token}`)
         .send({ participant_id: casterParticipant.id, category: IdleCmdCategory.ACTIVATE, index: duel.pending_prompt.activatable.indexOf(activateOpt) })
         .expect(200);
 
@@ -1098,7 +1113,7 @@ end
         const place = firstAvailablePlace(afterActivate.pending_prompt.flag);
         const placeRes = await request(app)
           .post(`/api/duels/${duelId}/select-place`)
-          .set('Authorization', `Bearer ${player.token}`)
+          .set('Authorization', `Bearer ${casterUser.token}`)
           .send({ participant_id: casterParticipant.id, selections: [{ player: casterParticipant.team, location: place!.location, sequence: place!.sequence }] })
           .expect(200);
         afterActivate = placeRes.body.duel;
@@ -1123,7 +1138,7 @@ end
 
       const targetRes = await request(app)
         .post(`/api/duels/${duelId}/select-card`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${casterUser.token}`)
         .send({ participant_id: casterParticipant.id, indices: [0] })
         .expect(200);
       await passOptionalChains(targetRes.body.duel);

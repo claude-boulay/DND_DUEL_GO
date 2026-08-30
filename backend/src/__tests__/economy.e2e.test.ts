@@ -635,7 +635,11 @@ describe('Ouverture de booster : import à la volée d’un set jamais importé,
       .send({
         game_session_id: sessionId,
         name: 'Testeur Réimpression',
-        is_npc: false,
+        // `player` est le créateur/MJ de CETTE session (voir POST /sessions
+        // ci-dessus) — le MJ ne peut créer que des PNJ (voir
+        // characterCreation.e2e.test.ts), sans incidence sur ce que ce test
+        // vérifie réellement (import à la volée d'un booster).
+        is_npc: true,
         stats: { history: 13, perception: 13, intelligence: 13, charisma: 20, luck: 8 },
       })
       .expect(201);
@@ -799,7 +803,11 @@ describe('Ouverture de booster : import à la volée d’un set jamais importé,
         .send({
           game_session_id: sessionId,
           name: 'Testeur Import Auto',
-          is_npc: false,
+          // `player` est le MJ de cette session (voir POST /sessions plus
+          // haut dans ce describe) — ne peut créer qu'un PNJ, voir
+          // characterCreation.e2e.test.ts. Sans incidence sur ce que ce test
+          // vérifie réellement (import à la volée d'un booster).
+          is_npc: true,
           stats: { history: 13, perception: 13, intelligence: 13, charisma: 20, luck: 8 },
         })
         .expect(201);

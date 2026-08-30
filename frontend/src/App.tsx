@@ -223,7 +223,8 @@ export default function App() {
           <CharacterSheetForm
             token={auth.token}
             sessionId={session.id}
-            canCreateNpc={session.is_gm}
+            isGm={session.is_gm}
+            hasPlayerCharacter={characters.some((c) => !c.is_npc && c.user_id === auth.user!.id)}
             onCreated={handleCharacterCreated}
           />
           <div>

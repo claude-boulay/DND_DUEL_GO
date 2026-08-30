@@ -13,7 +13,11 @@ import {
 interface CharacterSheetFormProps {
   token: string;
   sessionId: string;
-  canCreateNpc: boolean;
+  isGm: boolean;
+  // Un joueur ne peut avoir qu'UN SEUL personnage joueur par salon (demande
+  // utilisateur, pour que "le" modificateur de stat d'un lancer de dé reste
+  // sans ambiguïté) — le formulaire se masque une fois ce personnage créé.
+  hasPlayerCharacter: boolean;
   onCreated: (character: ApiCharacter) => void;
 }
 
@@ -25,9 +29,14 @@ const BASE_STATS: CharacterStats = {
   luck: STAT_MIN,
 };
 
-export function CharacterSheetForm({ token, sessionId, canCreateNpc, onCreated }: CharacterSheetFormProps) {
+/**
+ * Le MJ ne crée plus JAMAIS que des PNJ (plus de case à cocher — imposé),
+ * un joueur ne crée plus jamais qu'un personnage joueur, et un seul par
+ * salon (voir hasPlayerCharacter). Le choix is_npc n'existe donc plus côté
+ * formulaire : il est entièrement dérivé de qui le soumet.
+ */
+export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter, onCreated }: CharacterSheetFormProps) {
   const [name, setName] = useState('');
-  const [isNpc, setIsNpc] = useState(false);
   const [backstory, setBackstory] = useState('');
   const [personality, setPersonality] = useState('');
   const [visualDescription, setVisualDescription] = useState('');
@@ -54,7 +63,6 @@ export function CharacterSheetForm({ token, sessionId, canCreateNpc, onCreated }
     setPersonality('');
     setVisualDescription('');
     setStats(BASE_STATS);
-    setIsNpc(false);
   };
 
   const handleSubmit = async (event: FormEvent) => {
@@ -65,7 +73,7 @@ export function CharacterSheetForm({ token, sessionId, canCreateNpc, onCreated }
       const { character } = await api.createCharacter(token, {
         game_session_id: sessionId,
         name,
-        is_npc: isNpc,
+        is_npc: isGm,
         stats,
         backstory,
         personality,
@@ -80,27 +88,32 @@ export function CharacterSheetForm({ token, sessionId, canCreateNpc, onCreated }
     }
   };
 
+  if (!isGm && hasPlayerCharacter) {
+    return (
+      <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-200">Nouveau personnage</h2>
+        <p className="text-xs text-neutral-500">
+          Vous avez déjà un personnage dans ce salon — un seul personnage joueur par compte et par partie.
+        </p>
+      </section>
+    );
+  }
+
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-200">Nouveau personnage</h2>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-200">
+        {isGm ? 'Nouveau PNJ' : 'Nouveau personnage'}
+      </h2>
 
       <form onSubmit={handleSubmit} className="space-y-3">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Nom du personnage"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
-          />
-          {canCreateNpc && (
-            <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-neutral-400">
-              <input type="checkbox" checked={isNpc} onChange={(e) => setIsNpc(e.target.checked)} />
-              NPC
-            </label>
-          )}
-        </div>
+        <input
+          type="text"
+          placeholder={isGm ? 'Nom du PNJ' : 'Nom du personnage'}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+          className="w-full rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
+        />
 
         <div className="rounded-md border border-arena-700 p-3">
           <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-wider text-neutral-400">

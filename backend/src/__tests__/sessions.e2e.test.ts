@@ -115,6 +115,9 @@ describe('Parties : retrouver ses sessions et suppression en cascade (E2E)', () 
       .send({
         game_session_id: sessionToDeleteId,
         name: 'Personnage éphémère',
+        // Le MJ ne peut créer que des PNJ (voir characterCreation.e2e.test.ts) —
+        // peu importe pour ce test, qui vérifie juste la suppression en cascade.
+        is_npc: true,
         stats: { history: 13, perception: 13, intelligence: 13, charisma: 20, luck: 8 },
       })
       .expect(201);

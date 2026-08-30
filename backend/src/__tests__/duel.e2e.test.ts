@@ -513,8 +513,16 @@ describe('Duel piloté par le moteur ocgcore réel, via l’API HTTP (E2E)', () 
     let p1: { id: string };
     let p2: { id: string };
     let opp: { id: string };
+    // Un seul personnage joueur par utilisateur et par salon (voir
+    // characterCreation.e2e.test.ts) : `player` a déjà `playerChar` dans
+    // cette session (voir le beforeAll racine) et ne peut donc pas non plus
+    // prêter p1 — p1 ET p2 (le même camp, Duel Tag) ont chacun besoin de
+    // leur propre joueur dédié, exactement le scénario réel visé (deux amis
+    // qui font équipe), pas un seul joueur qui piloterait deux personnages.
+    let tagPlayer1: AuthedUser;
+    let tagPlayer2: AuthedUser;
 
-    const tokenFor = (characterId: string) => (characterId === opp.id ? gm.token : player.token);
+    const tokenFor = (characterId: string) => (characterId === opp.id ? gm.token : characterId === p2?.id ? tagPlayer2.token : tagPlayer1.token);
 
     /** Absorbe toute fenêtre de chaîne non forcée (passe) — voir le describe précédent, même piège (MSG_SELECT_CHAIN après chaque action). */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -552,17 +560,22 @@ describe('Duel piloté par le moteur ocgcore réel, via l’API HTTP (E2E)', () 
       const battleOx = await seedOfficialCard(5053103, 'Battle Ox', 1700, 1000, 'Beast-Warrior', 'EARTH');
       const babyDragon = await seedOfficialCard(88819587, 'Baby Dragon', 1200, 700, 'Dragon', 'WIND');
 
-      p1 = await createCharacter(player.token, session.id, 'Duelliste Tag 1');
-      p2 = await createCharacter(player.token, session.id, 'Duelliste Tag 2');
+      tagPlayer1 = await registerUser('duel_tag_player1');
+      tagPlayer2 = await registerUser('duel_tag_player2');
+      await request(app).post(`/api/sessions/${session.code}/join`).set('Authorization', `Bearer ${tagPlayer1.token}`).expect(200);
+      await request(app).post(`/api/sessions/${session.code}/join`).set('Authorization', `Bearer ${tagPlayer2.token}`).expect(200);
+
+      p1 = await createCharacter(tagPlayer1.token, session.id, 'Duelliste Tag 1');
+      p2 = await createCharacter(tagPlayer2.token, session.id, 'Duelliste Tag 2');
       opp = await createCharacter(gm.token, session.id, 'Adversaire Tag', true);
 
       await Character.updateOne({ _id: p1.id }, { $set: { collection: [...Array(3).fill(celticGuardianId), ...Array(3).fill(battleOx)] } });
       await Character.updateOne({ _id: p2.id }, { $set: { collection: [...Array(3).fill(mysticElf), ...Array(3).fill(babyDragon)] } });
 
-      const p1DeckId = await buildDeck(player.token, p1.id, 'Deck Tag P1', celticGuardianId, 3);
-      await request(app).post(`/api/characters/${p1.id}/decks/${p1DeckId}/cards`).set('Authorization', `Bearer ${player.token}`).send({ card_id: battleOx, quantity: 3 }).expect(201);
-      const p2DeckId = await buildDeck(player.token, p2.id, 'Deck Tag P2', mysticElf, 3);
-      await request(app).post(`/api/characters/${p2.id}/decks/${p2DeckId}/cards`).set('Authorization', `Bearer ${player.token}`).send({ card_id: babyDragon, quantity: 3 }).expect(201);
+      const p1DeckId = await buildDeck(tagPlayer1.token, p1.id, 'Deck Tag P1', celticGuardianId, 3);
+      await request(app).post(`/api/characters/${p1.id}/decks/${p1DeckId}/cards`).set('Authorization', `Bearer ${tagPlayer1.token}`).send({ card_id: battleOx, quantity: 3 }).expect(201);
+      const p2DeckId = await buildDeck(tagPlayer2.token, p2.id, 'Deck Tag P2', mysticElf, 3);
+      await request(app).post(`/api/characters/${p2.id}/decks/${p2DeckId}/cards`).set('Authorization', `Bearer ${tagPlayer2.token}`).send({ card_id: babyDragon, quantity: 3 }).expect(201);
       const oppDeckId = await buildDeck(gm.token, opp.id, 'Deck Tag Adversaire', kuriboh, 3);
       await request(app).post(`/api/characters/${opp.id}/decks/${oppDeckId}/cards`).set('Authorization', `Bearer ${gm.token}`).send({ card_id: mysticElf, quantity: 3 }).expect(201);
 
@@ -606,7 +619,7 @@ describe('Duel piloté par le moteur ocgcore réel, via l’API HTTP (E2E)', () 
       expect(p2Participant.is_active).toBe(false);
       await request(app)
         .post(`/api/duels/${duelId}/idle-action`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${tagPlayer2.token}`)
         .send({ participant_id: p2Participant.id, category: IdleCmdCategory.TO_END, index: 0 })
         .expect(403);
     });
@@ -633,14 +646,14 @@ describe('Duel piloté par le moteur ocgcore réel, via l’API HTTP (E2E)', () 
       // P1 (maintenant inactif) ne peut plus agir, même si c'est toujours le tour de son équipe.
       await request(app)
         .post(`/api/duels/${duelId}/idle-action`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${tagPlayer1.token}`)
         .send({ participant_id: p1Participant.id, category: IdleCmdCategory.TO_END, index: 0 })
         .expect(403);
 
       // P2, lui, peut désormais agir pour son équipe.
       await request(app)
         .post(`/api/duels/${duelId}/idle-action`)
-        .set('Authorization', `Bearer ${player.token}`)
+        .set('Authorization', `Bearer ${tagPlayer2.token}`)
         .send({ participant_id: p2Participant.id, category: IdleCmdCategory.TO_END, index: 0 })
         .expect(200);
     });
@@ -682,9 +695,14 @@ describe('Duel piloté par le moteur ocgcore réel, via l’API HTTP (E2E)', () 
       // Pas de `default: null` dans le schéma (index sparse, voir Card.model.ts) : un champ jamais défini vaut `undefined`, pas `null`.
       expect(legacyCard.engine_code).toBeUndefined();
 
-      const duellist = await createCharacter(player.token, session.id, 'Duelliste Carte Ancienne');
+      // Personnage joueur dédié (pas `player`, qui a déjà le sien dans cette
+      // session) : un seul personnage joueur par utilisateur et par salon,
+      // voir characterCreation.e2e.test.ts.
+      const legacyOwner = await registerUser('duel_legacy_owner');
+      await request(app).post(`/api/sessions/${session.code}/join`).set('Authorization', `Bearer ${legacyOwner.token}`).expect(200);
+      const duellist = await createCharacter(legacyOwner.token, session.id, 'Duelliste Carte Ancienne');
       await Character.updateOne({ _id: duellist.id }, { $set: { collection: Array(3).fill(legacyCard._id.toString()) } });
-      const deckId = await buildDeck(player.token, duellist.id, 'Deck Carte Ancienne', legacyCard._id.toString(), 3);
+      const deckId = await buildDeck(legacyOwner.token, duellist.id, 'Deck Carte Ancienne', legacyCard._id.toString(), 3);
 
       const opponent = await createCharacter(gm.token, session.id, 'Adversaire Carte Ancienne', true);
       const opponentDeckId = await buildDeck(gm.token, opponent.id, 'Deck Adverse Ancien', celticGuardianId, 3);
