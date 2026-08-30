@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import {
   api,
   ApiError,
@@ -70,6 +71,10 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // Overlay détaillé (demande utilisateur) : non-null = overlay ouvert, avec
+  // la carte à présélectionner (celle cliquée dans la liste compacte, ou la
+  // première du salon si ouvert via le bouton générique "voir toutes").
+  const [detailInitialId, setDetailInitialId] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -127,17 +132,28 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
   return (
     <div className="space-y-4">
       <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
-        <header className="mb-3 flex items-center justify-between">
+        <header className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Cartes custom</h2>
-          {isGm && (
-            <button
-              type="button"
-              onClick={() => setShowCreate((v) => !v)}
-              className="text-xs text-accent-400 underline hover:text-accent-300"
-            >
-              {showCreate ? 'Annuler' : '+ Créer une carte'}
-            </button>
-          )}
+          <div className="flex shrink-0 items-center gap-3">
+            {cards.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setDetailInitialId(cards[0]!.id)}
+                className="text-xs text-accent-400 underline hover:text-accent-300"
+              >
+                Voir toutes les cartes custom
+              </button>
+            )}
+            {isGm && (
+              <button
+                type="button"
+                onClick={() => setShowCreate((v) => !v)}
+                className="text-xs text-accent-400 underline hover:text-accent-300"
+              >
+                {showCreate ? 'Annuler' : '+ Créer une carte'}
+              </button>
+            )}
+          </div>
         </header>
 
         {showCreate && isGm && (
@@ -158,22 +174,38 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
         {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
         {!loading && cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte custom dans ce salon.</p>}
 
-        <div className="mt-1 space-y-2">
+        {/* Liste compacte (demande utilisateur) : nom + type seulement, plus
+            de détail/actions inline — voir CustomCardDetailOverlay pour ça.
+            Plafonnée à ~10 lignes visibles, le reste défile (même demande). */}
+        <div className="mt-1 max-h-[22rem] space-y-1 overflow-y-auto pr-1">
           {cards.map((card) => (
-            <CustomCardRow
+            <button
               key={card.id}
-              token={token}
-              card={card}
-              isGm={isGm}
-              boosters={boosters}
-              onBoosterLinked={loadBoosters}
-              onUpdated={updateCard}
-              onDeleted={() => void handleDelete(card.id)}
-              onError={setError}
-            />
+              type="button"
+              onClick={() => setDetailInitialId(card.id)}
+              className="flex w-full items-center justify-between gap-2 rounded-md border border-arena-700 bg-arena-800 px-2.5 py-1.5 text-left text-xs transition hover:border-accent-500"
+            >
+              <span className="min-w-0 truncate text-neutral-200">{card.name}</span>
+              <span className="shrink-0 text-neutral-500">{card.type}</span>
+            </button>
           ))}
         </div>
       </section>
+
+      {detailInitialId !== undefined && (
+        <CustomCardDetailOverlay
+          token={token}
+          cards={cards}
+          isGm={isGm}
+          boosters={boosters}
+          initialCardId={detailInitialId}
+          onBoosterLinked={loadBoosters}
+          onUpdated={updateCard}
+          onDeleted={(cardId) => void handleDelete(cardId)}
+          onError={setError}
+          onClose={() => setDetailInitialId(undefined)}
+        />
+      )}
 
       <CustomBoosterManager
         token={token}
@@ -276,7 +308,8 @@ function CustomBoosterManager({
         </p>
       )}
 
-      <div className="space-y-2">
+      {/* Plafonné à ~10 boosters visibles, le reste défile (demande utilisateur). */}
+      <div className="max-h-[30rem] space-y-2 overflow-y-auto pr-1">
         {boosters.map((booster) => (
           <CustomBoosterRow
             key={booster.set_code}
@@ -466,110 +499,177 @@ function cardSubtitle(card: ApiCustomCard): string {
   return parts.join(' · ');
 }
 
-function CustomCardRow({
+/**
+ * Interface détaillée "voir toutes les cartes custom" (demande utilisateur) :
+ * liste complète à gauche (cliquable), et pour la carte sélectionnée l'image
+ * en grand à gauche du panneau principal, les actions à droite — remplace
+ * l'ancien affichage (image+description+actions inline dans chaque ligne de
+ * la liste principale, désormais compacte, voir CustomCardPanel ci-dessus).
+ */
+function CustomCardDetailOverlay({
   token,
-  card,
+  cards,
   isGm,
   boosters,
+  initialCardId,
   onBoosterLinked,
   onUpdated,
   onDeleted,
   onError,
+  onClose,
 }: {
   token: string;
-  card: ApiCustomCard;
+  cards: ApiCustomCard[];
   isGm: boolean;
   boosters: ApiCardSet[];
+  initialCardId: string | null;
   onBoosterLinked: () => void;
   onUpdated: (card: ApiCustomCard) => void;
-  onDeleted: () => void;
+  onDeleted: (cardId: string) => void;
   onError: (message: string) => void;
+  onClose: () => void;
 }) {
+  const [selectedId, setSelectedId] = useState<string | null>(initialCardId);
   const [showBoosterLink, setShowBoosterLink] = useState(false);
   const [showImageEdit, setShowImageEdit] = useState(false);
 
+  const selected = cards.find((c) => c.id === selectedId) ?? null;
+
   const handleUnlink = async (setCode: string) => {
+    if (!selected) return;
     try {
-      const { card: updated } = await api.unlinkCustomCardFromBooster(token, card.id, setCode);
+      const { card: updated } = await api.unlinkCustomCardFromBooster(token, selected.id, setCode);
       onUpdated(updated);
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
     }
   };
 
-  return (
-    <article className="rounded-lg border border-arena-700 bg-arena-800 p-3 text-xs">
-      <div className="flex flex-wrap items-start gap-2">
-        {card.card_images[0] && (
-          <img src={card.card_images[0].image_url_small} alt={card.name} className="h-16 w-auto rounded" />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-accent-400">{card.name}</span>
-            <span className="rounded bg-arena-900 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">custom</span>
-            {card.created_in_this_session === false && (
-              <span className="text-[10px] text-neutral-500">réutilisée d'une autre partie</span>
-            )}
-          </div>
-          <div className="text-neutral-400">{cardSubtitle(card)}</div>
-          <p className="mt-1 whitespace-pre-wrap text-neutral-300">{card.description}</p>
-          {card.card_sets.length > 0 && (
-            <div className="mt-1 flex flex-wrap gap-1">
-              {card.card_sets.map((s) => (
-                <span key={s.set_code} className="rounded bg-arena-900 px-1.5 py-0.5 text-[10px] text-neutral-400">
-                  {s.set_name} ({s.set_rarity}){' '}
-                  {isGm && (
-                    <button type="button" onClick={() => void handleUnlink(s.set_code)} className="ml-1 text-red-400 hover:text-red-300">
-                      ×
-                    </button>
-                  )}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+  const selectCard = (id: string) => {
+    setSelectedId(id);
+    setShowBoosterLink(false);
+    setShowImageEdit(false);
+  };
 
-        {isGm && (
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <button type="button" onClick={() => setShowImageEdit((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
-              {showImageEdit ? 'Fermer' : "Changer l'image"}
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
+      <header className="flex items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Cartes custom</p>
+          <h2 className="font-display text-xl text-accent-400">Toutes les cartes custom</h2>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+        >
+          Fermer
+        </button>
+      </header>
+
+      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
+        <aside className="w-72 shrink-0 space-y-1 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3">
+          {cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte custom dans ce salon.</p>}
+          {cards.map((card) => (
+            <button
+              key={card.id}
+              type="button"
+              onClick={() => selectCard(card.id)}
+              className={`flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left text-xs transition ${
+                selectedId === card.id ? 'border-accent-500 bg-arena-800' : 'border-arena-700 bg-arena-800/60 hover:border-accent-500'
+              }`}
+            >
+              <span className="min-w-0 truncate text-neutral-200">{card.name}</span>
+              <span className="shrink-0 text-neutral-500">{card.type}</span>
             </button>
-            <button type="button" onClick={() => setShowBoosterLink((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
-              {showBoosterLink ? 'Fermer' : 'Lier à un booster'}
-            </button>
-            <button type="button" onClick={onDeleted} className="text-red-400 hover:text-red-300">
-              Supprimer
-            </button>
+          ))}
+        </aside>
+
+        {!selected ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-neutral-500">
+            Sélectionnez une carte à gauche pour l'afficher en détail.
           </div>
+        ) : (
+          <>
+            <main className="min-w-0 flex-1 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-4 text-sm">
+              {selected.card_images[0] && (
+                <img src={selected.card_images[0].image_url} alt={selected.name} className="mb-3 w-full max-w-xs rounded-lg shadow-lg" />
+              )}
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <h3 className="font-display text-lg text-accent-400">{selected.name}</h3>
+                <span className="rounded bg-arena-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">custom</span>
+                {selected.created_in_this_session === false && (
+                  <span className="text-[10px] text-neutral-500">réutilisée d'une autre partie</span>
+                )}
+              </div>
+              <p className="mb-2 text-neutral-400">{cardSubtitle(selected)}</p>
+              <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{selected.description}</p>
+              {selected.card_sets.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {selected.card_sets.map((s) => (
+                    <span key={s.set_code} className="rounded bg-arena-800 px-1.5 py-0.5 text-xs text-neutral-400">
+                      {s.set_name} ({s.set_rarity}){' '}
+                      {isGm && (
+                        <button type="button" onClick={() => void handleUnlink(s.set_code)} className="ml-1 text-red-400 hover:text-red-300">
+                          ×
+                        </button>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </main>
+
+            <aside className="w-80 shrink-0 space-y-3 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3 text-xs">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Actions</h3>
+              {!isGm && <p className="text-neutral-500">Réservé au MJ.</p>}
+              {isGm && (
+                <>
+                  <div>
+                    <button type="button" onClick={() => setShowImageEdit((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
+                      {showImageEdit ? 'Fermer' : "Changer l'image"}
+                    </button>
+                    {showImageEdit && <ImageEditForm token={token} card={selected} onUpdated={onUpdated} onError={onError} />}
+                  </div>
+
+                  <div>
+                    <button type="button" onClick={() => setShowBoosterLink((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
+                      {showBoosterLink ? 'Fermer' : 'Lier à un booster'}
+                    </button>
+                    {showBoosterLink && (
+                      <BoosterLinkForm
+                        token={token}
+                        card={selected}
+                        boosters={boosters}
+                        onLinked={(updated) => {
+                          onUpdated(updated);
+                          onBoosterLinked();
+                          setShowBoosterLink(false);
+                        }}
+                        onError={onError}
+                      />
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const id = selected.id;
+                      setSelectedId((current) => (current === id ? cards.find((c) => c.id !== id)?.id ?? null : current));
+                      onDeleted(id);
+                    }}
+                    className="text-red-400 hover:text-red-300"
+                  >
+                    Supprimer la carte
+                  </button>
+                </>
+              )}
+            </aside>
+          </>
         )}
       </div>
-
-      {showImageEdit && isGm && (
-        <ImageEditForm
-          token={token}
-          card={card}
-          onUpdated={(updated) => {
-            onUpdated(updated);
-            setShowImageEdit(false);
-          }}
-          onError={onError}
-        />
-      )}
-
-      {showBoosterLink && isGm && (
-        <BoosterLinkForm
-          token={token}
-          card={card}
-          boosters={boosters}
-          onLinked={(updated) => {
-            onUpdated(updated);
-            onBoosterLinked();
-            setShowBoosterLink(false);
-          }}
-          onError={onError}
-        />
-      )}
-    </article>
+    </div>,
+    document.body,
   );
 }
 
