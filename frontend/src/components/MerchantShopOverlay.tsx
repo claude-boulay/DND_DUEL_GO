@@ -229,6 +229,11 @@ function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected
         {item.haggle_dc !== null && (
           <span className="absolute left-1 top-1 rounded bg-arena-950/85 px-1 py-0.5 text-[8px] uppercase tracking-wide text-accent-400">Négociable</span>
         )}
+        {item.promo_buy_quantity !== null && item.promo_free_quantity !== null && (
+          <span className="absolute right-1 top-1 rounded bg-arena-950/85 px-1 py-0.5 text-[8px] uppercase tracking-wide text-emerald-400">
+            {item.promo_buy_quantity}+{item.promo_free_quantity}
+          </span>
+        )}
         {soldOut && (
           <span className="absolute inset-0 flex items-center justify-center bg-black/70 text-[10px] uppercase tracking-widest text-red-400">Épuisé</span>
         )}
@@ -270,6 +275,12 @@ function ItemDetailPanel({
   const [negotiable, setNegotiable] = useState(item.haggle_dc !== null);
   const [haggleDc, setHaggleDc] = useState(item.haggle_dc ?? 15);
   const [haggleDiscount, setHaggleDiscount] = useState(item.haggle_discount_percent ?? 20);
+  // Offre "achetés/offerts" (ex. "10 achetés, 1 offert") — même convention
+  // que le marchandage ci-dessus : case à cocher + deux champs révélés,
+  // bouton "Valider" explicite (pas d'application silencieuse au blur).
+  const [hasPromo, setHasPromo] = useState(item.promo_buy_quantity !== null);
+  const [promoBuyQuantity, setPromoBuyQuantity] = useState(item.promo_buy_quantity ?? 10);
+  const [promoFreeQuantity, setPromoFreeQuantity] = useState(item.promo_free_quantity ?? 1);
   const [savingError, setSavingError] = useState<string | null>(null);
 
   // Repart des vraies valeurs de l'article à chaque changement de sélection
@@ -281,9 +292,27 @@ function ItemDetailPanel({
     setNegotiable(item.haggle_dc !== null);
     setHaggleDc(item.haggle_dc ?? 15);
     setHaggleDiscount(item.haggle_discount_percent ?? 20);
-  }, [item.id, item.price, item.stock, item.haggle_dc, item.haggle_discount_percent]);
+    setHasPromo(item.promo_buy_quantity !== null);
+    setPromoBuyQuantity(item.promo_buy_quantity ?? 10);
+    setPromoFreeQuantity(item.promo_free_quantity ?? 1);
+  }, [
+    item.id,
+    item.price,
+    item.stock,
+    item.haggle_dc,
+    item.haggle_discount_percent,
+    item.promo_buy_quantity,
+    item.promo_free_quantity,
+  ]);
 
-  const commit = async (patch: { price?: number; stock?: number | null; haggle_dc?: number | null; haggle_discount_percent?: number | null }) => {
+  const commit = async (patch: {
+    price?: number;
+    stock?: number | null;
+    haggle_dc?: number | null;
+    haggle_discount_percent?: number | null;
+    promo_buy_quantity?: number | null;
+    promo_free_quantity?: number | null;
+  }) => {
     try {
       const { merchant: updated } = await api.updateMerchantItem(token, merchant.id, item.id, patch);
       onMerchantUpdate(updated);
@@ -396,6 +425,53 @@ function ItemDetailPanel({
               )}
             </>
           )}
+
+          <label className="flex items-center gap-2 pt-1 text-neutral-300">
+            <input
+              type="checkbox"
+              checked={hasPromo}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setHasPromo(checked);
+                if (checked) void commit({ promo_buy_quantity: promoBuyQuantity, promo_free_quantity: promoFreeQuantity });
+                else void commit({ promo_buy_quantity: null, promo_free_quantity: null });
+              }}
+            />
+            Offre "achetés/offerts"
+          </label>
+          {hasPromo && (
+            <>
+              <label className="flex items-center justify-between gap-2 text-neutral-300">
+                Achetés
+                <input
+                  type="number"
+                  min={1}
+                  value={promoBuyQuantity}
+                  onChange={(e) => setPromoBuyQuantity(Number(e.target.value))}
+                  className="w-16 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-2 text-neutral-300">
+                Offerts
+                <input
+                  type="number"
+                  min={1}
+                  value={promoFreeQuantity}
+                  onChange={(e) => setPromoFreeQuantity(Number(e.target.value))}
+                  className="w-16 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
+                />
+              </label>
+              {(promoBuyQuantity !== item.promo_buy_quantity || promoFreeQuantity !== item.promo_free_quantity) && (
+                <button
+                  type="button"
+                  onClick={() => void commit({ promo_buy_quantity: promoBuyQuantity, promo_free_quantity: promoFreeQuantity })}
+                  className="w-full rounded bg-accent-500 px-2 py-1 text-xs font-semibold text-arena-950 transition hover:bg-accent-400"
+                >
+                  Valider l'offre
+                </button>
+              )}
+            </>
+          )}
           {savingError && <p className="text-xs text-red-400">{savingError}</p>}
 
           <button type="button" onClick={onDeleted} className="mt-2 text-xs text-red-400 hover:text-red-300">
@@ -413,6 +489,11 @@ function ItemDetailPanel({
           {item.haggle_dc !== null && (
             <p className="mt-1 text-xs text-neutral-500">
               Négociable : dé {item.haggle_dc}+ → -{item.haggle_discount_percent}%
+            </p>
+          )}
+          {item.promo_buy_quantity !== null && item.promo_free_quantity !== null && (
+            <p className="mt-1 text-xs text-emerald-400">
+              Offre : {item.promo_buy_quantity} achetés → {item.promo_free_quantity} offert{item.promo_free_quantity > 1 ? 's' : ''} (cumulable)
             </p>
           )}
         </div>
@@ -602,6 +683,13 @@ function PurchaseWidget({
 
   const activeCharacterId = characterId || buyableCharacters[0]!.id;
   const negotiable = item.haggle_dc !== null;
+  // Aperçu client de l'offre "achetés/offerts" — purement cosmétique, le
+  // serveur recalcule et livre les exemplaires offerts pour de vrai
+  // (voir merchant.routes.ts POST .../purchase, bonus_quantity/delivered_quantity).
+  const bonusPreview =
+    item.promo_buy_quantity && item.promo_free_quantity
+      ? Math.floor(quantity / item.promo_buy_quantity) * item.promo_free_quantity
+      : 0;
 
   const resetHaggle = () => {
     setPendingHaggle(null);
@@ -652,11 +740,12 @@ function PurchaseWidget({
       onPurchased(data);
       resetHaggle();
       const h = data.purchase.haggle;
+      const bonusSuffix = data.purchase.bonus_quantity > 0 ? ` (dont ${data.purchase.bonus_quantity} offert${data.purchase.bonus_quantity > 1 ? 's' : ''})` : '';
       const message = h
-        ? `Acheté pour ${data.purchase.total_price} ${currencyName} — marchandage : ${h.roll}+${h.modifier}=${h.total} contre DC ${h.dc} → ${
+        ? `Acheté ${data.purchase.delivered_quantity}${bonusSuffix} pour ${data.purchase.total_price} ${currencyName} — marchandage : ${h.roll}+${h.modifier}=${h.total} contre DC ${h.dc} → ${
             h.success ? `réussi, -${h.discount_percent}%` : 'échoué, prix plein'
           }`
-        : `Acheté pour ${data.purchase.total_price} ${currencyName}`;
+        : `Acheté ${data.purchase.delivered_quantity}${bonusSuffix} pour ${data.purchase.total_price} ${currencyName}`;
       setFeedback({ ok: true, message });
     } catch (err) {
       setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
@@ -691,6 +780,13 @@ function PurchaseWidget({
           className="w-14 rounded border border-arena-600 bg-arena-800 px-1.5 py-1 text-right text-neutral-100"
         />
       </div>
+
+      {item.promo_buy_quantity !== null && item.promo_free_quantity !== null && (
+        <p className="text-neutral-400">
+          Offre : {item.promo_buy_quantity} achetés → {item.promo_free_quantity} offert{item.promo_free_quantity > 1 ? 's' : ''}
+          {bonusPreview > 0 && <span className="text-emerald-400"> — +{bonusPreview} offert{bonusPreview > 1 ? 's' : ''} pour cette quantité</span>}
+        </p>
+      )}
 
       {negotiable && (
         <label className="flex items-center gap-1.5 text-neutral-400">

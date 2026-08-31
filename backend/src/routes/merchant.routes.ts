@@ -40,6 +40,8 @@ function toMerchantDto(merchant: MerchantDocument) {
       stock: item.stock,
       haggle_dc: item.haggle_dc,
       haggle_discount_percent: item.haggle_discount_percent,
+      promo_buy_quantity: item.promo_buy_quantity,
+      promo_free_quantity: item.promo_free_quantity,
     })),
   };
 }
@@ -188,6 +190,11 @@ const addItemSchema = z.object({
   // sinon `success` ne voudrait jamais rien dire (voir la route .../haggle).
   haggle_dc: z.number().int().min(1).max(30).nullable().optional(),
   haggle_discount_percent: z.number().int().min(0).max(100).nullable().optional(),
+  // Offre "achetés/offerts" (demande utilisateur, ex. "10 achetés, 1 offert")
+  // — les deux ensemble ou aucun des deux, même convention que haggle_dc/
+  // haggle_discount_percent (voir Merchant.model.ts).
+  promo_buy_quantity: z.number().int().min(1).nullable().optional(),
+  promo_free_quantity: z.number().int().min(1).nullable().optional(),
 });
 
 merchantRouter.post(
@@ -241,6 +248,8 @@ merchantRouter.post(
       stock: body.stock ?? null,
       haggle_dc: body.haggle_dc ?? null,
       haggle_discount_percent: body.haggle_discount_percent ?? null,
+      promo_buy_quantity: body.promo_buy_quantity ?? null,
+      promo_free_quantity: body.promo_free_quantity ?? null,
     });
     await merchant.save();
 
@@ -286,6 +295,8 @@ const updateItemSchema = z.object({
   stock: z.number().int().min(0).nullable().optional(),
   haggle_dc: z.number().int().min(1).max(30).nullable().optional(),
   haggle_discount_percent: z.number().int().min(0).max(100).nullable().optional(),
+  promo_buy_quantity: z.number().int().min(1).nullable().optional(),
+  promo_free_quantity: z.number().int().min(1).nullable().optional(),
 });
 
 merchantRouter.patch(
@@ -300,6 +311,8 @@ merchantRouter.patch(
     if (updates.stock !== undefined) item.stock = updates.stock;
     if (updates.haggle_dc !== undefined) item.haggle_dc = updates.haggle_dc;
     if (updates.haggle_discount_percent !== undefined) item.haggle_discount_percent = updates.haggle_discount_percent;
+    if (updates.promo_buy_quantity !== undefined) item.promo_buy_quantity = updates.promo_buy_quantity;
+    if (updates.promo_free_quantity !== undefined) item.promo_free_quantity = updates.promo_free_quantity;
     await merchant.save();
 
     res.json({ merchant: toMerchantDto(merchant) });
@@ -507,15 +520,28 @@ merchantRouter.post(
 
     const totalPrice = unitPrice * body.quantity;
 
-    // 1) Stock (si fini) : décrément atomique conditionnel. $elemMatch est
+    // Offre "achetés/offerts" (demande utilisateur, ex. "10 achetés, 1
+    // offert") : pour chaque multiple ENTIER de promo_buy_quantity
+    // effectivement payé, promo_free_quantity exemplaires de plus sont
+    // livrés — jamais facturés (totalPrice ci-dessus reste basé sur
+    // body.quantity seul), mais bien pris sur le stock (un exemplaire offert
+    // reste un vrai exemplaire, pas une remise fictive).
+    const bonusQuantity =
+      item.promo_buy_quantity && item.promo_free_quantity
+        ? Math.floor(body.quantity / item.promo_buy_quantity) * item.promo_free_quantity
+        : 0;
+    const deliveredQuantity = body.quantity + bonusQuantity;
+
+    // 1) Stock (si fini) : décrément atomique conditionnel, pour la
+    // quantité RÉELLEMENT livrée (payante + offerte). $elemMatch est
     // indispensable ici : sans lui, 'items._id' et 'items.stock' sont évalués
     // comme deux conditions indépendantes sur le tableau (l'une peut matcher
     // CET article, l'autre un article différent), et l'opérateur positionnel
     // $ peut alors modifier le mauvais élément du tableau.
     if (item.stock !== null) {
       const stockResult = await Merchant.updateOne(
-        { _id: merchant._id, items: { $elemMatch: { _id: item._id, stock: { $gte: body.quantity } } } },
-        { $inc: { 'items.$.stock': -body.quantity } },
+        { _id: merchant._id, items: { $elemMatch: { _id: item._id, stock: { $gte: deliveredQuantity } } } },
+        { $inc: { 'items.$.stock': -deliveredQuantity } },
       );
       if (stockResult.modifiedCount === 0) {
         throw new AppError(409, 'Stock insuffisant', 'insufficient_stock');
@@ -534,17 +560,18 @@ merchantRouter.post(
       if (item.stock !== null) {
         await Merchant.updateOne(
           { _id: merchant._id, items: { $elemMatch: { _id: item._id } } },
-          { $inc: { 'items.$.stock': body.quantity } },
+          { $inc: { 'items.$.stock': deliveredQuantity } },
         );
       }
       throw new AppError(402, 'Fonds insuffisants', 'insufficient_funds');
     }
 
-    // 3) Livraison : carte ajoutée directement à la collection, booster mis de
-    // côté scellé (ouverture = action distincte via /characters/:id/open-booster).
+    // 3) Livraison (quantité payante + offerte) : carte ajoutée directement à
+    // la collection, booster mis de côté scellé (ouverture = action distincte
+    // via /characters/:id/open-booster).
     if (item.item_type === 'card' && item.card_id) {
       const cardIdStr = item.card_id.toString();
-      for (let i = 0; i < body.quantity; i += 1) updatedCharacter.collection.push(cardIdStr);
+      for (let i = 0; i < deliveredQuantity; i += 1) updatedCharacter.collection.push(cardIdStr);
     } else if (item.item_type === 'booster' && item.set_code) {
       // Rattrape card_set_id à l'achat pour un article ajouté avant ce champ
       // (voir CLAUDE.md) : item.name est déjà le set_name exact capturé à
@@ -558,14 +585,14 @@ merchantRouter.post(
         ? updatedCharacter.sealed_boosters.find((b) => b.card_set_id?.toString() === resolvedCardSetId.toString())
         : updatedCharacter.sealed_boosters.find((b) => b.set_code === item.set_code && !b.card_set_id);
       if (existing) {
-        existing.quantity += body.quantity;
+        existing.quantity += deliveredQuantity;
         if (!existing.card_set_id && resolvedCardSetId) existing.card_set_id = resolvedCardSetId;
       } else {
         updatedCharacter.sealed_boosters.push({
           card_set_id: resolvedCardSetId,
           set_code: item.set_code,
           set_name: item.name,
-          quantity: body.quantity,
+          quantity: deliveredQuantity,
         });
       }
     }
@@ -584,6 +611,8 @@ merchantRouter.post(
       purchase: {
         item_type: item.item_type,
         quantity: body.quantity,
+        bonus_quantity: bonusQuantity,
+        delivered_quantity: deliveredQuantity,
         unit_price: unitPrice,
         total_price: totalPrice,
         haggle: haggleResult,

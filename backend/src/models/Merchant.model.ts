@@ -27,6 +27,15 @@ export interface MerchantItemAttrs {
   // sur l'un ou l'autre = article non négociable (prix plein uniquement).
   haggle_dc: number | null;
   haggle_discount_percent: number | null;
+  // Offre "achetés/offerts" PROPRE à cet article (demande utilisateur, ex.
+  // "10 achetés, 1 offert") : pour chaque multiple entier de
+  // promo_buy_quantity effectivement acheté, promo_free_quantity exemplaires
+  // supplémentaires sont livrés en plus, gratuitement — le stock, lui, est
+  // bien décrémenté pour la totalité livrée (un exemplaire offert reste un
+  // vrai exemplaire pris sur le stock). null sur l'un ou l'autre = pas
+  // d'offre (même convention que haggle_dc/haggle_discount_percent).
+  promo_buy_quantity: number | null;
+  promo_free_quantity: number | null;
 }
 
 export interface MerchantAttrs {
@@ -55,6 +64,8 @@ const merchantItemSchema = new Schema<MerchantItemAttrs>({
   stock: { type: Number, default: null, min: 0 },
   haggle_dc: { type: Number, default: null, min: 1, max: 30 },
   haggle_discount_percent: { type: Number, default: null, min: 0, max: 100 },
+  promo_buy_quantity: { type: Number, default: null, min: 1 },
+  promo_free_quantity: { type: Number, default: null, min: 1 },
 });
 
 const merchantSchema = new Schema<MerchantAttrs>(

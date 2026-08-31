@@ -238,6 +238,11 @@ export interface ApiMerchantItem {
   // l'autre = article non négociable (prix plein uniquement).
   haggle_dc: number | null;
   haggle_discount_percent: number | null;
+  // Offre "achetés/offerts" propre à CET article (ex. "10 achetés, 1
+  // offert") — null sur l'un ou l'autre = pas d'offre, même convention que
+  // haggle_dc/haggle_discount_percent.
+  promo_buy_quantity: number | null;
+  promo_free_quantity: number | null;
 }
 
 export interface ApiMerchant {
@@ -274,6 +279,11 @@ export interface ApiPendingHaggle {
 export interface ApiPurchaseResult {
   item_type: ApiMerchantItemType;
   quantity: number;
+  // Exemplaires offerts en plus par l'offre "achetés/offerts" de l'article
+  // (0 si l'article n'en a pas), jamais facturés — voir promo_buy_quantity.
+  bonus_quantity: number;
+  // quantity + bonus_quantity : ce qui a réellement été livré (collection/sealed_boosters).
+  delivered_quantity: number;
   unit_price: number;
   total_price: number;
   haggle: ApiHaggleResult | null;
@@ -764,6 +774,8 @@ export const api = {
       stock?: number | null;
       haggle_dc?: number | null;
       haggle_discount_percent?: number | null;
+      promo_buy_quantity?: number | null;
+      promo_free_quantity?: number | null;
     },
   ) =>
     request<{ merchant: ApiMerchant }>(
@@ -784,7 +796,14 @@ export const api = {
     token: string,
     merchantId: string,
     itemId: string,
-    input: { price?: number; stock?: number | null; haggle_dc?: number | null; haggle_discount_percent?: number | null },
+    input: {
+      price?: number;
+      stock?: number | null;
+      haggle_dc?: number | null;
+      haggle_discount_percent?: number | null;
+      promo_buy_quantity?: number | null;
+      promo_free_quantity?: number | null;
+    },
   ) =>
     request<{ merchant: ApiMerchant }>(
       `/merchants/${encodeURIComponent(merchantId)}/items/${encodeURIComponent(itemId)}`,

@@ -1,11 +1,1 @@
 Liste DND A faire Yugiyo:
-- DM peut ajouter des cartes à la collection d'un joueurs manuellement par recherche de nom de carte et indications de la quantité ou par csv
-- Les joueurs ne peuvent avoir qu'un seul personnage joueur par session pour pouvoir faire des calculs sur le modificateur automatiser plus tard lors des lancer de dés.
-Le GM ne peut pas créer de personnage joueurs uniquement des NPC
-- Pouvoir voir le contenu d'un booster avant l'achat. Zoom sur les cartes possible pour meilleurs.
-- Dans le bloc des cartes importé j'aimerais que lorsque l'on passe la souris sur une carte elle soit zoomé de façon à la lire sans problème
-- Cacher l'historique des lancer de dés de base si il y a plus de 5 lancer (laisser visible les 5 dernier lancer) l'historique complet à sa propre vue
-- Pouvoir choisir le type de dés que l'on lance (dé de charisme,histoire...)
-- ajout automatique du modificateur de la stats pour un lancer de dé via le bloc classic et le marchandage du marchand (+1 au modificateur tout les 2 point au dessus de 10 dans la statistique concerné par le lancer de dé)
-- Seul le Gm peut lancer des dés pour un personnage qu'il n'a pas créer
-
