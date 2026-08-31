@@ -268,9 +268,14 @@ function CharacterEconomy({
   const [showCollection, setShowCollection] = useState(false);
   const [collection, setCollection] = useState<ApiCollectionEntry[] | null>(null);
   const [loadingCollection, setLoadingCollection] = useState(false);
-  const [openingSet, setOpeningSet] = useState<string | null>(null);
-  const [opening, setOpening] = useState<{ setCode: string; setName: string; cards: ApiOpenedCard[] } | null>(null);
+  // Clé sur card_set_id (repli sur set_code pour une entrée héritée d'avant
+  // ce correctif) — set_code seul ne distingue pas deux entrées différentes
+  // qui le partagent (voir CLAUDE.md).
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
+  const [opening, setOpening] = useState<{ setCode: string; setName: string; cardSetId: string | null; cards: ApiOpenedCard[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const keyFor = (b: { card_set_id: string | null; set_code: string }) => b.card_set_id ?? b.set_code;
 
   const fetchCollection = async () => {
     setLoadingCollection(true);
@@ -294,21 +299,21 @@ function CharacterEconomy({
     await fetchCollection();
   };
 
-  const handleOpen = async (setCode: string, setName: string) => {
-    setOpeningSet(setCode);
+  const handleOpen = async (setCode: string, setName: string, cardSetId: string | null) => {
+    setOpeningKey(cardSetId ?? setCode);
     setError(null);
     try {
       // Le tirage est déterminé et validé côté serveur (anti-triche) dès cet
       // appel ; l'overlay ne fait que rejouer une mise en scène de ce
       // résultat déjà acquis, pas une seconde requête différée.
-      const { character: updated, opened_cards } = await api.openBooster(token, character.id, setCode, 1);
+      const { character: updated, opened_cards } = await api.openBooster(token, character.id, setCode, 1, cardSetId);
       onCharacterUpdate(character.id, { collection: updated.collection, sealed_boosters: updated.sealed_boosters });
-      setOpening({ setCode, setName, cards: opened_cards });
+      setOpening({ setCode, setName, cardSetId, cards: opened_cards });
       if (showCollection) await fetchCollection();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
     } finally {
-      setOpeningSet(null);
+      setOpeningKey(null);
     }
   };
 
@@ -326,15 +331,15 @@ function CharacterEconomy({
           <span className="flex flex-wrap items-center gap-2 text-neutral-500">
             boosters scellés :
             {character.sealed_boosters.map((b) => (
-              <span key={b.set_code} className="flex items-center gap-1">
+              <span key={keyFor(b)} className="flex items-center gap-1">
                 {b.set_name} ×{b.quantity}
                 <button
                   type="button"
-                  onClick={() => void handleOpen(b.set_code, b.set_name)}
-                  disabled={openingSet === b.set_code}
+                  onClick={() => void handleOpen(b.set_code, b.set_name, b.card_set_id)}
+                  disabled={openingKey === keyFor(b)}
                   className="text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
                 >
-                  {openingSet === b.set_code ? 'ouverture...' : 'ouvrir'}
+                  {openingKey === keyFor(b) ? 'ouverture...' : 'ouvrir'}
                 </button>
               </span>
             ))}
@@ -350,14 +355,14 @@ function CharacterEconomy({
           cards={opening.cards}
           onClose={() => setOpening(null)}
           onNext={
-            openingSet === null && (character.sealed_boosters.find((b) => b.set_code === opening.setCode)?.quantity ?? 0) > 0
-              ? () => void handleOpen(opening.setCode, opening.setName)
+            openingKey === null && (character.sealed_boosters.find((b) => keyFor(b) === (opening.cardSetId ?? opening.setCode))?.quantity ?? 0) > 0
+              ? () => void handleOpen(opening.setCode, opening.setName, opening.cardSetId)
               : undefined
           }
           otherSets={
-            openingSet === null ? character.sealed_boosters.filter((b) => b.set_code !== opening.setCode && b.quantity > 0) : []
+            openingKey === null ? character.sealed_boosters.filter((b) => keyFor(b) !== (opening.cardSetId ?? opening.setCode) && b.quantity > 0) : []
           }
-          onOpenOther={(setCode, setName) => void handleOpen(setCode, setName)}
+          onOpenOther={(setCode, setName, cardSetId) => void handleOpen(setCode, setName, cardSetId)}
         />
       )}
 

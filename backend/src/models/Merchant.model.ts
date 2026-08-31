@@ -7,8 +7,13 @@ export interface MerchantItemAttrs {
   item_type: MerchantItemType;
   // Rempli pour item_type === 'card', sinon null.
   card_id: Types.ObjectId | null;
-  // Rempli pour item_type === 'booster' (référence CardSet.set_code), sinon null.
+  // Rempli pour item_type === 'booster' (snapshot d'affichage), sinon null.
   set_code: string | null;
+  // Rempli pour item_type === 'booster' : référence sans ambiguïté LE
+  // CardSet précis vendu (voir CLAUDE.md — set_code seul n'identifie pas un
+  // set de façon fiable, une même valeur pouvant désigner 2+ sets réels
+  // distincts). `null` uniquement pour un article ajouté avant ce correctif.
+  card_set_id: Types.ObjectId | null;
   // Snapshot pris à l'ajout (nom de la carte ou du set) : évite un join à
   // chaque consultation de la boutique, le stock/prix reste seul mutable.
   name: string;
@@ -43,6 +48,7 @@ const merchantItemSchema = new Schema<MerchantItemAttrs>({
   item_type: { type: String, enum: ['card', 'booster'], required: true },
   card_id: { type: Schema.Types.ObjectId, ref: 'Card', default: null },
   set_code: { type: String, default: null },
+  card_set_id: { type: Schema.Types.ObjectId, ref: 'CardSet', default: null },
   name: { type: String, required: true },
   image_url: { type: String, default: null },
   price: { type: Number, required: true, min: 0 },

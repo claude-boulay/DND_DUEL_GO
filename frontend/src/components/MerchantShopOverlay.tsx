@@ -306,7 +306,7 @@ function ItemDetailPanel({
       <h3 className="font-display text-lg text-accent-400">{item.name}</h3>
       <p className="mb-1 text-xs text-neutral-500">{item.item_type === 'card' ? 'Carte' : 'Booster'}</p>
 
-      {item.item_type === 'booster' && item.set_code && <BoosterContentsPreview token={token} setCode={item.set_code} />}
+      {item.item_type === 'booster' && item.set_code && <BoosterContentsPreview token={token} setCode={item.set_code} setId={item.card_set_id} />}
 
       {isGm && (
         <div className="space-y-2 border-t border-arena-700 pt-3">
@@ -447,7 +447,7 @@ function ItemDetailPanel({
  * panneau détail) pour ne pas interroger le catalogue pour rien tant que
  * personne ne clique.
  */
-function BoosterContentsPreview({ token, setCode }: { token: string; setCode: string }) {
+function BoosterContentsPreview({ token, setCode, setId }: { token: string; setCode: string; setId: string | null }) {
   const [expanded, setExpanded] = useState(false);
   const [cards, setCards] = useState<ApiCard[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -461,8 +461,10 @@ function BoosterContentsPreview({ token, setCode }: { token: string; setCode: st
     setExpanded(true);
     if (cards !== null) return; // déjà chargé une fois
     setLoading(true);
+    // setId préféré (voir CLAUDE.md — set_code seul est ambigu) ; set_code
+    // reste le seul repère pour un article booster ajouté avant ce correctif.
     api
-      .listCards(token, { set_code: setCode, limit: 100 })
+      .listCards(token, setId ? { set_id: setId, limit: 100 } : { set_code: setCode, limit: 100 })
       .then(({ cards: fetched }) => setCards(fetched))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
       .finally(() => setLoading(false));

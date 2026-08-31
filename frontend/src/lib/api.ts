@@ -47,6 +47,10 @@ export interface ApiDeckDetail {
 }
 
 export interface ApiSealedBooster {
+  // Référence sans ambiguïté LE CardSet précis (voir CLAUDE.md — set_code
+  // seul n'identifie pas un set de façon fiable) — null seulement pour une
+  // entrée créée avant ce correctif (donnée historique).
+  card_set_id: string | null;
   set_code: string;
   set_name: string;
   quantity: number;
@@ -84,6 +88,10 @@ export interface CreateCharacterInput {
 }
 
 export interface ApiCardSet {
+  // Identifiant stable (voir CLAUDE.md — set_code seul n'est pas unique dans
+  // les vraies données) : à utiliser pour toute référence précise à CE set
+  // précis (import, filtrage de cartes, article marchand...).
+  id: string;
   set_code: string;
   set_name: string;
   num_of_cards: number;
@@ -218,6 +226,10 @@ export interface ApiMerchantItem {
   item_type: ApiMerchantItemType;
   card_id: string | null;
   set_code: string | null;
+  // Référence sans ambiguïté LE CardSet précis vendu (booster uniquement,
+  // voir CLAUDE.md — set_code seul n'identifie pas un set de façon fiable) —
+  // null pour un article carte, ou un article booster ajouté avant ce correctif.
+  card_set_id: string | null;
   name: string;
   image_url: string | null;
   price: number;
@@ -691,9 +703,10 @@ export const api = {
   deleteCustomBooster: (token: string, setCode: string) =>
     request<null>(`/custom-cards/boosters/${encodeURIComponent(setCode)}`, { method: 'DELETE' }, token),
 
-  importCardSet: (token: string, setCode: string) =>
+  /** Prend l'`id` du set (voir ApiCardSet), pas son set_code — voir CLAUDE.md. */
+  importCardSet: (token: string, setId: string) =>
     request<{ set_name: string; imported_count: number }>(
-      `/cards/sets/${encodeURIComponent(setCode)}/import`,
+      `/cards/sets/${encodeURIComponent(setId)}/import`,
       { method: 'POST' },
       token,
     ),
@@ -701,6 +714,10 @@ export const api = {
   listCards: (
     token: string,
     params?: {
+      // Préféré (voir CLAUDE.md — set_code seul est ambigu). set_code reste
+      // accepté seul en repli, résout arbitrairement vers le premier set
+      // trouvé avec ce code.
+      set_id?: string;
       set_code?: string;
       search?: string;
       // Filtre directement le catalogue côté serveur (mêmes dimensions que
@@ -735,6 +752,9 @@ export const api = {
     input: {
       item_type: ApiMerchantItemType;
       card_id?: string;
+      // Préféré pour un article booster (voir CLAUDE.md). set_code reste
+      // accepté seul en repli, ambigu si ce code est partagé.
+      set_id?: string;
       set_code?: string;
       price: number;
       stock?: number | null;
@@ -813,10 +833,12 @@ export const api = {
   getCharacterCollection: (token: string, characterId: string) =>
     request<{ collection: ApiCollectionEntry[] }>(`/characters/${encodeURIComponent(characterId)}/collection`, {}, token),
 
-  openBooster: (token: string, characterId: string, setCode: string, quantity?: number) =>
+  // cardSetId préféré (voir CLAUDE.md — set_code seul est ambigu) : passer
+  // l'entrée sealed_boosters.card_set_id quand elle est connue.
+  openBooster: (token: string, characterId: string, setCode: string, quantity?: number, cardSetId?: string | null) =>
     request<{ character: ApiCharacter; opened_cards: ApiOpenedCard[] }>(
       `/characters/${encodeURIComponent(characterId)}/open-booster`,
-      { method: 'POST', body: JSON.stringify({ set_code: setCode, quantity }) },
+      { method: 'POST', body: JSON.stringify({ set_code: setCode, quantity, card_set_id: cardSetId ?? undefined }) },
       token,
     ),
 

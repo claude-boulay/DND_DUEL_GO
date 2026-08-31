@@ -38,7 +38,7 @@ describe("importCardsForSet : mapping des champs YGOPRODeck (échelle Pendule, f
   it('recopie pendulum_scale pour un monstre Pendule, et link_arrows (en minuscules) pour un monstre Link', async () => {
     const setName = `Set de Test Import ${rand}`;
     const setCode = `TIMP-${rand}`;
-    await CardSet.create({ set_code: setCode, set_name: setName, num_of_cards: 2, tcg_date: null, is_custom: false });
+    const cardSet = await CardSet.create({ set_code: setCode, set_name: setName, num_of_cards: 2, tcg_date: null, is_custom: false });
 
     const pendulumCard: YgoCard = {
       id: 900_000_001 + rand,
@@ -69,7 +69,9 @@ describe("importCardsForSet : mapping des champs YGOPRODeck (échelle Pendule, f
     };
     vi.mocked(fetchCardsBySet).mockResolvedValue([pendulumCard, linkCard]);
 
-    const result = await importCardsForSet(setCode);
+    // importCardsForSet prend l'_id Mongo du CardSet, pas son set_code — voir
+    // CLAUDE.md (set_code seul n'identifie pas un set de façon fiable).
+    const result = await importCardsForSet(cardSet._id.toString());
     expect(result.importedCount).toBe(2);
 
     const savedPendulum = await Card.findOne({ ygoprodeck_id: pendulumCard.id });
@@ -84,7 +86,7 @@ describe("importCardsForSet : mapping des champs YGOPRODeck (échelle Pendule, f
   it('laisse pendulum_scale null et link_arrows vide pour une carte sans ces champs', async () => {
     const setName = `Set de Test Import Normal ${rand}`;
     const setCode = `TIMN-${rand}`;
-    await CardSet.create({ set_code: setCode, set_name: setName, num_of_cards: 1, tcg_date: null, is_custom: false });
+    const cardSet = await CardSet.create({ set_code: setCode, set_name: setName, num_of_cards: 1, tcg_date: null, is_custom: false });
 
     const normalCard: YgoCard = {
       id: 900_000_003 + rand,
@@ -101,7 +103,7 @@ describe("importCardsForSet : mapping des champs YGOPRODeck (échelle Pendule, f
     };
     vi.mocked(fetchCardsBySet).mockResolvedValue([normalCard]);
 
-    await importCardsForSet(setCode);
+    await importCardsForSet(cardSet._id.toString());
 
     const saved = await Card.findOne({ ygoprodeck_id: normalCard.id });
     expect(saved?.pendulum_scale).toBeNull();
@@ -111,13 +113,14 @@ describe("importCardsForSet : mapping des champs YGOPRODeck (échelle Pendule, f
 
 // Réel bug corrigé (rapporté par l'utilisateur : "Legend of Blue Eyes White
 // Dragon (LOB)" invisible, seule sa réédition 25th Anniversary apparaissait)
-// — confirmé en direct contre le vrai cardsets.php : `set_code` seul N'EST
-// PAS unique dans les vraies données YGOPRODeck (142 des 644 codes réels
-// sont partagés par 2+ sets distincts), contrairement à ce que suppose le
-// schéma `CardSet` (`set_code: { unique: true }`). `syncCardSets` doit donc
-// choisir un gagnant déterministe en cas de collision plutôt que de laisser
-// le dernier reçu de l'API écraser silencieusement l'autre.
-describe('syncCardSets : collision de set_code (garde le set avec le plus de cartes)', () => {
+// puis demande de suivi explicite (import et différenciation de CHAQUE
+// variante, pas juste "garder la plus grosse") : `set_code` seul N'EST PAS
+// unique dans les vraies données YGOPRODeck (142 des 644 codes réels sont
+// partagés par 2+ sets distincts) — `(set_code, set_name)`, en revanche,
+// l'est (vérifié sur les 1032 sets réels). `syncCardSets` stocke donc
+// désormais CHAQUE variante comme son propre document `CardSet` (son propre
+// `_id`), au lieu de n'en garder qu'une seule.
+describe('syncCardSets : chaque variante partageant un set_code devient son propre CardSet', () => {
   beforeAll(async () => {
     if (!env.MONGO_URI.endsWith('_test')) {
       throw new Error('Les tests doivent tourner sur une base dédiée se terminant par "_test". Utilisez "npm test".');
@@ -130,7 +133,7 @@ describe('syncCardSets : collision de set_code (garde le set avec le plus de car
     await disconnectMongo();
   });
 
-  it('deux sets réels partageant le même set_code (cas LOB) : le plus grand gagne, peu importe l\'ordre reçu', async () => {
+  it('deux sets réels partageant le même set_code (cas LOB) sont TOUS LES DEUX stockés, chacun son propre document', async () => {
     const code = `LOBTEST-${rand}`;
     const original: YgoCardSet = { set_name: 'Legend of Blue Eyes White Dragon (test)', set_code: code, num_of_cards: 355, tcg_date: '2002-03-08' };
     const reprint: YgoCardSet = {
@@ -139,20 +142,23 @@ describe('syncCardSets : collision de set_code (garde le set avec le plus de car
       num_of_cards: 14,
       tcg_date: '2023-04-20',
     };
-    // Ordre "reprint avant l'original" délibéré : reproduit le cas réel où le
-    // dernier reçu (pas forcément le plus gros) gagnait avant ce correctif.
     vi.mocked(fetchCardSets).mockResolvedValue([reprint, original]);
 
     const { collidedSetCodes } = await syncCardSets();
 
-    const stored = await CardSet.find({ set_code: code });
-    expect(stored).toHaveLength(1); // toujours un seul doc par set_code (schéma unique inchangé, fix minimal)
-    expect(stored[0]?.num_of_cards).toBe(355);
+    const stored = await CardSet.find({ set_code: code }).sort({ num_of_cards: -1 });
+    expect(stored).toHaveLength(2); // les deux variantes sont désormais conservées, pas juste la plus grosse
     expect(stored[0]?.set_name).toBe('Legend of Blue Eyes White Dragon (test)');
-    // Demande de suivi utilisateur (booster ouvert en prod avec les
-    // mauvaises cartes) : repérer quels sets réimporter, pas juste les
-    // corriger silencieusement en base.
+    expect(stored[0]?.num_of_cards).toBe(355);
+    expect(stored[1]?.set_name).toBe('Legend of Blue Eyes White Dragon (25th Anniversary Edition) (test)');
+    expect(stored[1]?.num_of_cards).toBe(14);
+    // `_id` distincts : c'est CETTE identité, pas set_code, qui permet de
+    // différencier les deux variantes ailleurs dans l'app (import, filtrage
+    // de cartes, article marchand — voir CLAUDE.md).
+    expect(stored[0]!._id.toString()).not.toBe(stored[1]!._id.toString());
+    // Toujours informatif (voir CardSet.model.ts) : les deux sont bien marquées.
     expect(stored[0]?.had_code_collision).toBe(true);
+    expect(stored[1]?.had_code_collision).toBe(true);
     expect(collidedSetCodes).toContain(code);
   });
 
@@ -170,18 +176,22 @@ describe('syncCardSets : collision de set_code (garde le set avec le plus de car
     expect(collidedSetCodes).not.toContain(code);
   });
 
-  it('un set qui collisionnait avant est démarqué si une resync ultérieure ne montre plus de collision', async () => {
+  it('un set qui collisionnait avant est démarqué si une resync ultérieure ne montre plus de collision (l\'autre variante reste, elle, intacte)', async () => {
     const code = `WASCOLL-${rand}`;
     const a: YgoCardSet = { set_name: 'A (test)', set_code: code, num_of_cards: 10, tcg_date: '2020-01-01' };
     const b: YgoCardSet = { set_name: 'B (test)', set_code: code, num_of_cards: 5, tcg_date: '2020-01-02' };
     vi.mocked(fetchCardSets).mockResolvedValue([a, b]);
     await syncCardSets();
-    expect((await CardSet.findOne({ set_code: code }))?.had_code_collision).toBe(true);
+    expect((await CardSet.findOne({ set_code: code, set_name: 'A (test)' }))?.had_code_collision).toBe(true);
+    expect((await CardSet.findOne({ set_code: code, set_name: 'B (test)' }))?.had_code_collision).toBe(true);
 
     // Une resync ultérieure où "B" a disparu de l'API (cas réel possible) ne
-    // doit pas laisser le flag figé à true pour toujours.
+    // doit pas laisser le flag de "A" figé à true pour toujours — et ne
+    // supprime pas non plus le document de "B" déjà stocké (aucune purge,
+    // juste plus de nouvelle collision détectée pour ce code).
     vi.mocked(fetchCardSets).mockResolvedValue([a]);
     await syncCardSets();
-    expect((await CardSet.findOne({ set_code: code }))?.had_code_collision).toBe(false);
+    expect((await CardSet.findOne({ set_code: code, set_name: 'A (test)' }))?.had_code_collision).toBe(false);
+    expect(await CardSet.findOne({ set_code: code, set_name: 'B (test)' })).not.toBeNull();
   });
 });

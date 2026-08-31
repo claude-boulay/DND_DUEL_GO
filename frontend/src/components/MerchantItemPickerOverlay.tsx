@@ -157,7 +157,10 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
       const { merchant: updated } = await api.addMerchantItem(token, merchant.id, {
         item_type: itemType,
         card_id: itemType === 'card' ? selectedCard!.id : undefined,
-        set_code: itemType === 'booster' ? selectedSet!.set_code : undefined,
+        // set_id (voir CLAUDE.md — set_code seul n'identifie pas un set de
+        // façon fiable) : essentiel ici, la recherche peut renvoyer 2+ sets
+        // partageant le même set_code.
+        set_id: itemType === 'booster' ? selectedSet!.id : undefined,
         price,
         stock: stock.trim() === '' ? null : Number(stock),
       });
@@ -412,7 +415,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                 {!loadingSets && visibleSets.length === 0 && <p className="text-sm text-neutral-500">Aucun booster trouvé.</p>}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
                   {visibleSets.map((set) => (
-                    <BoosterTile key={set.set_code} set={set} selected={selectedSet?.set_code === set.set_code} onClick={() => setSelectedSet(set)} />
+                    <BoosterTile key={set.id} set={set} selected={selectedSet?.id === set.id} onClick={() => setSelectedSet(set)} />
                   ))}
                 </div>
               </div>

@@ -254,6 +254,13 @@ characterRouter.get(
 );
 
 const openBoosterSchema = z.object({
+  // Préféré (voir CLAUDE.md — set_code seul n'identifie pas un set de façon
+  // fiable) : référence sans ambiguïté LE CardSet précis dont ce booster
+  // scellé provient. Optionnel uniquement pour une entrée sealed_boosters
+  // créée avant ce correctif (card_set_id encore null côté personnage) —
+  // set_code reste alors le seul repère possible, ambigu comme avant dans
+  // ce seul cas résiduel.
+  card_set_id: z.string().trim().optional(),
   set_code: z.string().trim().min(1),
   quantity: z.number().int().min(1).max(20).default(1),
 });
@@ -271,14 +278,17 @@ characterRouter.post(
       throw new AppError(403, 'Vous ne pouvez pas ouvrir les boosters de ce personnage', 'forbidden');
     }
 
-    const { set_code, quantity } = openBoosterSchema.parse(req.body);
+    const { card_set_id, set_code, quantity } = openBoosterSchema.parse(req.body);
 
-    const sealedEntry = character.sealed_boosters.find((b) => b.set_code === set_code);
+    const sealedEntry = character.sealed_boosters.find((b) =>
+      card_set_id ? b.card_set_id?.toString() === card_set_id : b.set_code === set_code,
+    );
     if (!sealedEntry || sealedEntry.quantity < quantity) {
       throw new AppError(400, 'Pas assez de boosters scellés de ce set', 'insufficient_boosters');
     }
 
-    const cardSet = await CardSet.findOne({ set_code });
+    const cardSet =
+      card_set_id && Types.ObjectId.isValid(card_set_id) ? await CardSet.findById(card_set_id) : await CardSet.findOne({ set_code });
     if (!cardSet) throw new AppError(404, 'Set introuvable', 'not_found');
 
     // Un set custom (créé depuis le créateur de cartes) est toujours "prêt".
@@ -294,7 +304,7 @@ characterRouter.post(
     // il rapatrie l'intégralité des cartes propres à CE set.
     if (!cardSet.is_custom && !cardSet.imported_at) {
       try {
-        await importCardsForSet(cardSet.set_code);
+        await importCardsForSet(cardSet._id.toString());
       } catch (error) {
         throw new AppError(
           400,
@@ -308,7 +318,7 @@ characterRouter.post(
       // sinon on retomberait sur le pool ci-dessous qui, lui, peut être non
       // vide UNIQUEMENT à cause d'une carte réimprimée d'un set différent
       // déjà importé (la contamination que ce garde-fou entier vise à éviter).
-      const refreshed = await CardSet.findOne({ set_code });
+      const refreshed = await CardSet.findById(cardSet._id);
       if (!refreshed?.imported_at) {
         throw new AppError(400, "Aucune carte trouvée sur YGOPRODeck pour ce set", 'set_not_imported');
       }
@@ -323,7 +333,9 @@ characterRouter.post(
 
     sealedEntry.quantity -= quantity;
     if (sealedEntry.quantity === 0) {
-      character.sealed_boosters = character.sealed_boosters.filter((b) => b.set_code !== set_code);
+      character.sealed_boosters = character.sealed_boosters.filter((b) =>
+        card_set_id ? b.card_set_id?.toString() !== card_set_id : b.set_code !== set_code,
+      );
     }
     character.collection.push(...openedCards.map((c) => c._id.toString()));
     await character.save();

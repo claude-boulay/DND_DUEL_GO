@@ -473,13 +473,18 @@ function BoostersPanel({
   character: ApiCharacter;
   onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
 }) {
-  const [openingSet, setOpeningSet] = useState<string | null>(null);
-  const [opening, setOpening] = useState<{ setCode: string; setName: string; cards: ApiOpenedCard[] } | null>(null);
+  // Clé sur card_set_id (repli sur set_code pour une entrée héritée d'avant
+  // ce correctif) — set_code seul ne distingue pas deux entrées différentes
+  // qui le partagent (voir CLAUDE.md).
+  const keyFor = (b: ApiSealedBooster) => b.card_set_id ?? b.set_code;
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
+  const [opening, setOpening] = useState<{ setCode: string; setName: string; cardSetId: string | null; cards: ApiOpenedCard[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Demande utilisateur : afficher l'image du booster, pas juste son nom en
-  // texte — ApiSealedBooster n'a que set_code/set_name/quantity (pas
-  // d'image), donc on la résout ici via le catalogue de sets, par nom exact
-  // (fiable : un nom de set correspond à son propre nom en recherche).
+  // texte — ApiSealedBooster n'a pas d'image directement, donc on la résout
+  // ici via le catalogue de sets. Par set_name exact (jamais set_code, voir
+  // CLAUDE.md — deux sets peuvent partager le même code mais jamais le même
+  // nom), clé sur card_set_id pour rester correct même dans ce cas.
   const [images, setImages] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
@@ -489,8 +494,8 @@ function BoostersPanel({
       character.sealed_boosters.map((b) =>
         api
           .listCardSets(token, { search: b.set_name, include_custom: true })
-          .then(({ sets }): [string, string | null] => [b.set_code, sets.find((s) => s.set_code === b.set_code)?.set_image ?? null])
-          .catch((): [string, string | null] => [b.set_code, null]),
+          .then(({ sets }): [string, string | null] => [keyFor(b), sets.find((s) => s.set_name === b.set_name)?.set_image ?? null])
+          .catch((): [string, string | null] => [keyFor(b), null]),
       ),
     ).then((entries) => {
       if (!cancelled) setImages(Object.fromEntries(entries));
@@ -503,17 +508,17 @@ function BoostersPanel({
 
   if (character.sealed_boosters.length === 0) return null;
 
-  const handleOpen = async (setCode: string, setName: string) => {
-    setOpeningSet(setCode);
+  const handleOpen = async (setCode: string, setName: string, cardSetId: string | null) => {
+    setOpeningKey(cardSetId ?? setCode);
     setError(null);
     try {
-      const { character: updated, opened_cards } = await api.openBooster(token, character.id, setCode, 1);
+      const { character: updated, opened_cards } = await api.openBooster(token, character.id, setCode, 1, cardSetId);
       onCharacterUpdate(character.id, { collection: updated.collection, sealed_boosters: updated.sealed_boosters });
-      setOpening({ setCode, setName, cards: opened_cards });
+      setOpening({ setCode, setName, cardSetId, cards: opened_cards });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
     } finally {
-      setOpeningSet(null);
+      setOpeningKey(null);
     }
   };
 
@@ -524,9 +529,9 @@ function BoostersPanel({
           tuné à ~5 lignes à cette hauteur de ligne, le reste défile. */}
       <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1 text-sm">
         {character.sealed_boosters.map((b: ApiSealedBooster) => (
-          <div key={b.set_code} className="flex items-center gap-2 rounded-md border border-arena-700 bg-arena-800 px-2 py-1.5">
-            {images[b.set_code] ? (
-              <img src={images[b.set_code]!} alt={b.set_name} className="h-10 w-10 shrink-0 rounded object-contain" />
+          <div key={keyFor(b)} className="flex items-center gap-2 rounded-md border border-arena-700 bg-arena-800 px-2 py-1.5">
+            {images[keyFor(b)] ? (
+              <img src={images[keyFor(b)]!} alt={b.set_name} className="h-10 w-10 shrink-0 rounded object-contain" />
             ) : (
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-arena-900 text-[8px] text-arena-600">{b.set_code}</div>
             )}
@@ -535,11 +540,11 @@ function BoostersPanel({
             </span>
             <button
               type="button"
-              onClick={() => void handleOpen(b.set_code, b.set_name)}
-              disabled={openingSet === b.set_code}
+              onClick={() => void handleOpen(b.set_code, b.set_name, b.card_set_id)}
+              disabled={openingKey === keyFor(b)}
               className="shrink-0 text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
             >
-              {openingSet === b.set_code ? 'ouverture...' : 'ouvrir'}
+              {openingKey === keyFor(b) ? 'ouverture...' : 'ouvrir'}
             </button>
           </div>
         ))}
@@ -551,12 +556,14 @@ function BoostersPanel({
           cards={opening.cards}
           onClose={() => setOpening(null)}
           onNext={
-            openingSet === null && (character.sealed_boosters.find((b) => b.set_code === opening.setCode)?.quantity ?? 0) > 0
-              ? () => void handleOpen(opening.setCode, opening.setName)
+            openingKey === null && (character.sealed_boosters.find((b) => keyFor(b) === (opening.cardSetId ?? opening.setCode))?.quantity ?? 0) > 0
+              ? () => void handleOpen(opening.setCode, opening.setName, opening.cardSetId)
               : undefined
           }
-          otherSets={openingSet === null ? character.sealed_boosters.filter((b) => b.set_code !== opening.setCode && b.quantity > 0) : []}
-          onOpenOther={(setCode, setName) => void handleOpen(setCode, setName)}
+          otherSets={
+            openingKey === null ? character.sealed_boosters.filter((b) => keyFor(b) !== (opening.cardSetId ?? opening.setCode) && b.quantity > 0) : []
+          }
+          onOpenOther={(setCode, setName, cardSetId) => void handleOpen(setCode, setName, cardSetId)}
         />
       )}
     </section>

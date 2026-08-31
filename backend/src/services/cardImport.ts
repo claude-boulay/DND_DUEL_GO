@@ -23,57 +23,39 @@ function decodeSetName(name: string): string {
 /**
  * Réel bug corrigé ici (rapporté par l'utilisateur : "Legend of Blue Eyes
  * White Dragon (LOB)" invisible, seule sa réédition 25th Anniversary
- * apparaissait, avec seulement des Magies dedans) : `CardSet.set_code` est
- * `unique` côté schéma, mais NE L'EST PAS dans les vraies données
- * YGOPRODeck — confirmé en direct contre `cardsets.php` : 142 des 644
- * `set_code` distincts sont partagés par 2+ sets réellement différents (ex.
- * "LOB" = l'édition originale 2002 à 355 cartes ET sa réédition 25th
- * Anniversary à 14 cartes ; le cas le plus courant étant un set principal
- * partageant son code avec son propre mini-set Sneak Peek/Special Edition
- * promotionnel). `(set_code, set_name)`, en revanche, est bien unique sur
- * les 1032 sets réels. Avant ce correctif, l'upsert par `set_code` seul
- * faisait gagner arbitrairement le DERNIER set reçu de l'API pour un code
- * donné, écrasant silencieusement l'autre.
+ * apparaissait, avec seulement des Magies dedans) : `CardSet.set_code`
+ * n'est PAS unique dans les vraies données YGOPRODeck — confirmé en direct
+ * contre `cardsets.php` : 142 des 644 `set_code` distincts sont partagés par
+ * 2+ sets réellement différents (ex. "LOB" = l'édition originale 2002 à 355
+ * cartes ET sa réédition 25th Anniversary à 14 cartes). `(set_code,
+ * set_name)`, en revanche, est bien unique sur les 1032 sets réels — c'est
+ * la clé d'upsert utilisée ici, chaque variante devenant son propre document
+ * `CardSet` (son propre `_id`), au lieu de l'ancien "on ne garde que le plus
+ * gros des deux" (fix minimal, aujourd'hui remplacé par ce correctif complet
+ * — demande utilisateur explicite : pouvoir importer et différencier CHAQUE
+ * variante pour la mettre en boutique). Le reste de l'app référence
+ * désormais un set par son `_id` Mongo (stable, jamais ambigu), pas par
+ * set_code seul — voir card.routes.ts (`GET /sets/:id/import`,
+ * `GET /cards?set_id=`), merchant.routes.ts (`MerchantItem.card_set_id`) et
+ * character.routes.ts (`SealedBoosterAttrs.card_set_id`).
  *
- * Fix choisi (rapide, sans refonte du modèle ni des routes qui utilisent
- * déjà `set_code` comme identifiant unique côté marchand/booster/etc.) : en
- * cas de collision, on ne garde que le set avec le PLUS de cartes — presque
- * toujours le "vrai" set principal, puisque la collision vient quasi
- * toujours d'un mini-set promo/Sneak Peek/Special Edition partageant le code
- * du set principal, jamais l'inverse. Limite connue et acceptée : un set
- * minoritaire dans une collision (le plus souvent un simple bonus promo)
- * reste invisible — un vrai besoin de le voir séparément demanderait de
- * cesser d'utiliser `set_code` seul comme identifiant partout dans l'app,
- * un chantier plus large délibérément pas fait ici.
- *
- * `had_code_collision` (sur chaque `CardSet`) et `collidedSetCodes` (valeur
- * de retour) : demande utilisateur de suivi — après avoir compris le bug via
- * un booster LOB déjà ouvert en PRODUCTION avec les mauvaises cartes, il faut
- * pouvoir repérer ET réimporter les sets concernés sans avoir à deviner
- * lesquels parmi les ~600 sets connus. Recalculé à CHAQUE sync (pas un état
- * figé une fois posé) : reflète toujours la réalité de la dernière requête à
- * cardsets.php.
+ * `had_code_collision` reste calculé (purement informatif désormais, voir
+ * CardSet.model.ts) : utile pour signaler côté GM qu'un code est partagé,
+ * même si ce n'est plus un signe de donnée perdue.
  */
 export async function syncCardSets(): Promise<{ syncedCount: number; collidedSetCodes: string[] }> {
   const sets = await fetchCardSets();
 
-  const bestByCode = new Map<string, (typeof sets)[number]>();
-  const collidedCodes = new Set<string>();
-  for (const set of sets) {
-    const current = bestByCode.get(set.set_code);
-    if (current) collidedCodes.add(set.set_code);
-    if (!current || set.num_of_cards > current.num_of_cards) {
-      bestByCode.set(set.set_code, set);
-    }
-  }
+  const countByCode = new Map<string, number>();
+  for (const set of sets) countByCode.set(set.set_code, (countByCode.get(set.set_code) ?? 0) + 1);
+  const collidedCodes = new Set([...countByCode.entries()].filter(([, count]) => count > 1).map(([code]) => code));
 
   await Promise.all(
-    [...bestByCode.values()].map((set) =>
+    sets.map((set) =>
       CardSet.updateOne(
-        { set_code: set.set_code },
+        { set_code: set.set_code, set_name: decodeSetName(set.set_name) },
         {
           $set: {
-            set_name: decodeSetName(set.set_name),
             num_of_cards: set.num_of_cards,
             tcg_date: set.tcg_date ?? null,
             set_image: set.set_image ?? null,
@@ -85,7 +67,7 @@ export async function syncCardSets(): Promise<{ syncedCount: number; collidedSet
     ),
   );
 
-  return { syncedCount: bestByCode.size, collidedSetCodes: [...collidedCodes] };
+  return { syncedCount: sets.length, collidedSetCodes: [...collidedCodes] };
 }
 
 /**
@@ -139,8 +121,15 @@ function buildCardUpdateFields(card: YgoCard) {
   };
 }
 
-export async function importCardsForSet(setCode: string): Promise<{ setName: string; importedCount: number }> {
-  const cardSet = await CardSet.findOne({ set_code: setCode });
+/**
+ * Prend l'`_id` Mongo du `CardSet`, pas son `set_code` — set_code seul est
+ * ambigu depuis qu'une même valeur peut désigner 2+ sets réels distincts
+ * (voir syncCardSets). `set_name`, lui, reste la clé fiable pour interroger
+ * YGOPRODeck (`fetchCardsBySet`) : jamais ambiguë, confirmée unique en
+ * combinaison avec set_code sur les vraies données.
+ */
+export async function importCardsForSet(cardSetId: string): Promise<{ setName: string; importedCount: number }> {
+  const cardSet = await CardSet.findById(cardSetId);
   if (!cardSet) {
     throw new Error("Set inconnu : synchronisez d'abord la liste des sets");
   }

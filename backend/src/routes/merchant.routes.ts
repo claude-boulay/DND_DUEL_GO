@@ -32,6 +32,7 @@ function toMerchantDto(merchant: MerchantDocument) {
       item_type: item.item_type,
       card_id: item.card_id ? item.card_id.toString() : null,
       set_code: item.set_code,
+      card_set_id: item.card_set_id ? item.card_set_id.toString() : null,
       name: item.name,
       image_url: item.image_url,
       price: item.price,
@@ -174,6 +175,10 @@ merchantRouter.delete(
 const addItemSchema = z.object({
   item_type: z.enum(['card', 'booster']),
   card_id: z.string().optional(),
+  // Préféré pour un article booster (voir CLAUDE.md — set_code seul
+  // n'identifie pas un set de façon fiable). set_code reste accepté seul en
+  // repli (résout arbitrairement vers le premier set trouvé avec ce code).
+  set_id: z.string().optional(),
   set_code: z.string().optional(),
   price: z.number().int().min(0),
   stock: z.number().int().min(0).nullable().optional(),
@@ -194,6 +199,7 @@ merchantRouter.post(
     let imageUrl: string | null = null;
     let cardId: Types.ObjectId | null = null;
     let setCode: string | null = null;
+    let cardSetId: Types.ObjectId | null = null;
 
     if (body.item_type === 'card') {
       if (!body.card_id || !Types.ObjectId.isValid(body.card_id)) {
@@ -212,11 +218,13 @@ merchantRouter.post(
       imageUrl = card.card_images[0]?.image_url ?? null;
       cardId = card._id;
     } else {
-      if (!body.set_code) throw new AppError(400, 'set_code requis pour un article de type booster', 'invalid_input');
-      const cardSet = await CardSet.findOne({ set_code: body.set_code });
+      if (!body.set_id && !body.set_code) throw new AppError(400, 'set_id (ou set_code) requis pour un article de type booster', 'invalid_input');
+      const cardSet =
+        body.set_id && Types.ObjectId.isValid(body.set_id) ? await CardSet.findById(body.set_id) : await CardSet.findOne({ set_code: body.set_code });
       if (!cardSet) throw new AppError(404, 'Set introuvable', 'not_found');
       name = cardSet.set_name;
       setCode = cardSet.set_code;
+      cardSetId = cardSet._id;
       imageUrl = cardSet.set_image;
     }
 
@@ -225,6 +233,7 @@ merchantRouter.post(
       item_type: body.item_type,
       card_id: cardId,
       set_code: setCode,
+      card_set_id: cardSetId,
       name,
       image_url: imageUrl,
       price: body.price,
@@ -536,11 +545,22 @@ merchantRouter.post(
       const cardIdStr = item.card_id.toString();
       for (let i = 0; i < body.quantity; i += 1) updatedCharacter.collection.push(cardIdStr);
     } else if (item.item_type === 'booster' && item.set_code) {
-      const existing = updatedCharacter.sealed_boosters.find((b) => b.set_code === item.set_code);
+      // Priorité à card_set_id (voir CLAUDE.md — set_code seul n'identifie
+      // pas un set de façon fiable) : évite de cumuler par erreur deux
+      // variantes réellement différentes qui partagent le même set_code
+      // dans une seule et même entrée sealed_boosters.
+      const existing = item.card_set_id
+        ? updatedCharacter.sealed_boosters.find((b) => b.card_set_id?.toString() === item.card_set_id!.toString())
+        : updatedCharacter.sealed_boosters.find((b) => b.set_code === item.set_code && !b.card_set_id);
       if (existing) {
         existing.quantity += body.quantity;
       } else {
-        updatedCharacter.sealed_boosters.push({ set_code: item.set_code, set_name: item.name, quantity: body.quantity });
+        updatedCharacter.sealed_boosters.push({
+          card_set_id: item.card_set_id,
+          set_code: item.set_code,
+          set_name: item.name,
+          quantity: body.quantity,
+        });
       }
     }
     await updatedCharacter.save();

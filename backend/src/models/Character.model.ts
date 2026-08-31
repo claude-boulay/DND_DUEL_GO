@@ -16,8 +16,17 @@ export interface DeckAttrs {
   cards: string[];
 }
 
-/** Un booster acheté mais pas encore ouvert. Agrégé par set : pas besoin d'id individuel. */
+/**
+ * Un booster acheté mais pas encore ouvert. Agrégé par set : pas besoin
+ * d'id individuel PAR EXEMPLAIRE, mais `card_set_id` (voir CLAUDE.md —
+ * set_code seul n'identifie pas un set de façon fiable, une même valeur
+ * pouvant désigner 2+ sets réels distincts) référence sans ambiguïté LE
+ * `CardSet` précis dont ce booster provient — `null` uniquement pour une
+ * entrée créée avant ce correctif (donnée historique, résolue au mieux par
+ * set_code, ambigu comme avant dans ce seul cas résiduel).
+ */
 export interface SealedBoosterAttrs {
+  card_set_id: Types.ObjectId | null;
   set_code: string;
   set_name: string;
   quantity: number;
@@ -69,6 +78,7 @@ const deckSchema = new Schema<DeckAttrs>({
 
 const sealedBoosterSchema = new Schema<SealedBoosterAttrs>(
   {
+    card_set_id: { type: Schema.Types.ObjectId, ref: 'CardSet', default: null },
     set_code: { type: String, required: true },
     set_name: { type: String, required: true },
     quantity: { type: Number, required: true, min: 0 },

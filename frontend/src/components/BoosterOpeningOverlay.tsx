@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import cardBackImage from '../assets/card-back.jpg';
-import type { ApiOpenedCard } from '../lib/api';
+import type { ApiOpenedCard, ApiSealedBooster } from '../lib/api';
 
 interface BoosterOpeningOverlayProps {
   setName: string;
@@ -10,8 +10,8 @@ interface BoosterOpeningOverlayProps {
   /** Un autre booster du même set attend encore : affiche "Suivant" à côté de "Fermer" une fois la révélation terminée. Absent/omis = aucun booster restant. */
   onNext?: () => void;
   /** Boosters scellés d'AUTRES sets encore disponibles — proposés une fois la révélation terminée, pour ne pas devoir rouvrir le menu principal entre deux sets différents. */
-  otherSets?: Array<{ set_code: string; set_name: string; quantity: number }>;
-  onOpenOther?: (setCode: string, setName: string) => void;
+  otherSets?: ApiSealedBooster[];
+  onOpenOther?: (setCode: string, setName: string, cardSetId: string | null) => void;
 }
 
 type ActivePhase = 'idle' | 'spin' | 'hero' | 'settle';
@@ -264,11 +264,14 @@ export function BoosterOpeningOverlay({ setName, cards, onClose, onNext, otherSe
         <div className="mt-6 flex flex-col items-center gap-2">
           <p className="text-[11px] uppercase tracking-wide text-neutral-500">Ouvrir un autre booster scellé</p>
           <div className="flex flex-wrap items-center justify-center gap-2">
-            {otherSets.map((s) => (
+            {otherSets.map((s, index) => (
+              // Clé sur card_set_id, pas set_code seul (voir CLAUDE.md — deux
+              // entrées peuvent partager le même code) ; repli sur l'index
+              // uniquement pour une entrée héritée d'avant ce correctif (card_set_id encore null).
               <button
-                key={s.set_code}
+                key={s.card_set_id ?? `${s.set_code}-${index}`}
                 type="button"
-                onClick={() => onOpenOther?.(s.set_code, s.set_name)}
+                onClick={() => onOpenOther?.(s.set_code, s.set_name, s.card_set_id)}
                 className="rounded-md border border-arena-600 px-4 py-1.5 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
               >
                 {s.set_name} ×{s.quantity}
