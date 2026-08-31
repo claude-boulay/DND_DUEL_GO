@@ -307,7 +307,7 @@ function ItemDetailPanel({
       <p className="mb-1 text-xs text-neutral-500">{item.item_type === 'card' ? 'Carte' : 'Booster'}</p>
 
       {item.item_type === 'booster' && item.set_code && (
-        <BoosterContentsPreview token={token} setCode={item.set_code} setId={item.card_set_id} setName={item.name} />
+        <BoosterContentsButton token={token} setCode={item.set_code} setId={item.card_set_id} setName={item.name} />
       )}
 
       {isGm && (
@@ -441,80 +441,136 @@ function ItemDetailPanel({
   );
 }
 
+/** Ouvre BoosterContentsOverlay — bouton simple, l'overlay porte tout le chargement. */
+function BoosterContentsButton({ token, setCode, setId, setName }: { token: string; setCode: string; setId: string | null; setName: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-3">
+      <button type="button" onClick={() => setOpen(true)} className="text-xs text-accent-400 underline hover:text-accent-300">
+        Voir le contenu du booster
+      </button>
+      {open && <BoosterContentsOverlay token={token} setCode={setCode} setId={setId} setName={setName} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
+
 /**
- * Voir le contenu possible d'un booster avant de l'acheter — demande
- * utilisateur (feedback de ses amis) : jusqu'ici il fallait acheter à
- * l'aveugle pour savoir ce qu'un set pouvait contenir. Grille avec zoom au
- * survol pour lire les cartes, chargée à la demande (pas au premier rendu du
- * panneau détail) pour ne pas interroger le catalogue pour rien tant que
- * personne ne clique.
+ * Interface dédiée pour voir l'ENTIÈRETÉ du contenu d'un booster avant de
+ * l'acheter (demande utilisateur — pouvoir peser le pour et contre entre
+ * différents boosters, pas juste un aperçu partiel) : plein écran, grille
+ * scindée par rareté avec un compteur par groupe (pour comparer d'un coup
+ * d'œil la répartition d'un booster à l'autre), zoom au survol pour lire
+ * chaque carte. Chargé à l'ouverture, pas au premier rendu du panneau détail.
  */
-function BoosterContentsPreview({
+function BoosterContentsOverlay({
   token,
   setCode,
   setId,
   setName,
+  onClose,
 }: {
   token: string;
   setCode: string;
   setId: string | null;
   setName: string;
+  onClose: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [cards, setCards] = useState<ApiCard[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const toggle = () => {
-    if (expanded) {
-      setExpanded(false);
-      return;
-    }
-    setExpanded(true);
-    if (cards !== null) return; // déjà chargé une fois
-    setLoading(true);
+  useEffect(() => {
     // setId préféré (voir CLAUDE.md — set_code seul est ambigu). Pour un
     // article booster ajouté avant ce correctif (setId absent), setName
     // (déjà le nom exact capturé à l'ajout de l'article) résout quand même
     // précisément — jamais besoin de retomber sur set_code seul, ambigu.
-    // limit relevé à 300 : 100 coupait le vrai contenu d'un gros set réel
-    // (ex. LOB, 126 cartes distinctes).
+    // limit à 300 : la totalité d'un vrai set officiel connu (ex. LOB, 126
+    // cartes distinctes), jamais tronquée.
     api
       .listCards(token, setId ? { set_id: setId, limit: 300 } : { set_code: setCode, set_name: setName, limit: 300 })
       .then(({ cards: fetched }) => setCards(fetched))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
       .finally(() => setLoading(false));
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, setId, setCode, setName]);
 
-  return (
-    <div className="mb-3">
-      <button type="button" onClick={toggle} className="text-xs text-accent-400 underline hover:text-accent-300">
-        {expanded ? 'Masquer le contenu possible' : 'Voir le contenu possible'}
-      </button>
-      {expanded && (
-        // Pas de scroll/overflow imbriqué ici : le panneau détail (le
-        // <aside> parent) défile déjà lui-même — un conteneur overflow-auto
-        // ici couperait le zoom au survol des cartes en bordure.
-        <div className="mt-2 rounded-md border border-arena-700 bg-arena-800/60 p-2">
-          {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
-          {error && <p className="text-xs text-red-400">{error}</p>}
-          {!loading && cards && cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte trouvée pour ce set.</p>}
-          {!loading && cards && cards.length > 0 && (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-1.5">
-              {cards.map((card) =>
-                card.card_images[0] ? (
-                  // image_url (pleine résolution), pas _small : le zoom centré
-                  // (HoverZoomImage) affiche la carte en grand au milieu de
-                  // l'écran au survol (demande utilisateur), une petite
-                  // miniature serait floue une fois agrandie.
-                  <HoverZoomImage key={card.id} src={card.card_images[0].image_url} alt={card.name} className="w-full cursor-zoom-in rounded" />
-                ) : null,
-              )}
-            </div>
+  // La rareté d'une carte dépend du PRODUIT dans lequel elle est vendue —
+  // une carte peut être réimprimée ailleurs avec une autre rareté, donc on
+  // relit card_sets pour CE set précis (par nom, jamais par set_code seul
+  // ambigu — voir CLAUDE.md) plutôt que d'afficher une rareté au hasard.
+  const rarityFor = (card: ApiCard) => card.card_sets.find((s) => s.set_name === setName)?.set_rarity ?? 'Rareté inconnue';
+
+  const groups = new Map<string, ApiCard[]>();
+  for (const card of cards ?? []) {
+    const rarity = rarityFor(card);
+    const bucket = groups.get(rarity);
+    if (bucket) bucket.push(card);
+    else groups.set(rarity, [card]);
+  }
+  // Le plus gros groupe (typiquement Common) en premier — la répartition en
+  // un coup d'œil est justement le point de cette vue (comparer un booster à
+  // l'autre), pas un ordre alphabétique arbitraire.
+  const orderedGroups = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Contenu du booster</p>
+          <h2 className="font-display text-xl text-accent-400">{setName}</h2>
+          {cards && (
+            <p className="mt-1 text-xs text-neutral-500">
+              {cards.length} carte{cards.length !== 1 ? 's' : ''} distincte{cards.length !== 1 ? 's' : ''} ·{' '}
+              {orderedGroups.map(([rarity, group], i) => (
+                <span key={rarity}>
+                  {i > 0 && ' · '}
+                  {rarity} : {group.length}
+                </span>
+              ))}
+            </p>
           )}
         </div>
-      )}
-    </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+        >
+          Fermer
+        </button>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {loading && <p className="text-sm text-neutral-500">Chargement...</p>}
+        {error && <p className="text-sm text-red-400">{error}</p>}
+        {!loading && cards && cards.length === 0 && <p className="text-sm text-neutral-500">Aucune carte trouvée pour ce set.</p>}
+
+        {!loading &&
+          orderedGroups.map(([rarity, group]) => (
+            <div key={rarity} className="mb-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                {rarity} <span className="text-neutral-600">({group.length})</span>
+              </p>
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-2">
+                {group.map((card) =>
+                  card.card_images[0] ? (
+                    <div key={card.id} className="text-center">
+                      {/* image_url (pleine résolution), pas _small : le zoom
+                          centré (HoverZoomImage) affiche la carte en grand au
+                          milieu de l'écran au survol, une petite miniature
+                          serait floue une fois agrandie. */}
+                      <HoverZoomImage src={card.card_images[0].image_url} alt={card.name} className="w-full cursor-zoom-in rounded" />
+                      <p className="mt-1 truncate text-[10px] text-neutral-400" title={card.name}>
+                        {card.name}
+                      </p>
+                    </div>
+                  ) : null,
+                )}
+              </div>
+            </div>
+          ))}
+      </div>
+    </div>,
+    document.body,
   );
 }
 
