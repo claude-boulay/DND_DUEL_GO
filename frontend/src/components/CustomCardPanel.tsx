@@ -249,6 +249,9 @@ function CustomBoosterManager({
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
+  // Interface détaillée (demande utilisateur) : non-null = overlay ouvert sur
+  // ce booster, avec visuel des cartes dedans / à ajouter, scindé officiel/custom.
+  const [detailBoosterCode, setDetailBoosterCode] = useState<string | null>(null);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
@@ -264,6 +267,8 @@ function CustomBoosterManager({
       setCreating(false);
     }
   };
+
+  const detailBooster = boosters.find((b) => b.set_code === detailBoosterCode) ?? null;
 
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
@@ -306,37 +311,120 @@ function CustomBoosterManager({
       {/* Plafonné à ~10 boosters visibles, le reste défile (demande utilisateur). */}
       <div className="max-h-[30rem] space-y-2 overflow-y-auto pr-1">
         {boosters.map((booster) => (
-          <CustomBoosterRow key={booster.set_code} token={token} booster={booster} isGm={isGm} onDeleted={onRefresh} onError={onError} />
+          <CustomBoosterRow
+            key={booster.set_code}
+            token={token}
+            booster={booster}
+            isGm={isGm}
+            onOpen={() => setDetailBoosterCode(booster.set_code)}
+            onDeleted={onRefresh}
+            onError={onError}
+          />
         ))}
       </div>
+
+      {detailBooster && (
+        <CustomBoosterDetailOverlay
+          token={token}
+          booster={detailBooster}
+          isGm={isGm}
+          onDeleted={() => {
+            setDetailBoosterCode(null);
+            onRefresh();
+          }}
+          onError={onError}
+          onClose={() => setDetailBoosterCode(null)}
+        />
+      )}
     </section>
   );
 }
 
-/**
- * Contenu réel d'un booster custom (demande utilisateur — cartes officielles
- * incluses désormais, pas seulement custom) : résolu à l'ouverture via le
- * catalogue complet (`GET /cards?set_code=`, même route que
- * BoosterContentsPreview côté marchand) plutôt que dérivé de la liste des
- * cartes custom du salon — cette dernière ne pouvait de toute façon jamais
- * refléter les cartes officielles liées.
- */
+/** Ligne compacte (demande utilisateur, même idiome que les cartes custom) : nom + suppression seulement, le détail visuel vit dans CustomBoosterDetailOverlay. */
 function CustomBoosterRow({
   token,
   booster,
   isGm,
+  onOpen,
   onDeleted,
   onError,
 }: {
   token: string;
   booster: ApiCardSet;
   isGm: boolean;
+  onOpen: () => void;
   onDeleted: () => void;
   onError: (message: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await api.deleteCustomBooster(token, booster.set_code);
+      onDeleted();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-arena-700 bg-arena-800 px-2.5 py-1.5 text-xs">
+      <button type="button" onClick={onOpen} className="min-w-0 flex-1 truncate text-left text-neutral-200 hover:text-accent-400">
+        {booster.set_name} <span className="text-neutral-500">({booster.set_code})</span>
+      </button>
+      {isGm && (
+        <div className="flex shrink-0 items-center gap-1">
+          {confirmingDelete ? (
+            <>
+              <span className="text-neutral-400">Supprimer ?</span>
+              <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="text-red-400 hover:text-red-300 disabled:opacity-50">
+                Confirmer
+              </button>
+              <button type="button" onClick={() => setConfirmingDelete(false)} className="text-neutral-400 hover:text-neutral-300">
+                Annuler
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={() => setConfirmingDelete(true)} className="text-red-400 hover:text-red-300">
+              Supprimer
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Interface détaillée d'un booster custom (demande utilisateur) : visuel des
+ * cartes déjà dedans ET de celles à ajouter, scindé officielles/custom dans
+ * les deux cas. Contenu résolu en direct depuis le catalogue complet
+ * (`GET /cards?set_code=`, même route que BoosterContentsPreview côté
+ * marchand) — jamais dérivé d'une liste custom-only, qui ne pouvait de toute
+ * façon jamais refléter les cartes officielles liées.
+ */
+function CustomBoosterDetailOverlay({
+  token,
+  booster,
+  isGm,
+  onDeleted,
+  onError,
+  onClose,
+}: {
+  token: string;
+  booster: ApiCardSet;
+  isGm: boolean;
+  onDeleted: () => void;
+  onError: (message: string) => void;
+  onClose: () => void;
+}) {
   const [cardsInBooster, setCardsInBooster] = useState<ApiCard[] | null>(null);
-  const [loadingContents, setLoadingContents] = useState(false);
+  const [loadingContents, setLoadingContents] = useState(true);
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<ApiCard[]>([]);
   const [searching, setSearching] = useState(false);
@@ -355,42 +443,40 @@ function CustomBoosterRow({
       .finally(() => setLoadingContents(false));
   }, [token, booster.set_code, onError]);
 
-  const toggle = () => {
-    if (expanded) {
-      setExpanded(false);
-      return;
-    }
-    setExpanded(true);
-    if (cardsInBooster === null) loadContents();
-  };
+  useEffect(() => {
+    loadContents();
+  }, [loadContents]);
 
   // Recherche débounced dans le catalogue COMPLET (officielles + custom du
   // salon, GET /cards ne filtre pas is_custom) — ne tarit jamais, contrairement
   // à l'ancienne liste dérivée des seules cartes custom déjà créées.
   useEffect(() => {
-    if (!expanded || !search.trim()) {
+    if (!search.trim()) {
       setSearchResults([]);
       return;
     }
     setSearching(true);
     const handle = setTimeout(() => {
       api
-        .listCards(token, { search, limit: 12 })
+        .listCards(token, { search, limit: 30 })
         .then(({ cards: fetched }) => setSearchResults(fetched))
         .catch(() => setSearchResults([]))
         .finally(() => setSearching(false));
     }, 300);
     return () => clearTimeout(handle);
-  }, [token, search, expanded]);
+  }, [token, search]);
 
   const linkedIds = new Set((cardsInBooster ?? []).map((c) => c.id));
+  const officialInBooster = (cardsInBooster ?? []).filter((c) => !c.is_custom);
+  const customInBooster = (cardsInBooster ?? []).filter((c) => c.is_custom);
+  const addableResults = searchResults.filter((c) => !linkedIds.has(c.id));
+  const officialResults = addableResults.filter((c) => !c.is_custom);
+  const customResults = addableResults.filter((c) => c.is_custom);
 
   const handleAdd = async (cardId: string) => {
     setAddingId(cardId);
     try {
       await api.linkCardToCustomBooster(token, booster.set_code, cardId, rarity);
-      setSearch('');
-      setSearchResults([]);
       loadContents();
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
@@ -418,123 +504,200 @@ function CustomBoosterRow({
       onDeleted();
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
-    } finally {
       setDeleting(false);
-      setConfirmingDelete(false);
     }
   };
 
-  return (
-    <article className="rounded-lg border border-arena-700 bg-arena-800 p-3 text-xs">
-      <div className="flex w-full items-center justify-between gap-2">
-        <button type="button" onClick={toggle} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-          <span className="min-w-0 truncate font-semibold text-accent-400">{booster.set_name}</span>
-          <span className="shrink-0 text-neutral-500">{expanded ? '▲' : '▼'}</span>
-        </button>
-
-        {isGm && (
-          <div className="flex shrink-0 items-center gap-1">
-            {confirmingDelete ? (
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Booster custom</p>
+          <h2 className="font-display text-xl text-accent-400">
+            {booster.set_name} <span className="text-sm text-neutral-500">({booster.set_code})</span>
+          </h2>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {isGm &&
+            (confirmingDelete ? (
               <>
-                <span className="text-neutral-400">Supprimer ?</span>
+                <span className="text-sm text-neutral-400">Supprimer ce booster ?</span>
                 <button
                   type="button"
                   onClick={() => void handleDelete()}
                   disabled={deleting}
-                  className="text-red-400 hover:text-red-300 disabled:opacity-50"
+                  className="rounded-md border border-red-700 px-3 py-2 text-sm text-red-400 transition hover:bg-red-900/40 disabled:opacity-50"
                 >
                   Confirmer
                 </button>
-                <button type="button" onClick={() => setConfirmingDelete(false)} className="text-neutral-400 hover:text-neutral-300">
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  className="rounded-md border border-arena-600 px-3 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+                >
                   Annuler
                 </button>
               </>
             ) : (
-              <button type="button" onClick={() => setConfirmingDelete(true)} className="text-red-400 hover:text-red-300">
-                Supprimer
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                className="rounded-md border border-red-800 px-3 py-2 text-sm text-red-400 transition hover:bg-red-900/30"
+              >
+                Supprimer le booster
               </button>
-            )}
-          </div>
-        )}
-      </div>
+            ))}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+          >
+            Fermer
+          </button>
+        </div>
+      </header>
 
-      {expanded && (
-        <div className="mt-2 space-y-2 border-t border-arena-700 pt-2">
-          {loadingContents && <p className="text-neutral-500">Chargement...</p>}
+      <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
+        <main className="min-w-0 flex-1 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-4">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+            Contenu du booster {cardsInBooster && `(${cardsInBooster.length})`}
+          </h3>
+          {loadingContents && <p className="text-sm text-neutral-500">Chargement...</p>}
           {!loadingContents && cardsInBooster && cardsInBooster.length === 0 && (
-            <p className="text-neutral-500">Aucune carte dans ce booster pour l'instant.</p>
+            <p className="text-sm text-neutral-500">Aucune carte dans ce booster pour l'instant — ajoutez-en depuis la recherche à droite.</p>
           )}
-          {!loadingContents &&
-            cardsInBooster?.map((c) => {
-              const entry = c.card_sets.find((s) => s.set_code === booster.set_code);
-              return (
-                <div key={c.id} className="flex items-center justify-between gap-2 rounded bg-arena-900 px-2 py-1">
-                  <span className="text-neutral-200">
-                    {c.name} <span className="text-neutral-500">({entry?.set_rarity})</span>
-                    {!c.is_custom && <span className="ml-1 rounded bg-arena-800 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-500">officielle</span>}
-                  </span>
-                  {isGm && (
+          {!loadingContents && officialInBooster.length > 0 && (
+            <BoosterCardGrid title={`Officielles (${officialInBooster.length})`} cards={officialInBooster} booster={booster}>
+              {(c) =>
+                isGm && (
+                  <button
+                    type="button"
+                    onClick={() => void handleRemove(c.id)}
+                    disabled={removingId === c.id}
+                    className="absolute inset-x-0 bottom-0 bg-red-950/90 py-0.5 text-center text-[10px] text-red-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
+                  >
+                    Retirer
+                  </button>
+                )
+              }
+            </BoosterCardGrid>
+          )}
+          {!loadingContents && customInBooster.length > 0 && (
+            <BoosterCardGrid title={`Custom (${customInBooster.length})`} cards={customInBooster} booster={booster}>
+              {(c) =>
+                isGm && (
+                  <button
+                    type="button"
+                    onClick={() => void handleRemove(c.id)}
+                    disabled={removingId === c.id}
+                    className="absolute inset-x-0 bottom-0 bg-red-950/90 py-0.5 text-center text-[10px] text-red-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
+                  >
+                    Retirer
+                  </button>
+                )
+              }
+            </BoosterCardGrid>
+          )}
+        </main>
+
+        {isGm && (
+          <aside className="flex w-96 shrink-0 flex-col overflow-hidden rounded-lg border border-arena-700 bg-arena-900 p-4">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Ajouter des cartes</h3>
+            <div className="mb-2 flex shrink-0 items-center gap-2 text-xs">
+              <input
+                type="text"
+                placeholder="Rechercher (officielle ou custom)..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-800 px-2 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
+              />
+              <select value={rarity} onChange={(e) => setRarity(e.target.value as CustomCardRarity)} className="rounded border border-arena-600 bg-arena-800 px-2 py-1.5 text-neutral-100">
+                {RARITIES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {!search.trim() && <p className="text-xs text-neutral-500">Tapez un nom de carte pour chercher dans le catalogue complet.</p>}
+              {searching && <p className="text-xs text-neutral-500">Recherche...</p>}
+              {!searching && search.trim() && addableResults.length === 0 && <p className="text-xs text-neutral-500">Aucune carte trouvée.</p>}
+              {!searching && officialResults.length > 0 && (
+                <BoosterCardGrid title={`Officielles (${officialResults.length})`} cards={officialResults} compact>
+                  {(c) => (
                     <button
                       type="button"
-                      onClick={() => void handleRemove(c.id)}
-                      disabled={removingId === c.id}
-                      className="shrink-0 text-red-400 hover:text-red-300 disabled:opacity-50"
+                      onClick={() => void handleAdd(c.id)}
+                      disabled={addingId === c.id}
+                      className="absolute inset-x-0 bottom-0 bg-emerald-950/90 py-0.5 text-center text-[10px] text-emerald-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
                     >
-                      Retirer
+                      {addingId === c.id ? '...' : '+ Ajouter'}
                     </button>
                   )}
-                </div>
-              );
-            })}
-
-          {isGm && (
-            <div className="space-y-1.5 border-t border-arena-800 pt-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="Rechercher une carte à ajouter (officielle ou custom)..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100 outline-none focus:border-accent-500"
-                />
-                <select value={rarity} onChange={(e) => setRarity(e.target.value as CustomCardRarity)} className="rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100">
-                  {RARITIES.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {searching && <p className="text-neutral-500">Recherche...</p>}
-              {!searching && search.trim() && searchResults.filter((c) => !linkedIds.has(c.id)).length === 0 && (
-                <p className="text-neutral-500">Aucune carte trouvée.</p>
+                </BoosterCardGrid>
               )}
-              {!searching && searchResults.filter((c) => !linkedIds.has(c.id)).length > 0 && (
-                <div className="max-h-32 space-y-1 overflow-y-auto">
-                  {searchResults
-                    .filter((c) => !linkedIds.has(c.id))
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => void handleAdd(c.id)}
-                        disabled={addingId === c.id}
-                        className="flex w-full items-center justify-between gap-2 rounded bg-arena-900 px-2 py-1 text-left transition hover:bg-arena-700 disabled:opacity-50"
-                      >
-                        <span className="text-neutral-200">
-                          {c.name}
-                          {!c.is_custom && <span className="ml-1 text-[9px] uppercase tracking-wide text-neutral-500">officielle</span>}
-                        </span>
-                        <span className="shrink-0 text-accent-400">{addingId === c.id ? '...' : '+ Ajouter'}</span>
-                      </button>
-                    ))}
-                </div>
+              {!searching && customResults.length > 0 && (
+                <BoosterCardGrid title={`Custom (${customResults.length})`} cards={customResults} compact>
+                  {(c) => (
+                    <button
+                      type="button"
+                      onClick={() => void handleAdd(c.id)}
+                      disabled={addingId === c.id}
+                      className="absolute inset-x-0 bottom-0 bg-emerald-950/90 py-0.5 text-center text-[10px] text-emerald-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
+                    >
+                      {addingId === c.id ? '...' : '+ Ajouter'}
+                    </button>
+                  )}
+                </BoosterCardGrid>
               )}
             </div>
-          )}
-        </div>
-      )}
-    </article>
+          </aside>
+        )}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+/** Grille visuelle de cartes (image + nom), une section titrée à la fois — partagée entre le contenu du booster et les résultats de recherche. */
+function BoosterCardGrid({
+  title,
+  cards,
+  booster,
+  compact,
+  children,
+}: {
+  title: string;
+  cards: ApiCard[];
+  booster?: ApiCardSet;
+  compact?: boolean;
+  children: (card: ApiCard) => React.ReactNode;
+}) {
+  return (
+    <div className="mb-4">
+      <p className="mb-1.5 text-[10px] uppercase tracking-wide text-neutral-500">{title}</p>
+      <div className={`grid gap-2 ${compact ? 'grid-cols-[repeat(auto-fill,minmax(72px,1fr))]' : 'grid-cols-[repeat(auto-fill,minmax(90px,1fr))]'}`}>
+        {cards.map((c) => {
+          const entry = booster ? c.card_sets.find((s) => s.set_code === booster.set_code) : undefined;
+          return (
+            <div key={c.id} className="group relative overflow-hidden rounded border border-arena-700 bg-arena-800">
+              {c.card_images[0] ? (
+                <img src={c.card_images[0].image_url_small} alt={c.name} title={c.name} className="w-full" />
+              ) : (
+                <div className="flex aspect-[59/86] w-full items-center justify-center p-1 text-center text-[9px] text-neutral-500">{c.name}</div>
+              )}
+              {entry && (
+                <p className="truncate bg-arena-900/95 px-1 py-0.5 text-center text-[9px] text-neutral-400" title={c.name}>
+                  {entry.set_rarity}
+                </p>
+              )}
+              {children(c)}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
