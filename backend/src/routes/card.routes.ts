@@ -9,6 +9,7 @@ import { requireAuth, type AuthenticatedRequest } from '../middleware/auth';
 import { syncCardSets, importCardsForSet } from '../services/cardImport';
 import { toCardDto } from '../utils/cardDto';
 import { buildCardCatalogQuery } from '../utils/cardQueryFilters';
+import { resolveCardSet } from '../utils/resolveCardSet';
 
 export const cardRouter = Router();
 cardRouter.use(requireAuth);
@@ -101,9 +102,14 @@ const listCardsSchema = z.object({
   // Identifiant précis (voir toCardSetDto) — préféré à set_code, ambigu
   // depuis qu'une même valeur peut désigner 2+ sets réels distincts.
   set_id: z.string().trim().optional(),
-  // Conservé pour compatibilité (appels non encore migrés vers set_id) :
-  // en cas de collision, résout arbitrairement vers LE PREMIER set trouvé
-  // avec ce code — un vrai besoin de précision doit passer par set_id.
+  // Repli précis quand set_id est absent (voir resolveCardSet) — set_name
+  // est le snapshot déjà capturé partout où un set est référencé (article
+  // marchand, booster scellé...), donc quasi toujours disponible même pour
+  // une donnée créée avant l'introduction de set_id.
+  set_name: z.string().trim().optional(),
+  // Dernier repli seul (appels non encore migrés) : en cas de collision,
+  // résout arbitrairement vers LE PREMIER set trouvé avec ce code — un vrai
+  // besoin de précision doit passer par set_id (ou au moins set_name).
   set_code: z.string().trim().optional(),
   search: z.string().trim().max(100).optional(),
   category: csvParam,
@@ -112,21 +118,25 @@ const listCardsSchema = z.object({
   attribute: csvParam,
   race: csvParam,
   page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  // Plafond relevé (voir CLAUDE.md) : un aperçu de contenu de booster (100
+  // cartes plafond auparavant) coupait silencieusement le vrai contenu d'un
+  // gros set réel (ex. LOB, 126 cartes distinctes) — jamais assez pour un
+  // seul vrai booster officiel connu.
+  limit: z.coerce.number().int().min(1).max(500).default(30),
 });
 
 cardRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const { set_id, set_code, search, category, monster_kind, pendulum, attribute, race, page, limit } = listCardsSchema.parse(req.query);
+    const { set_id, set_name, set_code, search, category, monster_kind, pendulum, attribute, race, page, limit } = listCardsSchema.parse(req.query);
 
     const filter: Record<string, unknown> = {};
-    if (set_id || set_code) {
+    if (set_id || set_name || set_code) {
       // Card.card_sets[].set_code est le code PAR CARTE (ex. "LOB-041"), pas le
       // code du set (ex. "LOB") : on résout via CardSet.set_name, le vrai lien
       // entre une carte et le set auquel elle appartient — set_name reste
       // fiable même en cas de collision de set_code (voir syncCardSets).
-      const cardSet = set_id && Types.ObjectId.isValid(set_id) ? await CardSet.findById(set_id) : await CardSet.findOne({ set_code });
+      const cardSet = await resolveCardSet({ cardSetId: set_id, setCode: set_code ?? '', setName: set_name });
       if (!cardSet) {
         res.json({ cards: [], total: 0, page, limit });
         return;

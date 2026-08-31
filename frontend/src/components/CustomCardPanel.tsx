@@ -437,7 +437,7 @@ function CustomBoosterDetailOverlay({
   const loadContents = useCallback(() => {
     setLoadingContents(true);
     api
-      .listCards(token, { set_code: booster.set_code, limit: 100 })
+      .listCards(token, { set_code: booster.set_code, limit: 300 })
       .then(({ cards: fetched }) => setCardsInBooster(fetched))
       .catch((err) => onError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
       .finally(() => setLoadingContents(false));

@@ -17,6 +17,7 @@ import { drawBoosterPack, isRareReveal, rarityForSet } from '../utils/boosterOpe
 import { importCardsForSet, importCardsByIds } from '../services/cardImport';
 import { broadcastSessionResourceChanged } from '../utils/broadcast';
 import { toCardDto } from '../utils/cardDto';
+import { resolveCardSet } from '../utils/resolveCardSet';
 import { EXTRA_DECK_MAX, MAIN_DECK_MAX, MAIN_DECK_MIN, MAX_COPIES_PER_CARD, isExtraDeckFrameType } from '../utils/deckRules';
 
 export const characterRouter = Router();
@@ -287,8 +288,11 @@ characterRouter.post(
       throw new AppError(400, 'Pas assez de boosters scellés de ce set', 'insufficient_boosters');
     }
 
-    const cardSet =
-      card_set_id && Types.ObjectId.isValid(card_set_id) ? await CardSet.findById(card_set_id) : await CardSet.findOne({ set_code });
+    // Repli précis par (set_code, set_name) quand card_set_id manque (voir
+    // resolveCardSet) : sealedEntry.set_name est déjà connu même pour une
+    // entrée créée avant l'introduction de card_set_id, donc reste fiable
+    // sans nécessiter de migration des données existantes.
+    const cardSet = await resolveCardSet({ cardSetId: card_set_id, setCode: set_code, setName: sealedEntry.set_name });
     if (!cardSet) throw new AppError(404, 'Set introuvable', 'not_found');
 
     // Un set custom (créé depuis le créateur de cartes) est toujours "prêt".

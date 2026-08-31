@@ -16,6 +16,7 @@ import { broadcastSessionResourceChanged } from '../utils/broadcast';
 import { effectiveStat } from '../utils/luck';
 import { abilityModifier } from '../utils/abilityScore';
 import { consumeHaggle, getHaggle, recordHaggle, updateHaggleRoll, type PendingHaggle } from '../utils/haggleStore';
+import { resolveCardSet } from '../utils/resolveCardSet';
 
 export const merchantRouter = Router();
 merchantRouter.use(requireAuth);
@@ -545,18 +546,23 @@ merchantRouter.post(
       const cardIdStr = item.card_id.toString();
       for (let i = 0; i < body.quantity; i += 1) updatedCharacter.collection.push(cardIdStr);
     } else if (item.item_type === 'booster' && item.set_code) {
-      // Priorité à card_set_id (voir CLAUDE.md — set_code seul n'identifie
-      // pas un set de façon fiable) : évite de cumuler par erreur deux
-      // variantes réellement différentes qui partagent le même set_code
-      // dans une seule et même entrée sealed_boosters.
-      const existing = item.card_set_id
-        ? updatedCharacter.sealed_boosters.find((b) => b.card_set_id?.toString() === item.card_set_id!.toString())
+      // Rattrape card_set_id à l'achat pour un article ajouté avant ce champ
+      // (voir CLAUDE.md) : item.name est déjà le set_name exact capturé à
+      // l'ajout de l'article, donc resolveCardSet le retrouve précisément
+      // sans avoir besoin d'une migration séparée — chaque achat FRAIS d'un
+      // article existant se met de lui-même à jour.
+      const resolvedCardSet = await resolveCardSet({ cardSetId: item.card_set_id?.toString(), setCode: item.set_code, setName: item.name });
+      const resolvedCardSetId = resolvedCardSet?._id ?? item.card_set_id;
+
+      const existing = resolvedCardSetId
+        ? updatedCharacter.sealed_boosters.find((b) => b.card_set_id?.toString() === resolvedCardSetId.toString())
         : updatedCharacter.sealed_boosters.find((b) => b.set_code === item.set_code && !b.card_set_id);
       if (existing) {
         existing.quantity += body.quantity;
+        if (!existing.card_set_id && resolvedCardSetId) existing.card_set_id = resolvedCardSetId;
       } else {
         updatedCharacter.sealed_boosters.push({
-          card_set_id: item.card_set_id,
+          card_set_id: resolvedCardSetId,
           set_code: item.set_code,
           set_name: item.name,
           quantity: body.quantity,

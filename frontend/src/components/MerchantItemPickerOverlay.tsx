@@ -470,7 +470,9 @@ function BoosterSelectionPreview({ set }: { set: ApiCardSet | null }) {
           <div>
             <p className="font-display text-xl leading-tight text-neutral-100">{set.set_name}</p>
             <div className="text-xs text-neutral-300">
-              <p>{set.num_of_cards} cartes</p>
+              <p title="Décompte brut YGOPRODeck (toutes raretés/variantes confondues) — peut différer du nombre de cartes réellement distinctes une fois importées.">
+                {set.num_of_cards} entrées (YGOPRODeck)
+              </p>
               <p>{set.tcg_date ?? 'date inconnue'}</p>
             </div>
           </div>
@@ -509,7 +511,9 @@ function BoosterTile({ set, selected, onClick }: { set: ApiCardSet; selected: bo
           <p className="mt-1 font-display text-sm leading-tight text-neutral-100">{set.set_name}</p>
         </div>
         <div className="text-[10px] text-neutral-300">
-          <p>{set.num_of_cards} cartes</p>
+          <p title="Décompte brut YGOPRODeck (toutes raretés/variantes confondues) — peut différer du nombre de cartes réellement distinctes.">
+            {set.num_of_cards} entrées
+          </p>
           <p>{set.tcg_date ?? 'date inconnue'}</p>
           <span
             className={`mt-1 inline-block rounded px-1.5 py-0.5 ${

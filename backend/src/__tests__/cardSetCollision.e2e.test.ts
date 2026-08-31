@@ -242,3 +242,145 @@ describe('Collision de set_code, résolue de bout en bout : import, différencia
     expect(char.body.character.sealed_boosters).toHaveLength(0);
   });
 });
+
+/**
+ * Régression directe du bug rapporté par l'utilisateur en re-testant
+ * l'app après le fix complet ci-dessus : "l'affichage identique est présent
+ * quand le booster n'a pas été réimporté" — un article marchand ajouté
+ * AVANT ce correctif (donc sans card_set_id, la seule donnée qu'une
+ * migration ne peut pas produire rétroactivement sans repasser par le
+ * formulaire d'ajout) affichait le contenu d'une variante ARBITRAIRE
+ * partageant le même set_code, jamais forcément la bonne. `resolveCardSet`
+ * (voir CLAUDE.md) doit se rabattre sur (set_code, set_name) — déjà connu
+ * en snapshot sur l'article — pour rester précis SANS migration de données.
+ */
+describe("Article marchand hérité (sans card_set_id) : la résolution reste précise via (set_code, set_name), pas besoin de migration", () => {
+  const sharedCode = `LEGACY${rand}`;
+  const mainSetName = `Set Hérité Principal ${rand}`;
+  const reprintSetName = `Set Hérité Réédition ${rand}`;
+
+  let gm: AuthedUser;
+  let player: AuthedUser;
+  let sessionId: string;
+  let characterId: string;
+  let merchantId: string;
+  let mainSetId: string;
+  let reprintSetId: string;
+  let legacyItemId: string;
+
+  beforeAll(async () => {
+    if (!env.MONGO_URI.endsWith('_test')) {
+      throw new Error('Les tests doivent tourner sur une base dédiée se terminant par "_test". Utilisez "npm test".');
+    }
+    await connectMongo();
+
+    gm = await registerUser('legacy_gm');
+    player = await registerUser('legacy_player');
+
+    const session = await request(app).post('/api/sessions').set('Authorization', `Bearer ${gm.token}`).send({ currency_name: 'Gold' }).expect(201);
+    sessionId = session.body.session.id;
+    await request(app).post(`/api/sessions/${session.body.session.code}/join`).set('Authorization', `Bearer ${player.token}`).expect(200);
+
+    const character = await request(app)
+      .post('/api/characters')
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ game_session_id: sessionId, name: 'Testeuse Héritage', stats: { history: 13, perception: 13, intelligence: 13, charisma: 20, luck: 8 } })
+      .expect(201);
+    characterId = character.body.character.id;
+
+    const merchant = await request(app)
+      .post('/api/merchants')
+      .set('Authorization', `Bearer ${gm.token}`)
+      .send({ game_session_id: sessionId, name: 'Boutique Héritée' })
+      .expect(201);
+    merchantId = merchant.body.merchant.id;
+
+    const main: YgoCardSet = { set_name: mainSetName, set_code: sharedCode, num_of_cards: 2, tcg_date: '2002-03-08' };
+    const reprint: YgoCardSet = { set_name: reprintSetName, set_code: sharedCode, num_of_cards: 1, tcg_date: '2023-04-20' };
+    vi.mocked(fetchCardSets).mockResolvedValue([main, reprint]);
+    await request(app).get('/api/cards/sets?refresh=true').set('Authorization', `Bearer ${gm.token}`).expect(200);
+
+    const setsRes = await request(app).get(`/api/cards/sets?search=${encodeURIComponent(String(rand))}`).set('Authorization', `Bearer ${gm.token}`).expect(200);
+    mainSetId = setsRes.body.sets.find((s: { set_name: string }) => s.set_name === mainSetName).id;
+    reprintSetId = setsRes.body.sets.find((s: { set_name: string }) => s.set_name === reprintSetName).id;
+
+    const mainCard: YgoCard = {
+      id: 920_000_001 + rand,
+      name: 'Carte Héritée Principale',
+      type: 'Normal Monster',
+      frameType: 'normal',
+      desc: 'Carte du set principal.',
+      atk: 1000,
+      def: 1000,
+      level: 4,
+      race: 'Warrior',
+      attribute: 'LIGHT',
+      card_sets: [{ set_name: mainSetName, set_code: `${sharedCode}-001`, set_rarity: 'Common', set_rarity_code: '(C)', set_price: '0' }],
+      card_images: [testCardImage(920_000_001 + rand)],
+    };
+    const reprintCard: YgoCard = {
+      id: 920_000_002 + rand,
+      name: 'Carte Héritée Réédition',
+      type: 'Spell Card',
+      frameType: 'spell',
+      desc: 'Carte de la réédition seulement.',
+      card_sets: [{ set_name: reprintSetName, set_code: `${sharedCode}-R01`, set_rarity: 'Common', set_rarity_code: '(C)', set_price: '0' }],
+      card_images: [testCardImage(920_000_002 + rand)],
+    };
+    vi.mocked(fetchCardsBySet).mockImplementation(async (setName: string) => {
+      if (setName === mainSetName) return [mainCard];
+      if (setName === reprintSetName) return [reprintCard];
+      return [];
+    });
+    await request(app).post(`/api/cards/sets/${mainSetId}/import`).set('Authorization', `Bearer ${gm.token}`).expect(200);
+    await request(app).post(`/api/cards/sets/${reprintSetId}/import`).set('Authorization', `Bearer ${gm.token}`).expect(200);
+
+    // Simule un article ajouté AVANT ce correctif : écrit directement en
+    // base, EXACTEMENT comme POST /:id/items le faisait alors — set_code
+    // seul, jamais card_set_id (ce champ n'existait pas encore). Nommé
+    // d'après la RÉÉDITION précisément pour vérifier que la résolution ne
+    // retombe jamais sur le set principal par erreur.
+    const { Merchant } = await import('../models/Merchant.model');
+    const { Types } = await import('mongoose');
+    const legacyItem = { _id: new Types.ObjectId(), item_type: 'booster', card_id: null, set_code: sharedCode, card_set_id: null, name: reprintSetName, image_url: null, price: 0, stock: null, haggle_dc: null, haggle_discount_percent: null };
+    await Merchant.updateOne({ _id: merchantId }, { $push: { items: legacyItem } });
+    legacyItemId = legacyItem._id.toString();
+  });
+
+  afterAll(async () => {
+    await mongoose.connection.dropDatabase();
+    await disconnectMongo();
+  });
+
+  it("GET /cards avec set_code+set_name (ce que l'aperçu du contenu envoie pour un article hérité) résout la BONNE variante, jamais celle du set principal", async () => {
+    const res = await request(app)
+      .get(`/api/cards?set_code=${encodeURIComponent(sharedCode)}&set_name=${encodeURIComponent(reprintSetName)}`)
+      .set('Authorization', `Bearer ${gm.token}`)
+      .expect(200);
+    expect(res.body.cards).toHaveLength(1);
+    expect(res.body.cards[0].name).toBe('Carte Héritée Réédition');
+  });
+
+  it("acheter l'article hérité rattrape card_set_id tout seul (aucune migration nécessaire) et pointe vers la bonne variante", async () => {
+    await request(app)
+      .post(`/api/merchants/${merchantId}/items/${legacyItemId}/purchase`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ character_id: characterId, quantity: 1 })
+      .expect(200);
+
+    const char = await request(app).get(`/api/characters/${characterId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+    const booster = char.body.character.sealed_boosters.find((b: { set_code: string }) => b.set_code === sharedCode);
+    expect(booster).toBeDefined();
+    expect(booster.card_set_id).toBe(reprintSetId); // pas mainSetId
+  });
+
+  it("ouvrir ce booster hérité (maintenant auto-résolu) tire bien dans le pool de la réédition, jamais celui du set principal", async () => {
+    const res = await request(app)
+      .post(`/api/characters/${characterId}/open-booster`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ set_code: sharedCode, quantity: 1 })
+      .expect(200);
+    expect(res.body.opened_cards.length).toBeGreaterThan(0);
+    expect(res.body.opened_cards.every((c: { name: string }) => c.name === 'Carte Héritée Réédition')).toBe(true);
+  });
+});

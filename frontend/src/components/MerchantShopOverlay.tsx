@@ -306,7 +306,9 @@ function ItemDetailPanel({
       <h3 className="font-display text-lg text-accent-400">{item.name}</h3>
       <p className="mb-1 text-xs text-neutral-500">{item.item_type === 'card' ? 'Carte' : 'Booster'}</p>
 
-      {item.item_type === 'booster' && item.set_code && <BoosterContentsPreview token={token} setCode={item.set_code} setId={item.card_set_id} />}
+      {item.item_type === 'booster' && item.set_code && (
+        <BoosterContentsPreview token={token} setCode={item.set_code} setId={item.card_set_id} setName={item.name} />
+      )}
 
       {isGm && (
         <div className="space-y-2 border-t border-arena-700 pt-3">
@@ -447,7 +449,17 @@ function ItemDetailPanel({
  * panneau détail) pour ne pas interroger le catalogue pour rien tant que
  * personne ne clique.
  */
-function BoosterContentsPreview({ token, setCode, setId }: { token: string; setCode: string; setId: string | null }) {
+function BoosterContentsPreview({
+  token,
+  setCode,
+  setId,
+  setName,
+}: {
+  token: string;
+  setCode: string;
+  setId: string | null;
+  setName: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [cards, setCards] = useState<ApiCard[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -461,10 +473,14 @@ function BoosterContentsPreview({ token, setCode, setId }: { token: string; setC
     setExpanded(true);
     if (cards !== null) return; // déjà chargé une fois
     setLoading(true);
-    // setId préféré (voir CLAUDE.md — set_code seul est ambigu) ; set_code
-    // reste le seul repère pour un article booster ajouté avant ce correctif.
+    // setId préféré (voir CLAUDE.md — set_code seul est ambigu). Pour un
+    // article booster ajouté avant ce correctif (setId absent), setName
+    // (déjà le nom exact capturé à l'ajout de l'article) résout quand même
+    // précisément — jamais besoin de retomber sur set_code seul, ambigu.
+    // limit relevé à 300 : 100 coupait le vrai contenu d'un gros set réel
+    // (ex. LOB, 126 cartes distinctes).
     api
-      .listCards(token, setId ? { set_id: setId, limit: 100 } : { set_code: setCode, limit: 100 })
+      .listCards(token, setId ? { set_id: setId, limit: 300 } : { set_code: setCode, set_name: setName, limit: 300 })
       .then(({ cards: fetched }) => setCards(fetched))
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
       .finally(() => setLoading(false));

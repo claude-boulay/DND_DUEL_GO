@@ -714,10 +714,14 @@ export const api = {
   listCards: (
     token: string,
     params?: {
-      // Préféré (voir CLAUDE.md — set_code seul est ambigu). set_code reste
-      // accepté seul en repli, résout arbitrairement vers le premier set
-      // trouvé avec ce code.
+      // Préféré (voir CLAUDE.md — set_code seul est ambigu).
       set_id?: string;
+      // Repli précis quand set_id est absent : (set_code, set_name) ensemble
+      // reste fiable même pour un article/booster créé avant l'introduction
+      // de set_id (set_name est déjà un snapshot connu dans ce cas).
+      set_name?: string;
+      // Dernier repli seul (ambigu — résout arbitrairement vers le premier
+      // set trouvé avec ce code) : à éviter si set_name est disponible.
       set_code?: string;
       search?: string;
       // Filtre directement le catalogue côté serveur (mêmes dimensions que
