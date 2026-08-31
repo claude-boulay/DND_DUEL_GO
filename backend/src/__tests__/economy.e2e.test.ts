@@ -210,6 +210,15 @@ describe('Économie : marchand, inventaire, achat et collection (E2E)', () => {
     expect(res.body.character.money).toBe(500); // inchangé
   });
 
+  it("le joueur peut noter des informations importantes (champ notes, demande utilisateur)", async () => {
+    const res = await request(app)
+      .patch(`/api/characters/${characterId}`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ notes: 'Le forgeron du village doit une faveur au personnage.' })
+      .expect(200);
+    expect(res.body.character.notes).toBe('Le forgeron du village doit une faveur au personnage.');
+  });
+
   it('le MJ crée un marchand avec un DC de marchandage bas', async () => {
     const res = await request(app)
       .post('/api/merchants')

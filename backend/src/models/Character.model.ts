@@ -34,6 +34,11 @@ export interface CharacterAttrs {
   backstory: string;
   personality: string;
   visual_description: string;
+  // Bloc libre pour noter des informations importantes en cours de partie
+  // (demande utilisateur) — distinct des champs RP figés à la création
+  // (backstory/personality/visual_description) : pensé pour être modifié
+  // souvent, pas juste une fois au départ.
+  notes: string;
   stats: CharacterStatsAttrs;
   remaining_luck_rerolls: number;
   inventory: string[];
@@ -83,6 +88,7 @@ const characterSchema = new Schema<CharacterAttrs>(
     backstory: { type: String, default: '', maxlength: 5000 },
     personality: { type: String, default: '', maxlength: 2000 },
     visual_description: { type: String, default: '', maxlength: 2000 },
+    notes: { type: String, default: '', maxlength: 5000 },
     stats: { type: statsSchema, required: true },
     // Compteur de charges restantes ; distinct du maximum recalculé par la formule
     // de CLAUDE.md §3.3. Décrémenté par le futur moteur de dés Socket.io.

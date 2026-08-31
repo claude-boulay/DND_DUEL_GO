@@ -43,6 +43,7 @@ function toCharacterDto(character: CharacterDocument) {
     backstory: character.backstory,
     personality: character.personality,
     visual_description: character.visual_description,
+    notes: character.notes,
     stats: character.stats,
     remaining_luck_rerolls: character.remaining_luck_rerolls,
     inventory: character.inventory,
@@ -684,6 +685,7 @@ const updateCharacterSchema = z.object({
   backstory: z.string().max(5000).optional(),
   personality: z.string().max(2000).optional(),
   visual_description: z.string().max(2000).optional(),
+  notes: z.string().max(5000).optional(),
   stats: statsSchema.optional(),
   level: z.number().int().min(1).optional(),
   experience: z.number().int().min(0).optional(),
@@ -721,6 +723,7 @@ characterRouter.patch(
     if (updates.backstory !== undefined) character.backstory = updates.backstory;
     if (updates.personality !== undefined) character.personality = updates.personality;
     if (updates.visual_description !== undefined) character.visual_description = updates.visual_description;
+    if (updates.notes !== undefined) character.notes = updates.notes;
     if (updates.money !== undefined) character.money = updates.money;
     if (updates.inventory !== undefined) character.inventory = updates.inventory;
     if (updates.stats) character.stats = updates.stats;

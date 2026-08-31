@@ -18,7 +18,7 @@ import { BoosterOpeningOverlay } from './BoosterOpeningOverlay';
 import { MoneyEditor } from './CharacterList';
 
 type CharacterUpdatePatch = Partial<
-  Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'inventory'>
+  Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'notes' | 'inventory'>
 >;
 
 interface CharacterSheetOverlayProps {
@@ -124,6 +124,7 @@ function FicheTab({
       <div className="space-y-4 lg:col-span-2">
         <StatsPanel character={character} />
         <RpPanel token={token} character={character} canManage={canManage} onCharacterUpdate={onCharacterUpdate} />
+        <NotesPanel token={token} character={character} canManage={canManage} onCharacterUpdate={onCharacterUpdate} />
         <InventoryPanel token={token} character={character} canManage={canManage} onCharacterUpdate={onCharacterUpdate} />
       </div>
       <div className="space-y-4">
@@ -295,6 +296,94 @@ function RpPanel({
   );
 }
 
+/**
+ * Bloc libre pour noter des informations importantes en cours de partie
+ * (demande utilisateur) — distinct du bloc RP ci-dessus (backstory/
+ * personnalité/description visuelle, plutôt figés à la création) : pensé
+ * pour être modifié souvent, sans repasser par tout le formulaire RP.
+ */
+function NotesPanel({
+  token,
+  character,
+  canManage,
+  onCharacterUpdate,
+}: {
+  token: string;
+  character: ApiCharacter;
+  canManage: boolean;
+  onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [notes, setNotes] = useState(character.notes);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startEditing = () => {
+    setNotes(character.notes);
+    setError(null);
+    setEditing(true);
+  };
+
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { character: updated } = await api.updateCharacterProfile(token, character.id, { notes });
+      onCharacterUpdate(character.id, { notes: updated.notes });
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Notes</h3>
+        {canManage && !editing && (
+          <button type="button" onClick={startEditing} className="text-xs text-accent-400 underline hover:text-accent-300">
+            Modifier
+          </button>
+        )}
+      </div>
+
+      {!editing ? (
+        <p className="whitespace-pre-wrap text-sm text-neutral-300">{character.notes || '—'}</p>
+      ) : (
+        <form onSubmit={handleSave} className="space-y-2">
+          <textarea
+            placeholder="Informations importantes à retenir..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={5}
+            className="w-full resize-none rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
+          />
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+            >
+              Enregistrer
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+            >
+              Annuler
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function InventoryPanel({
   token,
   character,
@@ -387,6 +476,30 @@ function BoostersPanel({
   const [openingSet, setOpeningSet] = useState<string | null>(null);
   const [opening, setOpening] = useState<{ setCode: string; setName: string; cards: ApiOpenedCard[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Demande utilisateur : afficher l'image du booster, pas juste son nom en
+  // texte — ApiSealedBooster n'a que set_code/set_name/quantity (pas
+  // d'image), donc on la résout ici via le catalogue de sets, par nom exact
+  // (fiable : un nom de set correspond à son propre nom en recherche).
+  const [images, setImages] = useState<Record<string, string | null>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    if (character.sealed_boosters.length === 0) return;
+    Promise.all(
+      character.sealed_boosters.map((b) =>
+        api
+          .listCardSets(token, { search: b.set_name, include_custom: true })
+          .then(({ sets }): [string, string | null] => [b.set_code, sets.find((s) => s.set_code === b.set_code)?.set_image ?? null])
+          .catch((): [string, string | null] => [b.set_code, null]),
+      ),
+    ).then((entries) => {
+      if (!cancelled) setImages(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, character.sealed_boosters]);
 
   if (character.sealed_boosters.length === 0) return null;
 
@@ -407,10 +520,17 @@ function BoostersPanel({
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Boosters scellés</h3>
-      <div className="space-y-1.5 text-sm">
+      {/* Scrollbar si la liste devient trop haute (demande utilisateur) — max-h
+          tuné à ~5 lignes à cette hauteur de ligne, le reste défile. */}
+      <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1 text-sm">
         {character.sealed_boosters.map((b: ApiSealedBooster) => (
-          <div key={b.set_code} className="flex items-center justify-between gap-2 rounded-md border border-arena-700 bg-arena-800 px-3 py-1.5">
-            <span className="text-neutral-200">
+          <div key={b.set_code} className="flex items-center gap-2 rounded-md border border-arena-700 bg-arena-800 px-2 py-1.5">
+            {images[b.set_code] ? (
+              <img src={images[b.set_code]!} alt={b.set_name} className="h-10 w-10 shrink-0 rounded object-contain" />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-arena-900 text-[8px] text-arena-600">{b.set_code}</div>
+            )}
+            <span className="min-w-0 flex-1 truncate text-neutral-200">
               {b.set_name} <span className="text-neutral-500">×{b.quantity}</span>
             </span>
             <button

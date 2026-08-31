@@ -15,7 +15,7 @@ import { GrantCardsOverlay } from './GrantCardsOverlay';
 import { CharacterSheetOverlay } from './CharacterSheetOverlay';
 
 type CharacterUpdatePatch = Partial<
-  Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'inventory'>
+  Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'notes' | 'inventory'>
 >;
 
 interface CharacterListProps {

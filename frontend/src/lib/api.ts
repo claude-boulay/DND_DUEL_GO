@@ -64,6 +64,7 @@ export interface ApiCharacter {
   backstory: string;
   personality: string;
   visual_description: string;
+  notes: string;
   stats: ApiCharacterStats;
   remaining_luck_rerolls: number;
   inventory: string[];
@@ -630,7 +631,7 @@ export const api = {
   updateCharacterProfile: (
     token: string,
     characterId: string,
-    input: Partial<{ name: string; backstory: string; personality: string; visual_description: string; inventory: string[] }>,
+    input: Partial<{ name: string; backstory: string; personality: string; visual_description: string; notes: string; inventory: string[] }>,
   ) =>
     request<{ character: ApiCharacter }>(
       `/characters/${encodeURIComponent(characterId)}`,

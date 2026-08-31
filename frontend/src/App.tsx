@@ -132,7 +132,9 @@ export default function App() {
 
   const handleCharacterUpdate = (
     characterId: string,
-    patch: Partial<Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'inventory'>>,
+    patch: Partial<
+      Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'notes' | 'inventory'>
+    >,
   ) => {
     setCharacters((prev) => prev.map((c) => (c.id === characterId ? { ...c, ...patch } : c)));
   };
