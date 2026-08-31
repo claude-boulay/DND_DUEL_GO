@@ -130,7 +130,9 @@ installés :
 git clone https://github.com/claude-boulay/DND_DUEL_GO.git
 cd DND_DUEL_GO
 cp .env.example .env       # puis éditer .env — voir la checklist ci-dessous
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+ docker pull ghcr.io/claude-boulay/dnd_duel_go-frontend:latest
+ docker pull ghcr.io/claude-boulay/dnd_duel_go-backend:latest
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d 
 ```
 
 **Caddy termine le TLS automatiquement** et devient le SEUL point d'entrée
