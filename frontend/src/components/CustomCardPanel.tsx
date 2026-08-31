@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   api,
   ApiError,
+  type ApiCard,
   type ApiCardSet,
   type ApiCustomCard,
   type CardAttribute,
@@ -211,11 +212,9 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
         token={token}
         sessionId={sessionId}
         isGm={isGm}
-        cards={cards}
         boosters={boosters}
         loading={boostersLoading}
         onRefresh={loadBoosters}
-        onCardUpdated={updateCard}
         onError={setError}
       />
     </div>
@@ -234,21 +233,17 @@ function CustomBoosterManager({
   token,
   sessionId,
   isGm,
-  cards,
   boosters,
   loading,
   onRefresh,
-  onCardUpdated,
   onError,
 }: {
   token: string;
   sessionId: string;
   isGm: boolean;
-  cards: ApiCustomCard[];
   boosters: ApiCardSet[];
   loading: boolean;
   onRefresh: () => void;
-  onCardUpdated: (card: ApiCustomCard) => void;
   onError: (message: string) => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
@@ -311,61 +306,108 @@ function CustomBoosterManager({
       {/* Plafonné à ~10 boosters visibles, le reste défile (demande utilisateur). */}
       <div className="max-h-[30rem] space-y-2 overflow-y-auto pr-1">
         {boosters.map((booster) => (
-          <CustomBoosterRow
-            key={booster.set_code}
-            token={token}
-            booster={booster}
-            isGm={isGm}
-            cards={cards}
-            onCardUpdated={onCardUpdated}
-            onDeleted={onRefresh}
-            onError={onError}
-          />
+          <CustomBoosterRow key={booster.set_code} token={token} booster={booster} isGm={isGm} onDeleted={onRefresh} onError={onError} />
         ))}
       </div>
     </section>
   );
 }
 
+/**
+ * Contenu réel d'un booster custom (demande utilisateur — cartes officielles
+ * incluses désormais, pas seulement custom) : résolu à l'ouverture via le
+ * catalogue complet (`GET /cards?set_code=`, même route que
+ * BoosterContentsPreview côté marchand) plutôt que dérivé de la liste des
+ * cartes custom du salon — cette dernière ne pouvait de toute façon jamais
+ * refléter les cartes officielles liées.
+ */
 function CustomBoosterRow({
   token,
   booster,
   isGm,
-  cards,
-  onCardUpdated,
   onDeleted,
   onError,
 }: {
   token: string;
   booster: ApiCardSet;
   isGm: boolean;
-  cards: ApiCustomCard[];
-  onCardUpdated: (card: ApiCustomCard) => void;
   onDeleted: () => void;
   onError: (message: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [addingCardId, setAddingCardId] = useState('');
+  const [cardsInBooster, setCardsInBooster] = useState<ApiCard[] | null>(null);
+  const [loadingContents, setLoadingContents] = useState(false);
+  const [search, setSearch] = useState('');
+  const [searchResults, setSearchResults] = useState<ApiCard[]>([]);
+  const [searching, setSearching] = useState(false);
   const [rarity, setRarity] = useState<CustomCardRarity>('Common');
-  const [submitting, setSubmitting] = useState(false);
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
-  const cardsInBooster = cards.filter((c) => c.card_sets.some((s) => s.set_code === booster.set_code));
-  const linkableCards = cards.filter((c) => !c.card_sets.some((s) => s.set_code === booster.set_code));
+  const loadContents = useCallback(() => {
+    setLoadingContents(true);
+    api
+      .listCards(token, { set_code: booster.set_code, limit: 100 })
+      .then(({ cards: fetched }) => setCardsInBooster(fetched))
+      .catch((err) => onError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+      .finally(() => setLoadingContents(false));
+  }, [token, booster.set_code, onError]);
 
-  const handleAdd = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!addingCardId) return;
-    setSubmitting(true);
+  const toggle = () => {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setExpanded(true);
+    if (cardsInBooster === null) loadContents();
+  };
+
+  // Recherche débounced dans le catalogue COMPLET (officielles + custom du
+  // salon, GET /cards ne filtre pas is_custom) — ne tarit jamais, contrairement
+  // à l'ancienne liste dérivée des seules cartes custom déjà créées.
+  useEffect(() => {
+    if (!expanded || !search.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    const handle = setTimeout(() => {
+      api
+        .listCards(token, { search, limit: 12 })
+        .then(({ cards: fetched }) => setSearchResults(fetched))
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearching(false));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [token, search, expanded]);
+
+  const linkedIds = new Set((cardsInBooster ?? []).map((c) => c.id));
+
+  const handleAdd = async (cardId: string) => {
+    setAddingId(cardId);
     try {
-      const { card } = await api.linkCustomCardToBooster(token, addingCardId, { set_code: booster.set_code, rarity });
-      onCardUpdated(card);
-      setAddingCardId('');
+      await api.linkCardToCustomBooster(token, booster.set_code, cardId, rarity);
+      setSearch('');
+      setSearchResults([]);
+      loadContents();
     } catch (err) {
       onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
     } finally {
-      setSubmitting(false);
+      setAddingId(null);
+    }
+  };
+
+  const handleRemove = async (cardId: string) => {
+    setRemovingId(cardId);
+    try {
+      await api.unlinkCardFromCustomBooster(token, booster.set_code, cardId);
+      loadContents();
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+    } finally {
+      setRemovingId(null);
     }
   };
 
@@ -382,25 +424,11 @@ function CustomBoosterRow({
     }
   };
 
-  const handleRemove = async (cardId: string) => {
-    try {
-      const { card } = await api.unlinkCustomCardFromBooster(token, cardId, booster.set_code);
-      onCardUpdated(card);
-    } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
-    }
-  };
-
   return (
     <article className="rounded-lg border border-arena-700 bg-arena-800 p-3 text-xs">
       <div className="flex w-full items-center justify-between gap-2">
-        <button type="button" onClick={() => setExpanded((v) => !v)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-          <span className="min-w-0 truncate">
-            <span className="font-semibold text-accent-400">{booster.set_name}</span>{' '}
-            <span className="text-neutral-500">
-              ({cardsInBooster.length} carte{cardsInBooster.length !== 1 ? 's' : ''})
-            </span>
-          </span>
+        <button type="button" onClick={toggle} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+          <span className="min-w-0 truncate font-semibold text-accent-400">{booster.set_name}</span>
           <span className="shrink-0 text-neutral-500">{expanded ? '▲' : '▼'}</span>
         </button>
 
@@ -432,52 +460,77 @@ function CustomBoosterRow({
 
       {expanded && (
         <div className="mt-2 space-y-2 border-t border-arena-700 pt-2">
-          {cardsInBooster.length === 0 && <p className="text-neutral-500">Aucune carte dans ce booster pour l'instant.</p>}
-          {cardsInBooster.map((c) => {
-            const entry = c.card_sets.find((s) => s.set_code === booster.set_code);
-            return (
-              <div key={c.id} className="flex items-center justify-between gap-2 rounded bg-arena-900 px-2 py-1">
-                <span className="text-neutral-200">
-                  {c.name} <span className="text-neutral-500">({entry?.set_rarity})</span>
-                </span>
-                {isGm && (
-                  <button type="button" onClick={() => void handleRemove(c.id)} className="shrink-0 text-red-400 hover:text-red-300">
-                    Retirer
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          {loadingContents && <p className="text-neutral-500">Chargement...</p>}
+          {!loadingContents && cardsInBooster && cardsInBooster.length === 0 && (
+            <p className="text-neutral-500">Aucune carte dans ce booster pour l'instant.</p>
+          )}
+          {!loadingContents &&
+            cardsInBooster?.map((c) => {
+              const entry = c.card_sets.find((s) => s.set_code === booster.set_code);
+              return (
+                <div key={c.id} className="flex items-center justify-between gap-2 rounded bg-arena-900 px-2 py-1">
+                  <span className="text-neutral-200">
+                    {c.name} <span className="text-neutral-500">({entry?.set_rarity})</span>
+                    {!c.is_custom && <span className="ml-1 rounded bg-arena-800 px-1 py-0.5 text-[9px] uppercase tracking-wide text-neutral-500">officielle</span>}
+                  </span>
+                  {isGm && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRemove(c.id)}
+                      disabled={removingId === c.id}
+                      className="shrink-0 text-red-400 hover:text-red-300 disabled:opacity-50"
+                    >
+                      Retirer
+                    </button>
+                  )}
+                </div>
+              );
+            })}
 
-          {isGm && linkableCards.length > 0 && (
-            <form onSubmit={handleAdd} className="flex flex-wrap items-center gap-2 border-t border-arena-800 pt-2">
-              <select
-                value={addingCardId}
-                onChange={(e) => setAddingCardId(e.target.value)}
-                className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100"
-              >
-                <option value="">Ajouter une carte...</option>
-                {linkableCards.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <select value={rarity} onChange={(e) => setRarity(e.target.value as CustomCardRarity)} className="rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100">
-                {RARITIES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={submitting || !addingCardId}
-                className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
-              >
-                Ajouter
-              </button>
-            </form>
+          {isGm && (
+            <div className="space-y-1.5 border-t border-arena-800 pt-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Rechercher une carte à ajouter (officielle ou custom)..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100 outline-none focus:border-accent-500"
+                />
+                <select value={rarity} onChange={(e) => setRarity(e.target.value as CustomCardRarity)} className="rounded border border-arena-600 bg-arena-900 px-2 py-1 text-neutral-100">
+                  {RARITIES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {searching && <p className="text-neutral-500">Recherche...</p>}
+              {!searching && search.trim() && searchResults.filter((c) => !linkedIds.has(c.id)).length === 0 && (
+                <p className="text-neutral-500">Aucune carte trouvée.</p>
+              )}
+              {!searching && searchResults.filter((c) => !linkedIds.has(c.id)).length > 0 && (
+                <div className="max-h-32 space-y-1 overflow-y-auto">
+                  {searchResults
+                    .filter((c) => !linkedIds.has(c.id))
+                    .map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => void handleAdd(c.id)}
+                        disabled={addingId === c.id}
+                        className="flex w-full items-center justify-between gap-2 rounded bg-arena-900 px-2 py-1 text-left transition hover:bg-arena-700 disabled:opacity-50"
+                      >
+                        <span className="text-neutral-200">
+                          {c.name}
+                          {!c.is_custom && <span className="ml-1 text-[9px] uppercase tracking-wide text-neutral-500">officielle</span>}
+                        </span>
+                        <span className="shrink-0 text-accent-400">{addingId === c.id ? '...' : '+ Ajouter'}</span>
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -589,6 +589,146 @@ describe('Créateur de cartes custom : validation, MJ, réutilisation inter-part
     });
   });
 
+  describe('POST/DELETE .../boosters/:setCode/cards : lier une carte OFFICIELLE (pas seulement custom) à un booster custom', () => {
+    // Demande utilisateur directe : "ajouter la possibilité de mettre des
+    // cartes non custom dans les boosters custom" — corrige aussi le bug
+    // rapporté juste à côté (plus aucun moyen d'ajouter une carte une fois
+    // toutes les cartes custom du salon déjà liées), puisque le catalogue
+    // officiel ne tarit jamais.
+    let boosterSetCode: string;
+    let officialCardId: string;
+    let officialCard2Id: string;
+
+    beforeAll(async () => {
+      const created = await request(app)
+        .post('/api/custom-cards/boosters')
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ game_session_id: sessionA.id, name: 'Booster Mixte de Test' })
+        .expect(201);
+      boosterSetCode = created.body.card_set.set_code;
+
+      const official1 = await Card.create({
+        ygoprodeck_id: 700_000_001 + rand,
+        name: 'Carte Officielle De Test 1',
+        type: 'Normal Monster',
+        frame_type: 'normal',
+        description: 'Carte de test.',
+        atk: 1000,
+        def: 1000,
+        level_rank: 4,
+        race: 'Warrior',
+        attribute: 'LIGHT',
+        card_sets: [],
+        card_images: [{ image_id: 1, image_url: 'https://example.com/1.jpg', image_url_small: 'https://example.com/1s.jpg', image_url_cropped: 'https://example.com/1c.jpg' }],
+        is_custom: false,
+      });
+      officialCardId = official1._id.toString();
+
+      const official2 = await Card.create({
+        ygoprodeck_id: 700_000_002 + rand,
+        name: 'Carte Officielle De Test 2',
+        type: 'Normal Monster',
+        frame_type: 'normal',
+        description: 'Carte de test.',
+        atk: 1000,
+        def: 1000,
+        level_rank: 4,
+        race: 'Warrior',
+        attribute: 'LIGHT',
+        card_sets: [],
+        card_images: [{ image_id: 2, image_url: 'https://example.com/2.jpg', image_url_small: 'https://example.com/2s.jpg', image_url_cropped: 'https://example.com/2c.jpg' }],
+        is_custom: false,
+      });
+      officialCard2Id = official2._id.toString();
+    });
+
+    it("un joueur (pas MJ) ne peut pas lier une carte à un booster custom", async () => {
+      await request(app)
+        .post(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards`)
+        .set('Authorization', `Bearer ${player.token}`)
+        .send({ card_id: officialCardId })
+        .expect(403);
+    });
+
+    it("un AUTRE MJ ne peut pas lier une carte au booster de gm1 (propriété du booster, pas de la carte)", async () => {
+      await request(app)
+        .post(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards`)
+        .set('Authorization', `Bearer ${gm2.token}`)
+        .send({ card_id: officialCardId })
+        .expect(403);
+    });
+
+    it('le MJ propriétaire du booster lie une carte OFFICIELLE (pas custom du tout)', async () => {
+      const res = await request(app)
+        .post(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ card_id: officialCardId, rarity: 'Ultra Rare' })
+        .expect(201);
+      expect(res.body.card.is_custom).toBe(false);
+      expect(res.body.card.card_sets).toEqual([expect.objectContaining({ set_code: boosterSetCode, set_rarity: 'Ultra Rare' })]);
+
+      const contents = await request(app).get(`/api/cards?set_code=${encodeURIComponent(boosterSetCode)}`).set('Authorization', `Bearer ${gm1.token}`).expect(200);
+      expect(contents.body.cards.map((c: { id: string }) => c.id)).toContain(officialCardId);
+    });
+
+    it('refuse de lier deux fois la même carte au même booster', async () => {
+      const res = await request(app)
+        .post(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ card_id: officialCardId })
+        .expect(400);
+      expect(res.body.error.code).toBe('already_linked');
+    });
+
+    it("ne tarit jamais (contrairement à l'ancienne liste custom-only) : une SECONDE carte officielle se lie sans problème", async () => {
+      await request(app)
+        .post(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ card_id: officialCard2Id })
+        .expect(201);
+
+      const contents = await request(app).get(`/api/cards?set_code=${encodeURIComponent(boosterSetCode)}`).set('Authorization', `Bearer ${gm1.token}`).expect(200);
+      expect(contents.body.cards).toHaveLength(2);
+    });
+
+    it('délie une carte officielle du booster', async () => {
+      const res = await request(app)
+        .delete(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards/${officialCardId}`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(200);
+      expect(res.body.card.card_sets).toEqual([]);
+
+      const contents = await request(app).get(`/api/cards?set_code=${encodeURIComponent(boosterSetCode)}`).set('Authorization', `Bearer ${gm1.token}`).expect(200);
+      expect(contents.body.cards).toHaveLength(1);
+    });
+
+    it("délier une carte pas liée à ce booster renvoie 404", async () => {
+      await request(app)
+        .delete(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards/${officialCardId}`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .expect(404);
+    });
+
+    it("une carte custom d'un AUTRE MJ reste protégée même pour le propriétaire du booster", async () => {
+      const gm2Session = sessionB;
+      const gm2Card = await request(app)
+        .post('/api/custom-cards')
+        .set('Authorization', `Bearer ${gm2.token}`)
+        .send({
+          game_session_id: gm2Session.id,
+          card: { category: 'trap', trap_type: 'normal', effect_text: 'Piège de gm2.', name: 'Piège de gm2' },
+          lua_script: DUMMY_LUA_SCRIPT,
+        })
+        .expect(201);
+
+      await request(app)
+        .post(`/api/custom-cards/boosters/${encodeURIComponent(boosterSetCode)}/cards`)
+        .set('Authorization', `Bearer ${gm1.token}`)
+        .send({ card_id: gm2Card.body.card.id })
+        .expect(403);
+    });
+  });
+
   describe('une carte custom (script obligatoire) rejoint un deck et un vrai duel', () => {
     // Le déroulé complet d'un duel (invocation, combat, chaîne, script
     // effectivement exécuté par le moteur) est couvert par duel.e2e.test.ts —

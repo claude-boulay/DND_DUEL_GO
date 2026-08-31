@@ -12,6 +12,7 @@ import { isSessionGm, isSessionMember } from '../utils/sessionMembership';
 import { loadSessionOrThrow } from '../utils/loaders';
 import { CUSTOM_RARITIES, customCardInputSchema, deriveCardFields } from '../utils/customCardRules';
 import { allocateEngineCode } from '../utils/engineCardCode';
+import { toCardDto } from '../utils/cardDto';
 
 export const customCardRouter = Router();
 customCardRouter.use(requireAuth);
@@ -306,6 +307,85 @@ customCardRouter.delete(
     await cardSet.deleteOne();
 
     res.status(204).send();
+  }),
+);
+
+const linkExistingCardToBoosterSchema = z.object({
+  card_id: z.string(),
+  rarity: z.enum(CUSTOM_RARITIES).default('Common'),
+});
+
+/**
+ * Lie une carte EXISTANTE — custom OU officielle — à un booster custom déjà
+ * créé (demande utilisateur : "ajouter la possibilité de mettre des cartes
+ * non custom dans les boosters custom"). Distinct de POST /:id/booster-link
+ * ci-dessous (centré sur UNE carte custom, peut créer le booster à la volée)
+ * : ici on part du BOOSTER et on y ajoute n'importe quelle carte déjà en
+ * base — l'autorisation se fait donc sur la propriété du BOOSTER, pas de la
+ * carte (une carte officielle n'a pas de propriétaire).
+ *
+ * Corrige au passage un vrai bug rapporté par l'utilisateur : le seul moyen
+ * d'ajouter une carte à un booster custom était de choisir parmi les cartes
+ * custom PAS ENCORE liées à CE booster (liste dérivée côté front) — dès que
+ * toutes les cartes custom du salon étaient liées, l'UI d'ajout disparaissait
+ * purement et simplement, sans plus aucun moyen d'en ajouter une autre. Le
+ * front (CustomBoosterRow) bascule maintenant sur une recherche dans le
+ * catalogue complet (officielles + custom), qui ne peut jamais être à sec.
+ */
+customCardRouter.post(
+  '/boosters/:setCode/cards',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const setCode = req.params.setCode!;
+    const cardSet = await loadOwnedCustomBoosterOrThrow(setCode, req.user!.sub);
+
+    const body = linkExistingCardToBoosterSchema.parse(req.body);
+    if (!Types.ObjectId.isValid(body.card_id)) throw new AppError(404, 'Carte introuvable', 'not_found');
+    const card = await Card.findById(body.card_id);
+    if (!card) throw new AppError(404, 'Carte introuvable', 'not_found');
+    // Une carte custom reste sous le contrôle exclusif de son créateur, même
+    // pour l'ajouter à un booster que CE MÊME MJ possède par ailleurs
+    // (CLAUDE.md §3.4) ; une carte officielle est une donnée de référence
+    // partagée, sans propriétaire — l'appartenance du booster (déjà vérifiée
+    // ci-dessus) suffit.
+    if (card.is_custom && card.owner_id?.toString() !== req.user!.sub) {
+      throw new AppError(403, "Vous n'êtes pas le créateur de cette carte custom", 'forbidden');
+    }
+    if (card.card_sets.some((s) => s.set_code === setCode)) {
+      throw new AppError(400, 'Cette carte est déjà liée à ce booster', 'already_linked');
+    }
+
+    card.card_sets.push({
+      set_name: cardSet.set_name,
+      set_code: cardSet.set_code,
+      set_rarity: body.rarity,
+      set_rarity_code: '',
+      set_price: '0',
+    });
+    await card.save();
+
+    res.status(201).json({ card: toCardDto(card) });
+  }),
+);
+
+customCardRouter.delete(
+  '/boosters/:setCode/cards/:cardId',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const setCode = req.params.setCode!;
+    await loadOwnedCustomBoosterOrThrow(setCode, req.user!.sub);
+
+    const cardId = req.params.cardId!;
+    if (!Types.ObjectId.isValid(cardId)) throw new AppError(404, 'Carte introuvable', 'not_found');
+    const card = await Card.findById(cardId);
+    if (!card) throw new AppError(404, 'Carte introuvable', 'not_found');
+
+    const before = card.card_sets.length;
+    card.card_sets = card.card_sets.filter((s) => s.set_code !== setCode);
+    if (card.card_sets.length === before) {
+      throw new AppError(404, "Cette carte n'est pas liée à ce booster", 'not_found');
+    }
+    await card.save();
+
+    res.json({ card: toCardDto(card) });
   }),
 );
 

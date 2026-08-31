@@ -988,6 +988,21 @@ export const api = {
       token,
     ),
 
+  /** Lie une carte EXISTANTE — officielle OU custom — à un booster custom déjà créé (par set_code, pas par carte) — voir CLAUDE.md. */
+  linkCardToCustomBooster: (token: string, setCode: string, cardId: string, rarity: CustomCardRarity) =>
+    request<{ card: ApiCard }>(
+      `/custom-cards/boosters/${encodeURIComponent(setCode)}/cards`,
+      { method: 'POST', body: JSON.stringify({ card_id: cardId, rarity }) },
+      token,
+    ),
+
+  unlinkCardFromCustomBooster: (token: string, setCode: string, cardId: string) =>
+    request<{ card: ApiCard }>(
+      `/custom-cards/boosters/${encodeURIComponent(setCode)}/cards/${encodeURIComponent(cardId)}`,
+      { method: 'DELETE' },
+      token,
+    ),
+
   /** Upload multipart : ne passe pas par `request()`, qui force Content-Type JSON. */
   uploadCardImage: async (token: string, file: File): Promise<{ url: string }> => {
     const formData = new FormData();
