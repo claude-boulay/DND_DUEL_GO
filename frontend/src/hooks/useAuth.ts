@@ -40,9 +40,20 @@ export function useAuth() {
     [applySession],
   );
 
-  const register = useCallback(
-    async (username: string, email: string, password: string) => {
-      const { token: newToken, user: newUser } = await api.register(username, email, password);
+  // Retourne `pending: true` quand SMTP est configuré côté serveur (voir
+  // auth.routes.ts) : le compte n'est pas encore créé, un code de
+  // vérification vient de partir — AuthPanel bascule alors vers l'écran de
+  // saisie du code au lieu de se connecter directement.
+  const register = useCallback(async (username: string, email: string, password: string): Promise<{ pending: boolean }> => {
+    const result = await api.register(username, email, password);
+    if (result.pending) return { pending: true };
+    applySession(result.token, result.user);
+    return { pending: false };
+  }, [applySession]);
+
+  const verifyRegistration = useCallback(
+    async (email: string, code: string) => {
+      const { token: newToken, user: newUser } = await api.verifyRegistration(email, code);
       applySession(newToken, newUser);
     },
     [applySession],
@@ -66,5 +77,5 @@ export function useAuth() {
     setUser(null);
   }, []);
 
-  return { token, user, loading, login, register, logout, forgotPassword, resetPassword };
+  return { token, user, loading, login, register, verifyRegistration, logout, forgotPassword, resetPassword };
 }

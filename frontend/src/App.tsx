@@ -230,6 +230,7 @@ export default function App() {
             <AuthPanel
               onLogin={auth.login}
               onRegister={auth.register}
+              onVerifyRegistration={auth.verifyRegistration}
               onForgotPassword={auth.forgotPassword}
               onResetPassword={auth.resetPassword}
             />

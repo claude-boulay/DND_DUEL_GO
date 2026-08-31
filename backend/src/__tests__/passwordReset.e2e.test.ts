@@ -18,6 +18,13 @@ vi.mock('../services/email', () => ({
   sendPasswordResetEmail: vi.fn(async (to: string, code: string) => {
     sentEmails.push({ to, code });
   }),
+  sendRegistrationVerificationEmail: vi.fn(),
+  // `false` : ce fichier teste le mot de passe oublié, pas la vérification
+  // d'inscription — les `registerUser` ci-dessous doivent garder le
+  // comportement historique (création immédiate) comme si SMTP n'était pas
+  // configuré, sinon /register renverrait `{pending: true}` sans token/user
+  // et casserait toutes les aides de ce fichier (voir registerUser).
+  isEmailConfigured: () => false,
 }));
 
 const app = createApp();

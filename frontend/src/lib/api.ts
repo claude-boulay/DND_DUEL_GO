@@ -561,10 +561,22 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 }
 
 export const api = {
+  /**
+   * Deux issues possibles (voir auth.routes.ts) : `pending: true` (SMTP
+   * configuré côté serveur — un code de vérification vient d'être envoyé,
+   * le compte n'existe pas encore) ou `pending: false` avec token+user
+   * (SMTP non configuré — comportement historique, création immédiate).
+   */
   register: (username: string, email: string, password: string) =>
-    request<{ token: string; user: ApiUser }>('/auth/register', {
+    request<{ pending: true; message: string } | { pending: false; token: string; user: ApiUser }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, email, password }),
+    }),
+
+  verifyRegistration: (email: string, code: string) =>
+    request<{ token: string; user: ApiUser }>('/auth/verify-registration', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
     }),
 
   login: (email: string, password: string) =>
