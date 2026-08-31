@@ -363,7 +363,6 @@ function ItemDetailPanel({
                   max={30}
                   value={haggleDc}
                   onChange={(e) => setHaggleDc(Number(e.target.value))}
-                  onBlur={() => haggleDc !== item.haggle_dc && void commit({ haggle_dc: haggleDc })}
                   className="w-16 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
                 />
               </label>
@@ -376,12 +375,23 @@ function ItemDetailPanel({
                     max={100}
                     value={haggleDiscount}
                     onChange={(e) => setHaggleDiscount(Number(e.target.value))}
-                    onBlur={() => haggleDiscount !== item.haggle_discount_percent && void commit({ haggle_discount_percent: haggleDiscount })}
                     className="w-16 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
                   />
                   %
                 </span>
               </label>
+              {/* Bouton explicite (demande utilisateur) — plus d'application
+                  silencieuse à la perte de focus, il fallait valider pour de
+                  vrai qu'un changement de DC/réduction était voulu. */}
+              {(haggleDc !== item.haggle_dc || haggleDiscount !== item.haggle_discount_percent) && (
+                <button
+                  type="button"
+                  onClick={() => void commit({ haggle_dc: haggleDc, haggle_discount_percent: haggleDiscount })}
+                  className="w-full rounded bg-accent-500 px-2 py-1 text-xs font-semibold text-arena-950 transition hover:bg-accent-400"
+                >
+                  Valider le marchandage
+                </button>
+              )}
             </>
           )}
           {savingError && <p className="text-xs text-red-400">{savingError}</p>}

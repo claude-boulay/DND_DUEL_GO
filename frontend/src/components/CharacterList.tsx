@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   api,
   ApiError,
@@ -161,8 +161,15 @@ export function MoneyEditor({
   onCharacterUpdate: (characterId: string, patch: { money?: number }) => void;
 }) {
   const [creditAmount, setCreditAmount] = useState('');
+  const [exactAmount, setExactAmount] = useState(String(character.money));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Repart de la vraie valeur si elle change ailleurs (achat, autre onglet du
+  // MJ...) — sans ça le champ garderait un texte devenu obsolète.
+  useEffect(() => {
+    setExactAmount(String(character.money));
+  }, [character.money]);
 
   const applyMoney = async (newAmount: number) => {
     setError(null);
@@ -184,10 +191,13 @@ export function MoneyEditor({
     setCreditAmount('');
   };
 
-  const handleSetExact = async (raw: string) => {
-    const parsed = Number(raw);
-    if (!Number.isInteger(parsed) || parsed < 0 || parsed === character.money) return;
-    await applyMoney(parsed);
+  const parsedExact = Number(exactAmount);
+  const exactIsValid = Number.isInteger(parsedExact) && parsedExact >= 0;
+  const exactChanged = exactAmount.trim() !== '' && exactIsValid && parsedExact !== character.money;
+
+  const handleSetExact = async () => {
+    if (!exactChanged) return;
+    await applyMoney(parsedExact);
   };
 
   return (
@@ -219,13 +229,24 @@ export function MoneyEditor({
           <input
             type="number"
             min={0}
-            defaultValue={character.money}
-            key={character.money}
-            onBlur={(e) => void handleSetExact(e.target.value)}
+            value={exactAmount}
+            onChange={(e) => setExactAmount(e.target.value)}
             title={`Nouveau total exact en ${currencyName}`}
             className="w-20 rounded border border-arena-600 bg-arena-900 px-1.5 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
           />
         </label>
+        {/* Bouton explicite (demande utilisateur) — plus d'application
+            silencieuse à la perte de focus du champ. */}
+        {exactChanged && (
+          <button
+            type="button"
+            onClick={() => void handleSetExact()}
+            disabled={submitting}
+            className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+          >
+            Valider
+          </button>
+        )}
       </div>
       {error && <p className="mt-1 text-red-400">{error}</p>}
     </div>
