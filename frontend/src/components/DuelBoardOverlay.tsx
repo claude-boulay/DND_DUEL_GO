@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import cardBackImage from '../assets/card-back.jpg';
 import { socket } from '../lib/socket';
 import { translateDuelPhase } from '../lib/cardLabels';
+import { translateApiError } from '../lib/translateApiError';
 import {
   api,
-  ApiError,
   type ApiCard,
   type ApiCharacter,
   type ApiDuel,
@@ -95,10 +96,10 @@ function availablePlaces(flag: number): Array<{ location: number; sequence: numb
 }
 
 /** Étiquette d'une zone Magie/Piège par séquence — 0-4 normales, 5 = Zone Terrain, 6-7 = Zones Pendule (voir availablePlaces). */
-function szoneLabel(sequence: number): string {
-  if (sequence === 5) return 'Zone Terrain';
-  if (sequence === 6 || sequence === 7) return `Zone Pendule ${sequence === 6 ? 'gauche' : 'droite'}`;
-  return `Magie/Piège ${sequence + 1}`;
+function szoneLabel(sequence: number, t: TFunction): string {
+  if (sequence === 5) return t('duelBoard.zone_field');
+  if (sequence === 6 || sequence === 7) return sequence === 6 ? t('duelBoard.zone_pendulum_left') : t('duelBoard.zone_pendulum_right');
+  return t('duelBoard.zone_spell_trap', { n: sequence + 1 });
 }
 
 function isDefensePosition(position: number): boolean {
@@ -227,8 +228,8 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
         setField(fetched);
         setFieldError(null);
       })
-      .catch((err) => setFieldError(err instanceof ApiError ? err.message : 'Impossible de charger le terrain'));
-  }, [token, duel.id, duel.status]);
+      .catch((err) => setFieldError(translateApiError(err, t)));
+  }, [token, duel.id, duel.status, t]);
 
   useEffect(() => {
     setSelectedPlaces([]);
@@ -323,7 +324,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
       const { duel: updated } = await action();
       onUpdated(updated);
     } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setActionError(translateApiError(err, t));
     } finally {
       setBusy(false);
     }
@@ -375,7 +376,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
       })
       .catch((err) => {
         lastAutoChainKeyRef.current = key;
-        setActionError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+        setActionError(translateApiError(err, t));
       })
       .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -396,22 +397,22 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
     const actions: ActionOption[] = [];
     if (prompt.type === 'idle') {
       const summon = findOptionAt(prompt.summonable, location, sequence, controller);
-      if (summon) actions.push(mkAction('summon', 'Invocation Normale', '⚔', () => dispatchIdle(IdleCmdCategory.SUMMON, prompt.summonable.indexOf(summon))));
+      if (summon) actions.push(mkAction('summon', t('duelBoard.action_normal_summon'), '⚔', () => dispatchIdle(IdleCmdCategory.SUMMON, prompt.summonable.indexOf(summon))));
       const sp = findOptionAt(prompt.sp_summonable, location, sequence, controller);
-      if (sp) actions.push(mkAction('summon', 'Invocation Spéciale', '✧', () => dispatchIdle(IdleCmdCategory.SPSUMMON, prompt.sp_summonable.indexOf(sp))));
+      if (sp) actions.push(mkAction('summon', t('duelBoard.action_special_summon'), '✧', () => dispatchIdle(IdleCmdCategory.SPSUMMON, prompt.sp_summonable.indexOf(sp))));
       const repo = findOptionAt(prompt.repositionable, location, sequence, controller);
-      if (repo) actions.push(mkAction('reposition', 'Changer de position', '↻', () => dispatchIdle(IdleCmdCategory.REPOSITION, prompt.repositionable.indexOf(repo))));
+      if (repo) actions.push(mkAction('reposition', t('duelBoard.action_reposition'), '↻', () => dispatchIdle(IdleCmdCategory.REPOSITION, prompt.repositionable.indexOf(repo))));
       const mset = findOptionAt(prompt.msetable, location, sequence, controller);
-      if (mset) actions.push(mkAction('summon', 'Poser (face cachée)', '▽', () => dispatchIdle(IdleCmdCategory.MSET, prompt.msetable.indexOf(mset))));
+      if (mset) actions.push(mkAction('summon', t('duelBoard.action_set_facedown'), '▽', () => dispatchIdle(IdleCmdCategory.MSET, prompt.msetable.indexOf(mset))));
       const sset = findOptionAt(prompt.ssetable, location, sequence, controller);
-      if (sset) actions.push(mkAction('summon', 'Poser', '▽', () => dispatchIdle(IdleCmdCategory.SSET, prompt.ssetable.indexOf(sset))));
+      if (sset) actions.push(mkAction('summon', t('duelBoard.action_set'), '▽', () => dispatchIdle(IdleCmdCategory.SSET, prompt.ssetable.indexOf(sset))));
       const act = findOptionAt(prompt.activatable, location, sequence, controller);
-      if (act) actions.push(mkAction('activate', 'Activer', '✦', () => dispatchIdle(IdleCmdCategory.ACTIVATE, prompt.activatable.indexOf(act))));
+      if (act) actions.push(mkAction('activate', t('duelBoard.action_activate'), '✦', () => dispatchIdle(IdleCmdCategory.ACTIVATE, prompt.activatable.indexOf(act))));
     } else if (prompt.type === 'battle') {
       const act = findOptionAt(prompt.activatable, location, sequence, controller);
-      if (act) actions.push(mkAction('activate', 'Activer', '✦', () => dispatchBattle(BattleCmdCategory.ACTIVATE, prompt.activatable.indexOf(act))));
+      if (act) actions.push(mkAction('activate', t('duelBoard.action_activate'), '✦', () => dispatchBattle(BattleCmdCategory.ACTIVATE, prompt.activatable.indexOf(act))));
       const atk = findOptionAt(prompt.attackable, location, sequence, controller);
-      if (atk) actions.push(mkAction('attack', atk.directAttackable ? 'Attaque directe' : 'Attaquer', '⚔', () => dispatchBattle(BattleCmdCategory.ATTACK, prompt.attackable.indexOf(atk))));
+      if (atk) actions.push(mkAction('attack', atk.directAttackable ? t('duelBoard.action_direct_attack') : t('duelBoard.action_attack'), '⚔', () => dispatchBattle(BattleCmdCategory.ATTACK, prompt.attackable.indexOf(atk))));
     }
     return actions;
   };
@@ -520,16 +521,25 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
       )}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Duel</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('duelBoard.eyebrow')}</p>
           <h2 className="font-display text-xl text-accent-400">{duel.name}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <span className="text-neutral-400">
             {duel.status === 'active'
-              ? <>Tour {duel.turn_number ?? '?'} · Phase <span className="text-accent-400">{duel.phase ? translateDuelPhase(duel.phase, t) : '?'}</span></>
+              ? (
+                <>
+                  {t('duelBoard.turn', { turn: duel.turn_number ?? '?' })} · {t('duelBoard.phase_prefix')}{' '}
+                  <span className="text-accent-400">{duel.phase ? translateDuelPhase(duel.phase, t) : '?'}</span>
+                </>
+              )
               : duel.status === 'lost'
-                ? <span className="text-red-400">Process moteur perdu (redémarrage serveur) — non reprenable</span>
-                : <span className="text-emerald-400">Duel terminé{duel.winner_team !== null ? ` — ${duel.teams[duel.winner_team]?.name} gagne` : ''}</span>}
+                ? <span className="text-red-400">{t('duelBoard.engine_lost')}</span>
+                : (
+                  <span className="text-emerald-400">
+                    {duel.winner_team !== null ? t('duelBoard.finished_with_winner', { team: duel.teams[duel.winner_team]?.name }) : t('duelBoard.finished')}
+                  </span>
+                )}
           </span>
           {duel.status === 'active' && session.is_gm && (
             <button
@@ -538,11 +548,11 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
               onClick={() => void run(() => api.endDuel(token, duel.id, null))}
               className="rounded border border-red-500 px-2 py-1 text-red-400 transition hover:bg-red-500 hover:text-arena-950"
             >
-              Terminer le duel
+              {t('duelBoard.end_duel')}
             </button>
           )}
           <button type="button" onClick={onClose} className="rounded-md border border-arena-600 px-3 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400">
-            Fermer
+            {t('characterSheet.close')}
           </button>
         </div>
       </header>
@@ -553,13 +563,13 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
       <div className="flex min-h-0 flex-1 gap-3 overflow-hidden p-3">
         <aside className="w-64 shrink-0 space-y-3 overflow-y-auto">
           <div className="rounded-lg border border-arena-700 bg-arena-900 p-3">
-            <h4 className="mb-1.5 font-display text-sm text-accent-400">Réponses en chaîne</h4>
+            <h4 className="mb-1.5 font-display text-sm text-accent-400">{t('duelBoard.chain_response_title')}</h4>
             <div className="flex overflow-hidden rounded border border-arena-600">
               {(
                 [
-                  { mode: 'on' as const, label: 'ON' },
-                  { mode: 'auto' as const, label: 'Auto' },
-                  { mode: 'off' as const, label: 'Off' },
+                  { mode: 'on' as const, label: t('duelBoard.chain_mode_on') },
+                  { mode: 'auto' as const, label: t('duelBoard.chain_mode_auto') },
+                  { mode: 'off' as const, label: t('duelBoard.chain_mode_off') },
                 ]
               ).map(({ mode, label }) => (
                 <button
@@ -573,9 +583,9 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
               ))}
             </div>
             <p className="mt-1.5 text-[10px] leading-snug text-neutral-500">
-              {chainMode === 'on' && 'Toujours demander, dès qu’une réponse (même juste « passer ») est possible.'}
-              {chainMode === 'auto' && 'Ne demander que si vous avez vraiment une carte à activer en réponse — passe seul sinon.'}
-              {chainMode === 'off' && 'Ne demander que les effets obligatoires/à timing — le reste passe seul (l’ordre reste à choisir s’il y en a plusieurs).'}
+              {chainMode === 'on' && t('duelBoard.chain_mode_desc_on')}
+              {chainMode === 'auto' && t('duelBoard.chain_mode_desc_auto')}
+              {chainMode === 'off' && t('duelBoard.chain_mode_desc_off')}
             </p>
           </div>
 
@@ -587,13 +597,13 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                 {(previewCard.atk !== null || previewCard.def !== null) && (
                   <p className="text-xs text-neutral-400">
                     ATK {previewCard.atk ?? '?'} / DEF {previewCard.def ?? '?'}
-                    {previewCard.level_rank !== null && ` · Niv./Rang ${previewCard.level_rank}`}
+                    {previewCard.level_rank !== null && ` · ${t('cardPreview.level_rank', { level: previewCard.level_rank })}`}
                   </p>
                 )}
                 <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-300">{previewCard.description}</p>
               </>
             ) : (
-              <p className="text-xs text-neutral-500">Cliquez une carte pour l'aperçu.</p>
+              <p className="text-xs text-neutral-500">{t('duelBoard.click_card_for_preview')}</p>
             )}
           </div>
         </aside>
@@ -611,8 +621,8 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                   <div className="mb-2 flex items-center justify-between">
                     <span className="font-display text-lg text-neutral-200">
                       {team.name}
-                      {isMine && <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-500">(vous)</span>}
-                      {duel.current_team === teamIndex && <span className="ml-2 text-xs text-accent-400">(tour en cours)</span>}
+                      {isMine && <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-500">{t('duelBoard.you_suffix')}</span>}
+                      {duel.current_team === teamIndex && <span className="ml-2 text-xs text-accent-400">{t('duelBoard.current_turn_suffix')}</span>}
                     </span>
                     <span
                       className={`text-xl font-bold motion-reduce:animate-none ${
@@ -623,7 +633,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                             : 'text-accent-400'
                       }`}
                     >
-                      {team.life_points ?? '?'} PV
+                      {t('duelBoard.life_points', { lp: team.life_points ?? '?' })}
                     </span>
                   </div>
 
@@ -644,8 +654,8 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                                 className={`rounded-full px-2 py-0.5 ${p.is_active ? 'bg-accent-500 font-semibold text-arena-950' : 'border border-arena-600 text-neutral-400'}`}
                               >
                                 {p.character_name}
-                                {p.is_npc ? ' (PNJ)' : ''}
-                                {p.is_active ? ' — actif' : ''}
+                                {p.is_npc ? t('duelPanel.npc_suffix') : ''}
+                                {p.is_active ? t('duelBoard.active_suffix') : ''}
                               </span>
                             ))}
                           </div>
@@ -688,7 +698,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
           {duel.status === 'active' && prompt && actingParticipant && (
             <div className="rounded-lg border border-accent-500 bg-arena-900 p-3 text-xs">
               <p className="mb-2 text-neutral-400">
-                Décision pour <span className="font-semibold text-accent-400">{actingParticipant.character_name}</span>
+                {t('duelBoard.decision_for')} <span className="font-semibold text-accent-400">{actingParticipant.character_name}</span>
               </p>
               <PromptPanel
                 prompt={prompt}
@@ -716,7 +726,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
           )}
 
           <div className="rounded-lg border border-arena-700 bg-arena-900 p-3">
-            <h4 className="mb-1 font-display text-sm text-accent-400">Journal</h4>
+            <h4 className="mb-1 font-display text-sm text-accent-400">{t('duelBoard.journal')}</h4>
             <div className="max-h-64 space-y-0.5 overflow-y-auto font-mono text-[10px] text-neutral-500">
               {[...duel.events].reverse().map((event, i) => (
                 <div key={i}>
@@ -770,11 +780,11 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
             <div className="mb-2 flex items-center justify-between">
               <h3 className="font-display text-lg text-accent-400">{showPile.label}</h3>
               <button type="button" onClick={() => setShowPile(null)} className="text-neutral-400 hover:text-neutral-200">
-                Fermer
+                {t('characterSheet.close')}
               </button>
             </div>
             {showPile.cards.length === 0 ? (
-              <p className="text-sm text-neutral-500">Vide.</p>
+              <p className="text-sm text-neutral-500">{t('duelBoard.empty_pile')}</p>
             ) : (
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                 {showPile.cards.map((c, i) => (
@@ -800,7 +810,8 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
 
 /** Dos de carte officiel Yu-Gi-Oh! affiché pour toute carte face cachée ou d'identité inconnue — remplace le simple "?" d'origine. */
 function CardBack() {
-  return <img src={cardBackImage} alt="Dos de carte" className="h-full w-full object-cover" />;
+  const { t } = useTranslation();
+  return <img src={cardBackImage} alt={t('duelBoard.card_back_alt')} className="h-full w-full object-cover" />;
 }
 
 function MiniCard({
@@ -818,6 +829,7 @@ function MiniCard({
   selected?: boolean;
   eligible?: boolean;
 }) {
+  const { t } = useTranslation();
   const dims = small ? 'h-16 w-11' : 'h-24 w-16';
   const clickable = !!onClick && !!boardCard?.card;
   const stateCls = selected
@@ -832,7 +844,7 @@ function MiniCard({
       type="button"
       disabled={!clickable}
       onClick={(e) => onClick?.(e.currentTarget.getBoundingClientRect())}
-      aria-label={boardCard?.face_down || !boardCard?.card ? 'Carte face cachée' : boardCard.card.name}
+      aria-label={boardCard?.face_down || !boardCard?.card ? t('duelBoard.face_down_card') : boardCard.card.name}
       className={`relative shrink-0 overflow-hidden rounded border ${dims} bg-arena-800 ${stateCls} ${clickable ? 'cursor-pointer hover:border-accent-500' : 'cursor-default'}`}
     >
       {!boardCard ? null : boardCard.face_down || !boardCard.card ? (
@@ -933,6 +945,7 @@ function ParticipantBoard({
   banishedFlash: boolean;
   handFlash: boolean;
 }) {
+  const { t } = useTranslation();
   // spell_trap_zones (8 emplacements confirmés en direct contre le vrai
   // moteur, voir CLAUDE.md §7) : 0-4 = Magie/Piège normales, 5 = Zone
   // Terrain, 6-7 = Zones Pendule. monster_zones : 7 emplacements, 0-4
@@ -956,7 +969,7 @@ function ParticipantBoard({
   const stZones = fieldTeam?.spell_trap_zones ?? [];
   const mzZones = fieldTeam?.monster_zones ?? [];
 
-  const fieldZoneEntry = { slot: stZones[5] ?? null, sequence: 5, label: 'Terrain' as string | undefined };
+  const fieldZoneEntry = { slot: stZones[5] ?? null, sequence: 5, label: t('duelBoard.field_zone_short') as string | undefined };
   const mzMain = orderReverse(mzZones.slice(0, 5).map((slot, i) => ({ slot, sequence: i })));
   const mzExtra = orderReverse(mzZones.slice(5, 7).map((slot, i) => ({ slot, sequence: 5 + i })));
   const stMain = orderReverse(stZones.slice(0, 5).map((slot, i) => ({ slot, sequence: i, label: undefined as string | undefined })));
@@ -1002,12 +1015,14 @@ function ParticipantBoard({
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-semibold text-neutral-200">
           {characterName}
-          {isNpc && <span className="text-neutral-500"> (PNJ)</span>}
+          {isNpc && <span className="text-neutral-500">{t('duelPanel.npc_suffix')}</span>}
         </span>
         <span className="text-neutral-500">
-          <span className={`motion-reduce:animate-none ${handFlash ? 'animate-[duel-counter-flash_0.9s_ease-out]' : ''}`}>Main {handCount ?? '—'}</span> · Deck{' '}
-          {deckRemaining ?? '—'}
-          {fieldTeam?.extra_deck && fieldTeam.extra_deck.length > 0 ? ` · Extra ${fieldTeam.extra_deck.length}` : ''}
+          <span className={`motion-reduce:animate-none ${handFlash ? 'animate-[duel-counter-flash_0.9s_ease-out]' : ''}`}>
+            {t('duelBoard.hand_count', { count: handCount ?? '—' })}
+          </span>{' '}
+          {t('duelBoard.deck_suffix', { count: deckRemaining ?? '—' })}
+          {fieldTeam?.extra_deck && fieldTeam.extra_deck.length > 0 ? t('duelBoard.extra_deck_suffix', { count: fieldTeam.extra_deck.length }) : ''}
         </span>
       </div>
 
@@ -1021,7 +1036,7 @@ function ParticipantBoard({
       )}
 
       {!fieldTeam ? (
-        <p className="text-xs text-neutral-600">Terrain indisponible.</p>
+        <p className="text-xs text-neutral-600">{t('duelBoard.field_unavailable')}</p>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-1">
           {/* Monstres au-dessus (+ Zone Terrain, séparée) ; Magie/Piège + Pendule en dessous. */}
@@ -1053,8 +1068,18 @@ function ParticipantBoard({
             </div>
           </div>
           <div className="flex shrink-0 gap-1 border-l border-arena-700 pl-3">
-            <PileButton label="Cimetière" cards={fieldTeam.graveyard} onShow={() => onShowPile(`Cimetière — ${characterName}`, fieldTeam.graveyard)} flash={graveyardFlash} />
-            <PileButton label="Bannis" cards={fieldTeam.banished} onShow={() => onShowPile(`Bannis — ${characterName}`, fieldTeam.banished)} flash={banishedFlash} />
+            <PileButton
+              label={t('duelBoard.graveyard')}
+              cards={fieldTeam.graveyard}
+              onShow={() => onShowPile(t('duelBoard.graveyard_of', { name: characterName }), fieldTeam.graveyard)}
+              flash={graveyardFlash}
+            />
+            <PileButton
+              label={t('duelBoard.banished')}
+              cards={fieldTeam.banished}
+              onShow={() => onShowPile(t('duelBoard.banished_of', { name: characterName }), fieldTeam.banished)}
+              flash={banishedFlash}
+            />
           </div>
         </div>
       )}
@@ -1074,12 +1099,15 @@ function HandBar({
   hand: ApiDuelBoardCard[] | null;
   resolveInteraction: (location: number, sequence: number, controller: 0 | 1, boardCard: ApiDuelBoardCard | null) => ZoneInteraction;
 }) {
+  const { t } = useTranslation();
   if (!hand) return null; // main non chargée ou non visible (secret d'équipe, voir computeCanSeeTeam côté backend)
   return (
     <div className="mt-2 shrink-0 rounded-lg border border-arena-700 bg-arena-900 p-2">
-      <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Votre main{characterName ? ` — ${characterName}` : ''}</p>
+      <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">
+        {characterName ? t('duelBoard.your_hand_named', { name: characterName }) : t('duelBoard.your_hand')}
+      </p>
       {hand.length === 0 ? (
-        <p className="text-xs text-neutral-600">Main vide.</p>
+        <p className="text-xs text-neutral-600">{t('duelBoard.hand_empty')}</p>
       ) : (
         <div className="flex gap-1.5 overflow-x-auto pb-0.5">
           {hand.map((c, i) => {
@@ -1088,14 +1116,13 @@ function HandBar({
           })}
         </div>
       )}
-      <p className="mt-1 text-[9px] leading-snug text-neutral-600">
-        Bordure orange = activable · bleue = invocable/posable · rouge = attaque possible · verte = changement de position. Cliquez la carte pour choisir l'action.
-      </p>
+      <p className="mt-1 text-[9px] leading-snug text-neutral-600">{t('duelBoard.hand_legend')}</p>
     </div>
   );
 }
 
 function OptionButton({ option, onClick }: { option: ApiPromptCardOption; onClick: () => void }) {
+  const { t } = useTranslation();
   return (
     <button type="button" onClick={onClick} className="flex w-full items-center gap-2 rounded border border-arena-600 bg-arena-800 p-1.5 text-left hover:border-accent-500">
       {option.card ? (
@@ -1105,7 +1132,7 @@ function OptionButton({ option, onClick }: { option: ApiPromptCardOption; onClic
           <CardBack />
         </div>
       )}
-      <span className="min-w-0 flex-1 truncate text-neutral-200">{option.card?.name ?? `Carte #${option.code}`}</span>
+      <span className="min-w-0 flex-1 truncate text-neutral-200">{option.card?.name ?? t('duelBoard.card_hash', { code: option.code })}</span>
     </button>
   );
 }
@@ -1150,34 +1177,32 @@ function PromptPanel({
   onIdlePhase: (category: number) => void;
   onBattlePhase: (category: number) => void;
 }) {
+  const { t } = useTranslation();
   const btnCls = 'rounded border border-arena-600 px-2 py-1 text-neutral-200 hover:border-accent-500 disabled:opacity-40';
   const primaryCls = 'rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 hover:bg-accent-400 disabled:opacity-40';
 
   if (readOnly) {
-    return <p className="text-neutral-500">Ce n'est pas à vous de décider ici — en attente de la réponse de l'autre camp.</p>;
+    return <p className="text-neutral-500">{t('duelBoard.readonly_notice')}</p>;
   }
 
   if (prompt.type === 'idle') {
     return (
       <div className="space-y-3">
-        <p className="text-[11px] leading-snug text-neutral-400">
-          Invoquez, posez ou activez une carte directement depuis votre main ou le terrain (bordure brillante = action possible, voir la légende sous
-          votre main).
-        </p>
+        <p className="text-[11px] leading-snug text-neutral-400">{t('duelBoard.idle_help')}</p>
         <div className="flex flex-wrap gap-1.5 border-t border-arena-800 pt-2">
           {prompt.can_battle_phase && (
             <button type="button" disabled={busy} onClick={() => onIdlePhase(IdleCmdCategory.TO_BATTLE)} className={primaryCls}>
-              Battle Phase
+              {translateDuelPhase('battle', t)}
             </button>
           )}
           {prompt.can_end_phase && (
             <button type="button" disabled={busy} onClick={() => onIdlePhase(IdleCmdCategory.TO_END)} className={btnCls}>
-              End Phase
+              {translateDuelPhase('end', t)}
             </button>
           )}
           {prompt.can_shuffle_hand && (
             <button type="button" disabled={busy} onClick={() => onIdlePhase(IdleCmdCategory.SHUFFLE_HAND)} className={btnCls}>
-              Mélanger la main
+              {t('duelBoard.shuffle_hand')}
             </button>
           )}
         </div>
@@ -1188,18 +1213,16 @@ function PromptPanel({
   if (prompt.type === 'battle') {
     return (
       <div className="space-y-3">
-        <p className="text-[11px] leading-snug text-neutral-400">
-          Activez une carte ou déclarez une attaque directement depuis le terrain (bordure rouge = attaque possible, orange = activable).
-        </p>
+        <p className="text-[11px] leading-snug text-neutral-400">{t('duelBoard.battle_help')}</p>
         <div className="flex flex-wrap gap-1.5 border-t border-arena-800 pt-2">
           {prompt.can_main2 && (
             <button type="button" disabled={busy} onClick={() => onBattlePhase(BattleCmdCategory.TO_MAIN2)} className={primaryCls}>
-              Main Phase 2
+              {translateDuelPhase('main2', t)}
             </button>
           )}
           {prompt.can_end_phase && (
             <button type="button" disabled={busy} onClick={() => onBattlePhase(BattleCmdCategory.TO_END)} className={btnCls}>
-              End Phase
+              {translateDuelPhase('end', t)}
             </button>
           )}
         </div>
@@ -1214,7 +1237,9 @@ function PromptPanel({
     return (
       <div className="space-y-2">
         <p className="text-neutral-400">
-          Choisissez {prompt.count > 1 ? `${prompt.count} zones` : 'une zone'} sur le terrain ({selectedPlaces.length}/{prompt.count})
+          {prompt.count > 1
+            ? t('duelBoard.choose_zones_other', { count: prompt.count, picked: selectedPlaces.length })
+            : t('duelBoard.choose_zones_one', { count: prompt.count, picked: selectedPlaces.length })}
         </p>
         <div className="grid grid-cols-2 gap-1.5">
           {places.map((place, i) => (
@@ -1231,7 +1256,7 @@ function PromptPanel({
               }}
               className={`rounded border px-2 py-1 text-left ${isPicked(place) ? 'border-accent-400 bg-accent-500/10 text-accent-300' : 'border-arena-600 text-neutral-200 hover:border-accent-500'}`}
             >
-              {place.location === EngineLocation.MZONE ? `Monstre ${place.sequence + 1}` : szoneLabel(place.sequence)}
+              {place.location === EngineLocation.MZONE ? t('duelBoard.monster_zone', { n: place.sequence + 1 }) : szoneLabel(place.sequence, t)}
             </button>
           ))}
         </div>
@@ -1241,7 +1266,7 @@ function PromptPanel({
           onClick={() => onSelectPlace(selectedPlaces)}
           className={primaryCls + ' w-full'}
         >
-          Valider
+          {t('duelBoard.validate')}
         </button>
       </div>
     );
@@ -1258,8 +1283,9 @@ function PromptPanel({
     return (
       <div className="space-y-2">
         <p className="text-neutral-400">
-          Choisissez {prompt.min === prompt.max ? prompt.min : `${prompt.min} à ${prompt.max}`} carte(s) — cliquez sur le terrain ou ci-dessous (
-          {selectedCardIndices.length})
+          {prompt.min === prompt.max
+            ? t('duelBoard.choose_cards_exact', { count: prompt.min, picked: selectedCardIndices.length })
+            : t('duelBoard.choose_cards_range', { min: prompt.min, max: prompt.max, picked: selectedCardIndices.length })}
         </p>
         <div className="space-y-1">
           {prompt.cards.map((opt, i) => (
@@ -1271,7 +1297,7 @@ function PromptPanel({
                 type="button"
                 onClick={() => opt.card && onCardClick(opt.card)}
                 disabled={!opt.card}
-                title="Aperçu"
+                title={t('duelBoard.preview_title')}
                 className="shrink-0 overflow-hidden rounded disabled:cursor-default"
               >
                 {opt.card ? (
@@ -1283,7 +1309,7 @@ function PromptPanel({
                 )}
               </button>
               <button type="button" onClick={() => toggle(i)} className="min-w-0 flex-1 truncate text-left text-neutral-200 hover:text-accent-400">
-                {opt.card?.name ?? `Carte #${opt.code}`}
+                {opt.card?.name ?? t('duelBoard.card_hash', { code: opt.code })}
               </button>
             </div>
           ))}
@@ -1295,11 +1321,11 @@ function PromptPanel({
             onClick={() => onSelectCard(selectedCardIndices)}
             className={primaryCls}
           >
-            Valider
+            {t('duelBoard.validate')}
           </button>
           {(prompt.cancelable || prompt.min === 0) && (
             <button type="button" disabled={busy} onClick={() => onSelectCard(null)} className={btnCls}>
-              Annuler
+              {t('duelBoard.cancel')}
             </button>
           )}
         </div>
@@ -1318,7 +1344,9 @@ function PromptPanel({
     return (
       <div className="space-y-2">
         <p className="text-neutral-400">
-          Choisissez {prompt.min === prompt.max ? prompt.min : `${prompt.min} à ${prompt.max}`} tribut(s) ({selectedCardIndices.length})
+          {prompt.min === prompt.max
+            ? t('duelBoard.choose_tributes_exact', { count: prompt.min, picked: selectedCardIndices.length })
+            : t('duelBoard.choose_tributes_range', { min: prompt.min, max: prompt.max, picked: selectedCardIndices.length })}
         </p>
         <div className="space-y-1">
           {prompt.cards.map((opt, i) => (
@@ -1330,7 +1358,7 @@ function PromptPanel({
                 type="button"
                 onClick={() => opt.card && onCardClick(opt.card)}
                 disabled={!opt.card}
-                title="Aperçu"
+                title={t('duelBoard.preview_title')}
                 className="shrink-0 overflow-hidden rounded disabled:cursor-default"
               >
                 {opt.card ? (
@@ -1342,9 +1370,9 @@ function PromptPanel({
                 )}
               </button>
               <button type="button" onClick={() => toggle(i)} className="min-w-0 flex-1 truncate text-left text-neutral-200 hover:text-accent-400">
-                {opt.card?.name ?? `Carte #${opt.code}`}
+                {opt.card?.name ?? t('duelBoard.card_hash', { code: opt.code })}
               </button>
-              {opt.releaseParam > 1 && <span className="shrink-0 text-[10px] text-accent-400">compte pour {opt.releaseParam}</span>}
+              {opt.releaseParam > 1 && <span className="shrink-0 text-[10px] text-accent-400">{t('duelBoard.counts_for', { n: opt.releaseParam })}</span>}
             </div>
           ))}
         </div>
@@ -1355,11 +1383,11 @@ function PromptPanel({
             onClick={() => onSelectTribute(selectedCardIndices)}
             className={primaryCls}
           >
-            Valider
+            {t('duelBoard.validate')}
           </button>
           {(prompt.cancelable || prompt.min === 0) && (
             <button type="button" disabled={busy} onClick={() => onSelectTribute(null)} className={btnCls}>
-              Annuler
+              {t('duelBoard.cancel')}
             </button>
           )}
         </div>
@@ -1383,7 +1411,7 @@ function PromptPanel({
           type="button"
           onClick={() => opt.card && onCardClick(opt.card)}
           disabled={!opt.card}
-          title="Aperçu"
+          title={t('duelBoard.preview_title')}
           className="shrink-0 overflow-hidden rounded disabled:cursor-default"
         >
           {opt.card ? (
@@ -1400,30 +1428,32 @@ function PromptPanel({
           onClick={() => onSelectUnselectCard(index)}
           className="min-w-0 flex-1 truncate text-left text-neutral-200 hover:text-accent-400"
         >
-          {opt.card?.name ?? `Carte #${opt.code}`}
+          {opt.card?.name ?? t('duelBoard.card_hash', { code: opt.code })}
         </button>
       </div>
     );
     return (
       <div className="space-y-2">
         <p className="text-neutral-400">
-          Choisissez {prompt.min === prompt.max ? prompt.min : `${prompt.min} à ${prompt.max}`} coût(s) — cliquez pour ajouter/retirer
+          {prompt.min === prompt.max
+            ? t('duelBoard.choose_costs_exact', { count: prompt.min })
+            : t('duelBoard.choose_costs_range', { min: prompt.min, max: prompt.max })}
         </p>
         {prompt.unselect_cards.length > 0 && (
           <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Déjà choisi (cliquer pour retirer)</p>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">{t('duelBoard.already_chosen')}</p>
             <div className="space-y-1">{prompt.unselect_cards.map((opt, i) => renderRow(opt, prompt.select_cards.length + i, true))}</div>
           </div>
         )}
         {prompt.select_cards.length > 0 && (
           <div>
-            <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Disponible</p>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">{t('duelBoard.available')}</p>
             <div className="space-y-1">{prompt.select_cards.map((opt, i) => renderRow(opt, i, false))}</div>
           </div>
         )}
         {(prompt.finishable || prompt.cancelable) && (
           <button type="button" disabled={busy} onClick={() => onSelectUnselectCard(null)} className={btnCls}>
-            {prompt.finishable ? 'Terminer' : 'Annuler'}
+            {prompt.finishable ? t('duelBoard.finish') : t('duelBoard.cancel')}
           </button>
         )}
       </div>
@@ -1432,10 +1462,10 @@ function PromptPanel({
 
   if (prompt.type === 'select_position') {
     const options: Array<{ bit: 0x1 | 0x2 | 0x4 | 0x8; label: string }> = [
-      { bit: EnginePosition.FACEUP_ATTACK, label: 'Attaque (face visible)' },
-      { bit: EnginePosition.FACEDOWN_ATTACK, label: 'Attaque (face cachée)' },
-      { bit: EnginePosition.FACEUP_DEFENSE, label: 'Défense (face visible)' },
-      { bit: EnginePosition.FACEDOWN_DEFENSE, label: 'Défense (face cachée)' },
+      { bit: EnginePosition.FACEUP_ATTACK, label: t('duelBoard.position_attack_faceup') },
+      { bit: EnginePosition.FACEDOWN_ATTACK, label: t('duelBoard.position_attack_facedown') },
+      { bit: EnginePosition.FACEUP_DEFENSE, label: t('duelBoard.position_defense_faceup') },
+      { bit: EnginePosition.FACEDOWN_DEFENSE, label: t('duelBoard.position_defense_facedown') },
     ];
     return (
       <div className="space-y-2">
@@ -1445,7 +1475,7 @@ function PromptPanel({
             <span className="min-w-0 flex-1 truncate text-neutral-200">{prompt.card.name}</span>
           </div>
         )}
-        <p className="text-neutral-400">Choisissez la position</p>
+        <p className="text-neutral-400">{t('duelBoard.choose_position')}</p>
         <div className="grid grid-cols-2 gap-1.5">
           {options
             .filter((o) => (prompt.positions & o.bit) !== 0)
@@ -1462,12 +1492,12 @@ function PromptPanel({
   if (prompt.type === 'select_option') {
     return (
       <div className="space-y-2">
-        <p className="text-neutral-400">Choisissez une option</p>
+        <p className="text-neutral-400">{t('duelBoard.choose_option')}</p>
         {/* Pas de texte d'effet décodable ici (aucune donnée structurée d'effet — voir CLAUDE.md §7) : juste l'identifiant brut, pour recouper avec le texte imprimé de la carte au besoin. */}
         <div className="space-y-1">
           {prompt.options.map((description, i) => (
             <button key={i} type="button" disabled={busy} onClick={() => onSelectOption(i)} className={`${btnCls} flex w-full items-center justify-between`}>
-              <span>Choix {i + 1}</span>
+              <span>{t('duelBoard.option_n', { n: i + 1 })}</span>
               <span className="text-[10px] text-neutral-500">#{description}</span>
             </button>
           ))}
@@ -1479,7 +1509,7 @@ function PromptPanel({
   if (prompt.type === 'chain') {
     return (
       <div className="space-y-2">
-        <p className="text-neutral-400">Activer une carte en chaîne, ou passer ?</p>
+        <p className="text-neutral-400">{t('duelBoard.chain_or_pass')}</p>
         <div className="space-y-1">
           {prompt.options.map((opt, i) => (
             <div key={i} className="rounded border border-arena-600 bg-arena-800">
@@ -1491,7 +1521,7 @@ function PromptPanel({
           ))}
         </div>
         <button type="button" disabled={busy || prompt.forced} onClick={() => onChainAction(-1)} className={btnCls + ' w-full'}>
-          Passer
+          {t('duelBoard.pass')}
         </button>
       </div>
     );
@@ -1501,10 +1531,10 @@ function PromptPanel({
     return (
       <div className="flex gap-2">
         <button type="button" disabled={busy} onClick={() => onYesNo(true)} className={primaryCls}>
-          Oui
+          {t('duelBoard.yes')}
         </button>
         <button type="button" disabled={busy} onClick={() => onYesNo(false)} className={btnCls}>
-          Non
+          {t('duelBoard.no')}
         </button>
       </div>
     );
@@ -1519,23 +1549,18 @@ function PromptPanel({
             <p className="mt-0.5 text-[10px] text-neutral-400">{prompt.card.description}</p>
           </div>
         )}
-        <p className="text-neutral-400">Activer cet effet ?</p>
+        <p className="text-neutral-400">{t('duelBoard.activate_effect_question')}</p>
         <div className="flex gap-2">
           <button type="button" disabled={busy} onClick={() => onYesNo(true)} className={primaryCls}>
-            Oui
+            {t('duelBoard.yes')}
           </button>
           <button type="button" disabled={busy} onClick={() => onYesNo(false)} className={btnCls}>
-            Non
+            {t('duelBoard.no')}
           </button>
         </div>
       </div>
     );
   }
 
-  return (
-    <p className="text-neutral-500">
-      Type d'invite non pris en charge côté interface (type brut {prompt.raw_type}) — cas rare (ex. choix de tribut/position détaillé), à gérer
-      manuellement pour l'instant.
-    </p>
-  );
+  return <p className="text-neutral-500">{t('duelBoard.unsupported_prompt', { type: prompt.raw_type })}</p>;
 }
