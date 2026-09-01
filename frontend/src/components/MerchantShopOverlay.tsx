@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import {
   api,
-  ApiError,
   type ApiCard,
   type ApiCharacter,
   type ApiMerchant,
@@ -10,6 +10,7 @@ import {
   type ApiPendingHaggle,
   type ApiSealedBooster,
 } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 import { MerchantItemPickerOverlay } from './MerchantItemPickerOverlay';
 
 interface MerchantShopOverlayProps {
@@ -36,6 +37,7 @@ export function MerchantShopOverlay({
   onCharacterUpdate,
   onClose,
 }: MerchantShopOverlayProps) {
+  const { t } = useTranslation();
   const [selectedItemId, setSelectedItemId] = useState<string | null>(merchant.items[0]?.id ?? null);
   const [showAddItem, setShowAddItem] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +62,7 @@ export function MerchantShopOverlay({
       const { merchant: updated } = await api.deleteMerchantItem(token, merchant.id, itemId);
       onMerchantUpdate(updated);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     }
   };
 
@@ -75,7 +77,7 @@ export function MerchantShopOverlay({
       const { merchant: updated } = await api.refreshMerchantCardImages(token, merchant.id);
       onMerchantUpdate(updated);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setRefreshingImages(false);
     }
@@ -85,7 +87,7 @@ export function MerchantShopOverlay({
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Boutique</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('merchantShop.eyebrow')}</p>
           <h2 className="font-display text-2xl text-accent-400">{merchant.name}</h2>
           {merchant.description && <p className="mt-0.5 max-w-xl truncate text-sm text-neutral-400">{merchant.description}</p>}
         </div>
@@ -95,10 +97,10 @@ export function MerchantShopOverlay({
               type="button"
               onClick={() => void handleRefreshImages()}
               disabled={refreshingImages}
-              title="Réimporte les images des articles carte ajoutés avant le passage à la pleine résolution — sans effet sur les boosters"
+              title={t('merchantShop.refresh_images_tooltip')}
               className="rounded-md border border-arena-600 px-3 py-2 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400 disabled:opacity-50"
             >
-              {refreshingImages ? 'Rafraîchissement...' : 'Rafraîchir les images'}
+              {refreshingImages ? t('merchantShop.refreshing') : t('merchantShop.refresh_images')}
             </button>
           )}
           <button
@@ -106,7 +108,7 @@ export function MerchantShopOverlay({
             onClick={onClose}
             className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Fermer
+            {t('characterSheet.close')}
           </button>
         </div>
       </header>
@@ -116,7 +118,7 @@ export function MerchantShopOverlay({
       <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
         <main className="min-w-0 flex-1 overflow-y-auto">
           {merchant.items.length === 0 ? (
-            <p className="text-sm text-neutral-500">Aucun article en vente pour l'instant.</p>
+            <p className="text-sm text-neutral-500">{t('merchantShop.no_items_yet')}</p>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-3">
               {merchant.items.map((item) => (
@@ -141,7 +143,7 @@ export function MerchantShopOverlay({
                 />
               ) : (
                 <button type="button" onClick={() => setShowAddItem(true)} className="text-sm text-accent-400 underline hover:text-accent-300">
-                  + Ajouter un article
+                  {t('merchantShop.add_item')}
                 </button>
               )}
             </div>
@@ -162,7 +164,7 @@ export function MerchantShopOverlay({
               onDeleted={() => void handleDeleteItem(selectedItem.id)}
             />
           ) : (
-            <p className="text-sm text-neutral-500">Sélectionnez un article pour voir son détail.</p>
+            <p className="text-sm text-neutral-500">{t('merchantShop.select_item_prompt')}</p>
           )}
         </aside>
       </div>
@@ -201,6 +203,7 @@ function HoverZoomImage({ src, alt, className }: { src: string; alt: string; cla
 }
 
 function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected: boolean; onClick: () => void }) {
+  const { t } = useTranslation();
   const soldOut = item.stock === 0;
   return (
     <button
@@ -227,7 +230,9 @@ function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected
           </div>
         )}
         {item.haggle_dc !== null && (
-          <span className="absolute left-1 top-1 rounded bg-arena-950/85 px-1 py-0.5 text-[8px] uppercase tracking-wide text-accent-400">Négociable</span>
+          <span className="absolute left-1 top-1 rounded bg-arena-950/85 px-1 py-0.5 text-[8px] uppercase tracking-wide text-accent-400">
+            {t('merchantShop.negotiable_badge')}
+          </span>
         )}
         {item.promo_buy_quantity !== null && item.promo_free_quantity !== null && (
           <span className="absolute right-1 top-1 rounded bg-arena-950/85 px-1 py-0.5 text-[8px] uppercase tracking-wide text-emerald-400">
@@ -235,7 +240,9 @@ function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected
           </span>
         )}
         {soldOut && (
-          <span className="absolute inset-0 flex items-center justify-center bg-black/70 text-[10px] uppercase tracking-widest text-red-400">Épuisé</span>
+          <span className="absolute inset-0 flex items-center justify-center bg-black/70 text-[10px] uppercase tracking-widest text-red-400">
+            {t('merchantShop.sold_out_badge')}
+          </span>
         )}
       </div>
       <div className="shrink-0 bg-arena-900/95 px-1.5 py-1 text-[10px]">
@@ -270,6 +277,7 @@ function ItemDetailPanel({
   onCharacterUpdate: (characterId: string, patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[] }) => void;
   onDeleted: () => void;
 }) {
+  const { t } = useTranslation();
   const [price, setPrice] = useState(item.price);
   const [stock, setStock] = useState(item.stock === null ? '' : String(item.stock));
   const [negotiable, setNegotiable] = useState(item.haggle_dc !== null);
@@ -318,7 +326,7 @@ function ItemDetailPanel({
       onMerchantUpdate(updated);
       setSavingError(null);
     } catch (err) {
-      setSavingError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setSavingError(translateApiError(err, t));
     }
   };
 
@@ -333,7 +341,7 @@ function ItemDetailPanel({
         </div>
       )}
       <h3 className="font-display text-lg text-accent-400">{item.name}</h3>
-      <p className="mb-1 text-xs text-neutral-500">{item.item_type === 'card' ? 'Carte' : 'Booster'}</p>
+      <p className="mb-1 text-xs text-neutral-500">{item.item_type === 'card' ? t('merchantPicker.type_card') : t('merchantPicker.type_booster')}</p>
 
       {item.item_type === 'booster' && item.set_code && (
         <BoosterContentsButton token={token} setCode={item.set_code} setId={item.card_set_id} setName={item.name} />
@@ -342,7 +350,7 @@ function ItemDetailPanel({
       {isGm && (
         <div className="space-y-2 border-t border-arena-700 pt-3">
           <label className="flex items-center justify-between gap-2 text-neutral-300">
-            Prix
+            {t('merchantPicker.price')}
             <span className="flex items-center gap-1">
               <input
                 type="number"
@@ -356,11 +364,11 @@ function ItemDetailPanel({
             </span>
           </label>
           <label className="flex items-center justify-between gap-2 text-neutral-300">
-            Stock
+            {t('merchantPicker.stock')}
             <input
               type="number"
               min={0}
-              placeholder="illimité"
+              placeholder={t('merchantPicker.stock_placeholder')}
               value={stock}
               onChange={(e) => setStock(e.target.value)}
               onBlur={() => {
@@ -382,12 +390,12 @@ function ItemDetailPanel({
                 else void commit({ haggle_dc: null, haggle_discount_percent: null });
               }}
             />
-            Négociable
+            {t('merchantShop.negotiable_badge')}
           </label>
           {negotiable && (
             <>
               <label className="flex items-center justify-between gap-2 text-neutral-300">
-                Dé minimum (DC)
+                {t('merchantShop.haggle_dc_label')}
                 <input
                   type="number"
                   min={1}
@@ -398,7 +406,7 @@ function ItemDetailPanel({
                 />
               </label>
               <label className="flex items-center justify-between gap-2 text-neutral-300">
-                Réduction si succès
+                {t('merchantShop.haggle_discount_label')}
                 <span className="flex items-center gap-1">
                   <input
                     type="number"
@@ -420,7 +428,7 @@ function ItemDetailPanel({
                   onClick={() => void commit({ haggle_dc: haggleDc, haggle_discount_percent: haggleDiscount })}
                   className="w-full rounded bg-accent-500 px-2 py-1 text-xs font-semibold text-arena-950 transition hover:bg-accent-400"
                 >
-                  Valider le marchandage
+                  {t('merchantShop.validate_haggle')}
                 </button>
               )}
             </>
@@ -437,12 +445,12 @@ function ItemDetailPanel({
                 else void commit({ promo_buy_quantity: null, promo_free_quantity: null });
               }}
             />
-            Offre "achetés/offerts"
+            {t('merchantShop.promo_checkbox')}
           </label>
           {hasPromo && (
             <>
               <label className="flex items-center justify-between gap-2 text-neutral-300">
-                Achetés
+                {t('merchantShop.promo_buy_label')}
                 <input
                   type="number"
                   min={1}
@@ -452,7 +460,7 @@ function ItemDetailPanel({
                 />
               </label>
               <label className="flex items-center justify-between gap-2 text-neutral-300">
-                Offerts
+                {t('merchantShop.promo_free_label')}
                 <input
                   type="number"
                   min={1}
@@ -467,7 +475,7 @@ function ItemDetailPanel({
                   onClick={() => void commit({ promo_buy_quantity: promoBuyQuantity, promo_free_quantity: promoFreeQuantity })}
                   className="w-full rounded bg-accent-500 px-2 py-1 text-xs font-semibold text-arena-950 transition hover:bg-accent-400"
                 >
-                  Valider l'offre
+                  {t('merchantShop.validate_promo')}
                 </button>
               )}
             </>
@@ -475,7 +483,7 @@ function ItemDetailPanel({
           {savingError && <p className="text-xs text-red-400">{savingError}</p>}
 
           <button type="button" onClick={onDeleted} className="mt-2 text-xs text-red-400 hover:text-red-300">
-            Retirer l'article de la boutique
+            {t('merchantShop.remove_item')}
           </button>
         </div>
       )}
@@ -485,15 +493,15 @@ function ItemDetailPanel({
           <p className="text-lg font-semibold text-accent-400">
             {item.price} {currencyName}
           </p>
-          <p className="text-xs text-neutral-500">{item.stock === null ? 'Stock illimité' : `Stock : ${item.stock}`}</p>
+          <p className="text-xs text-neutral-500">{item.stock === null ? t('merchantShop.unlimited_stock') : t('merchantShop.stock_count', { count: item.stock })}</p>
           {item.haggle_dc !== null && (
             <p className="mt-1 text-xs text-neutral-500">
-              Négociable : dé {item.haggle_dc}+ → -{item.haggle_discount_percent}%
+              {t('merchantShop.negotiable_terms', { dc: item.haggle_dc, discount: item.haggle_discount_percent })}
             </p>
           )}
           {item.promo_buy_quantity !== null && item.promo_free_quantity !== null && (
             <p className="mt-1 text-xs text-emerald-400">
-              Offre : {item.promo_buy_quantity} achetés → {item.promo_free_quantity} offert{item.promo_free_quantity > 1 ? 's' : ''} (cumulable)
+              {t('merchantShop.promo_terms', { buy: item.promo_buy_quantity, free: item.promo_free_quantity, count: item.promo_free_quantity })}
             </p>
           )}
         </div>
@@ -524,11 +532,12 @@ function ItemDetailPanel({
 
 /** Ouvre BoosterContentsOverlay — bouton simple, l'overlay porte tout le chargement. */
 function BoosterContentsButton({ token, setCode, setId, setName }: { token: string; setCode: string; setId: string | null; setName: string }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <div className="mb-3">
       <button type="button" onClick={() => setOpen(true)} className="text-xs text-accent-400 underline hover:text-accent-300">
-        Voir le contenu du booster
+        {t('merchantShop.view_booster_contents')}
       </button>
       {open && <BoosterContentsOverlay token={token} setCode={setCode} setId={setId} setName={setName} onClose={() => setOpen(false)} />}
     </div>
@@ -556,6 +565,7 @@ function BoosterContentsOverlay({
   setName: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [cards, setCards] = useState<ApiCard[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -570,7 +580,7 @@ function BoosterContentsOverlay({
     api
       .listCards(token, setId ? { set_id: setId, limit: 300 } : { set_code: setCode, set_name: setName, limit: 300 })
       .then(({ cards: fetched }) => setCards(fetched))
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+      .catch((err) => setError(translateApiError(err, t)))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, setId, setCode, setName]);
@@ -579,7 +589,7 @@ function BoosterContentsOverlay({
   // une carte peut être réimprimée ailleurs avec une autre rareté, donc on
   // relit card_sets pour CE set précis (par nom, jamais par set_code seul
   // ambigu — voir CLAUDE.md) plutôt que d'afficher une rareté au hasard.
-  const rarityFor = (card: ApiCard) => card.card_sets.find((s) => s.set_name === setName)?.set_rarity ?? 'Rareté inconnue';
+  const rarityFor = (card: ApiCard) => card.card_sets.find((s) => s.set_name === setName)?.set_rarity ?? t('merchantShop.unknown_rarity');
 
   const groups = new Map<string, ApiCard[]>();
   for (const card of cards ?? []) {
@@ -597,11 +607,11 @@ function BoosterContentsOverlay({
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Contenu du booster</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('merchantShop.booster_contents_title')}</p>
           <h2 className="font-display text-xl text-accent-400">{setName}</h2>
           {cards && (
             <p className="mt-1 text-xs text-neutral-500">
-              {cards.length} carte{cards.length !== 1 ? 's' : ''} distincte{cards.length !== 1 ? 's' : ''} ·{' '}
+              {t('merchantShop.distinct_cards', { count: cards.length })} ·{' '}
               {orderedGroups.map(([rarity, group], i) => (
                 <span key={rarity}>
                   {i > 0 && ' · '}
@@ -616,14 +626,14 @@ function BoosterContentsOverlay({
           onClick={onClose}
           className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
         >
-          Fermer
+          {t('characterSheet.close')}
         </button>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {loading && <p className="text-sm text-neutral-500">Chargement...</p>}
+        {loading && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
         {error && <p className="text-sm text-red-400">{error}</p>}
-        {!loading && cards && cards.length === 0 && <p className="text-sm text-neutral-500">Aucune carte trouvée pour ce set.</p>}
+        {!loading && cards && cards.length === 0 && <p className="text-sm text-neutral-500">{t('merchantShop.no_cards_for_set')}</p>}
 
         {!loading &&
           orderedGroups.map(([rarity, group]) => (
@@ -670,6 +680,7 @@ function PurchaseWidget({
   buyableCharacters: ApiCharacter[];
   onPurchased: (data: Awaited<ReturnType<typeof api.purchaseMerchantItem>>) => void;
 }) {
+  const { t } = useTranslation();
   const [characterId, setCharacterId] = useState(buyableCharacters[0]?.id ?? '');
   const [quantity, setQuantity] = useState(1);
   const [haggling, setHaggling] = useState(false);
@@ -706,7 +717,7 @@ function PurchaseWidget({
       setPendingHaggle(haggle);
       setRerollsLeft(remaining_luck_rerolls);
     } catch (err) {
-      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
+      setFeedback({ ok: false, message: translateApiError(err, t) });
     } finally {
       setSubmitting(false);
     }
@@ -721,7 +732,7 @@ function PurchaseWidget({
       setPendingHaggle(haggle);
       setRerollsLeft(remaining_luck_rerolls);
     } catch (err) {
-      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
+      setFeedback({ ok: false, message: translateApiError(err, t) });
     } finally {
       setSubmitting(false);
     }
@@ -740,15 +751,24 @@ function PurchaseWidget({
       onPurchased(data);
       resetHaggle();
       const h = data.purchase.haggle;
-      const bonusSuffix = data.purchase.bonus_quantity > 0 ? ` (dont ${data.purchase.bonus_quantity} offert${data.purchase.bonus_quantity > 1 ? 's' : ''})` : '';
+      const bonus =
+        data.purchase.bonus_quantity > 0
+          ? t('merchantShop.bonus_included', { count: data.purchase.bonus_quantity })
+          : '';
       const message = h
-        ? `Acheté ${data.purchase.delivered_quantity}${bonusSuffix} pour ${data.purchase.total_price} ${currencyName} — marchandage : ${h.roll}+${h.modifier}=${h.total} contre DC ${h.dc} → ${
-            h.success ? `réussi, -${h.discount_percent}%` : 'échoué, prix plein'
-          }`
-        : `Acheté ${data.purchase.delivered_quantity}${bonusSuffix} pour ${data.purchase.total_price} ${currencyName}`;
+        ? t('merchantShop.bought_with_haggle_message', {
+            delivered: data.purchase.delivered_quantity,
+            bonus,
+            total: data.purchase.total_price,
+            currency: currencyName,
+            haggleDetail: `${t('merchantShop.haggle_roll_result', { roll: h.roll, modifier: h.modifier, total: h.total, dc: h.dc })} ${
+              h.success ? t('merchantShop.haggle_success', { discount: h.discount_percent }) : t('merchantShop.haggle_failure')
+            }`,
+          })
+        : t('merchantShop.bought_message', { delivered: data.purchase.delivered_quantity, bonus, total: data.purchase.total_price, currency: currencyName });
       setFeedback({ ok: true, message });
     } catch (err) {
-      setFeedback({ ok: false, message: err instanceof ApiError ? err.message : 'Une erreur est survenue' });
+      setFeedback({ ok: false, message: translateApiError(err, t) });
     } finally {
       setSubmitting(false);
     }
@@ -783,8 +803,8 @@ function PurchaseWidget({
 
       {item.promo_buy_quantity !== null && item.promo_free_quantity !== null && (
         <p className="text-neutral-400">
-          Offre : {item.promo_buy_quantity} achetés → {item.promo_free_quantity} offert{item.promo_free_quantity > 1 ? 's' : ''}
-          {bonusPreview > 0 && <span className="text-emerald-400"> — +{bonusPreview} offert{bonusPreview > 1 ? 's' : ''} pour cette quantité</span>}
+          {t('merchantShop.promo_terms', { buy: item.promo_buy_quantity, free: item.promo_free_quantity, count: item.promo_free_quantity })}
+          {bonusPreview > 0 && <span className="text-emerald-400">{t('merchantShop.promo_bonus_preview', { count: bonusPreview })}</span>}
         </p>
       )}
 
@@ -798,14 +818,14 @@ function PurchaseWidget({
               resetHaggle();
             }}
           />
-          Marchander (dé {item.haggle_dc}+ → -{item.haggle_discount_percent}%)
+          {t('merchantShop.haggle_toggle', { dc: item.haggle_dc, discount: item.haggle_discount_percent })}
         </label>
       )}
 
       {pendingHaggle && (
         <p className={`rounded border px-1.5 py-1 ${pendingHaggle.success ? 'border-emerald-700 text-emerald-400' : 'border-red-800 text-red-400'}`}>
-          {pendingHaggle.roll}+{pendingHaggle.modifier}={pendingHaggle.total} contre DC {pendingHaggle.dc} →{' '}
-          {pendingHaggle.success ? `réussi, -${pendingHaggle.discount_percent}%` : 'échoué, prix plein'}
+          {t('merchantShop.haggle_roll_result', { roll: pendingHaggle.roll, modifier: pendingHaggle.modifier, total: pendingHaggle.total, dc: pendingHaggle.dc })}{' '}
+          {pendingHaggle.success ? t('merchantShop.haggle_success', { discount: pendingHaggle.discount_percent }) : t('merchantShop.haggle_failure')}
         </p>
       )}
 
@@ -817,7 +837,7 @@ function PurchaseWidget({
             disabled={submitting}
             className="rounded border border-accent-500 px-2 py-1 text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
           >
-            Lancer le marchandage
+            {t('merchantShop.roll_haggle')}
           </button>
         )}
         {pendingHaggle && !pendingHaggle.success && (rerollsLeft ?? 0) > 0 && (
@@ -827,7 +847,7 @@ function PurchaseWidget({
             disabled={submitting}
             className="rounded border border-accent-500 px-2 py-1 text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
           >
-            Relancer (Chance : {rerollsLeft})
+            {t('merchantShop.reroll_luck', { count: rerollsLeft })}
           </button>
         )}
         {(!haggling || pendingHaggle) && (
@@ -837,7 +857,7 @@ function PurchaseWidget({
             disabled={submitting}
             className="rounded bg-accent-500 px-3 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
           >
-            Acheter
+            {t('merchantShop.buy')}
           </button>
         )}
       </div>
