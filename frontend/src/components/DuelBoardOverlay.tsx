@@ -148,6 +148,20 @@ interface ZoneInteraction {
 /** Panneau plein écran : duel réel piloté par le moteur ocgcore (EDOPro), voir CLAUDE.md §7. */
 export function DuelBoardOverlay({ token, session, duel, characters, currentUserId, onUpdated, onClose }: DuelBoardOverlayProps) {
   const [field, setField] = useState<ApiDuelField | null>(null);
+  // Retour visuel demandé par les joueurs (playtest) : une brève animation
+  // quand une zone Monstre/Magie-Piège vient d'accueillir une carte
+  // (invocation/pose), quand le cimetière/les bannis grossissent
+  // (destruction/sacrifice/tribut — tous finissent au cimetière, on ne
+  // prétend pas distinguer LEQUEL depuis un simple diff de snapshot), quand
+  // une main grossit (pioche), et quand les PV changent. Purement dérivé
+  // d'un diff entre l'ancien et le nouveau `field`/`duel` — aucune donnée
+  // serveur supplémentaire nécessaire.
+  const [zoneFlashKeys, setZoneFlashKeys] = useState<Set<string>>(new Set());
+  const [pileFlash, setPileFlash] = useState<{ grave: [boolean, boolean]; banished: [boolean, boolean] }>({ grave: [false, false], banished: [false, false] });
+  const [handFlash, setHandFlash] = useState<[boolean, boolean]>([false, false]);
+  const [lpFlash, setLpFlash] = useState<[('up' | 'down' | null), ('up' | 'down' | null)]>([null, null]);
+  const prevFieldRef = useRef<ApiDuelField | null>(null);
+  const prevDuelRef = useRef<ApiDuel | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -229,6 +243,75 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
       socket.off('session_resource_changed', onChanged);
     };
   }, [session.id, refreshField]);
+
+  // Animation d'invocation/pose (zone qui vient de se remplir) + pulse du
+  // cimetière/des bannis (compteur qui grossit) — diff contre le `field`
+  // précédent, rien à comparer au tout premier chargement.
+  useEffect(() => {
+    const prev = prevFieldRef.current;
+    prevFieldRef.current = field;
+    if (!prev || !field) return;
+    const newlyOccupied = new Set<string>();
+    const grave: [boolean, boolean] = [false, false];
+    const banished: [boolean, boolean] = [false, false];
+    ([0, 1] as const).forEach((team) => {
+      const prevTeam = prev.teams[team];
+      const curTeam = field.teams[team];
+      if (!prevTeam || !curTeam) return;
+      curTeam.monster_zones.forEach((slot, i) => {
+        if (slot && !prevTeam.monster_zones[i]) newlyOccupied.add(`${team}-mz${i}`);
+      });
+      curTeam.spell_trap_zones.forEach((slot, i) => {
+        if (slot && !prevTeam.spell_trap_zones[i]) newlyOccupied.add(`${team}-st${i}`);
+      });
+      if (curTeam.graveyard.length > prevTeam.graveyard.length) grave[team] = true;
+      if (curTeam.banished.length > prevTeam.banished.length) banished[team] = true;
+    });
+    if (newlyOccupied.size === 0 && !grave.some(Boolean) && !banished.some(Boolean)) return;
+    setZoneFlashKeys(newlyOccupied);
+    setPileFlash({ grave, banished });
+    const timer = setTimeout(() => {
+      setZoneFlashKeys(new Set());
+      setPileFlash({ grave: [false, false], banished: [false, false] });
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [field]);
+
+  // Pulse de pioche (main qui grossit) + PV qui changent — diff contre le
+  // `duel` précédent (participants[].hand_count / teams[].life_points).
+  useEffect(() => {
+    const prev = prevDuelRef.current;
+    prevDuelRef.current = duel;
+    if (!prev) return;
+    const activeHand = (d: ApiDuel, team: 0 | 1) => {
+      const roster = d.participants.filter((p) => p.team === team);
+      const active = roster.find((p) => p.is_active) ?? roster[0];
+      return active ? { id: active.id, count: active.hand_count } : null;
+    };
+    const hand: [boolean, boolean] = [false, false];
+    const lp: [('up' | 'down' | null), ('up' | 'down' | null)] = [null, null];
+    ([0, 1] as const).forEach((team) => {
+      const prevHand = activeHand(prev, team);
+      const curHand = activeHand(duel, team);
+      // Même duelist actif des deux côtés du diff, sinon une rotation de
+      // Duel Tag (nouveau duelist, main réinitialisée) fausserait la
+      // comparaison — on saute simplement ce tick pour cette équipe.
+      if (prevHand && curHand && prevHand.id === curHand.id && prevHand.count !== null && curHand.count !== null && curHand.count > prevHand.count) {
+        hand[team] = true;
+      }
+      const prevLp = prev.teams[team]?.life_points ?? null;
+      const curLp = duel.teams[team]?.life_points ?? null;
+      if (prevLp !== null && curLp !== null && curLp !== prevLp) lp[team] = curLp > prevLp ? 'up' : 'down';
+    });
+    if (!hand.some(Boolean) && !lp.some((v) => v !== null)) return;
+    setHandFlash(hand);
+    setLpFlash(lp);
+    const timer = setTimeout(() => {
+      setHandFlash([false, false]);
+      setLpFlash([null, null]);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [duel]);
 
   const run = async (action: () => Promise<{ duel: ApiDuel }>) => {
     setBusy(true);
@@ -424,6 +507,14 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
+      {/* Retour utilisateur direct : "quand c'est à nous de faire une action, faire clignoter à droite" — visible uniquement
+          quand CE spectateur peut réellement valider l'invite en cours (authorized), jamais pour un simple spectateur. */}
+      {duel.status === 'active' && authorized && actingParticipant && (
+        <div
+          aria-hidden
+          className="motion-reduce:animate-none pointer-events-none fixed right-0 top-1/2 z-[60] h-40 w-1.5 -translate-y-1/2 rounded-l-full bg-accent-400 shadow-[0_0_18px_4px_rgba(244,192,79,0.65)] animate-[duel-turn-blink_1.1s_ease-in-out_infinite]"
+        />
+      )}
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Duel</p>
@@ -520,7 +611,17 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                       {isMine && <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-500">(vous)</span>}
                       {duel.current_team === teamIndex && <span className="ml-2 text-xs text-accent-400">(tour en cours)</span>}
                     </span>
-                    <span className="text-xl font-bold text-accent-400">{team.life_points ?? '?'} PV</span>
+                    <span
+                      className={`text-xl font-bold motion-reduce:animate-none ${
+                        lpFlash[teamIndex] === 'up'
+                          ? 'animate-[duel-lp-up-flash_0.9s_ease-out] text-accent-400'
+                          : lpFlash[teamIndex] === 'down'
+                            ? 'animate-[duel-lp-down-flash_0.9s_ease-out] text-accent-400'
+                            : 'text-accent-400'
+                      }`}
+                    >
+                      {team.life_points ?? '?'} PV
+                    </span>
                   </div>
 
                   {(() => {
@@ -557,6 +658,10 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                           isNpc={active.is_npc}
                           resolveInteraction={resolveInteraction}
                           onShowPile={(label, cards) => setShowPile({ label, cards })}
+                          zoneFlashKeys={zoneFlashKeys}
+                          graveyardFlash={pileFlash.grave[teamIndex]}
+                          banishedFlash={pileFlash.banished[teamIndex]}
+                          handFlash={handFlash[teamIndex]}
                         />
                       </>
                     );
@@ -761,20 +866,23 @@ function EmptyZone({ onClick, selected, eligible }: { onClick?: (rect: DOMRect) 
 }
 
 /** Une zone du terrain, avec sa légende optionnelle (ex. "Terrain" pour la distinguer des zones Magie/Piège normales). */
-function ZoneSlot({ slot, label, interaction }: { slot: ApiDuelBoardCard | null; label?: string; interaction: ZoneInteraction }) {
+function ZoneSlot({ slot, label, interaction, flash }: { slot: ApiDuelBoardCard | null; label?: string; interaction: ZoneInteraction; flash?: boolean }) {
   return (
     <div className="flex shrink-0 flex-col items-center gap-0.5">
-      {slot ? (
-        <MiniCard boardCard={slot} onClick={interaction.onClick} glow={interaction.glow} selected={interaction.selected} eligible={interaction.eligible} />
-      ) : (
-        <EmptyZone onClick={interaction.onClick} selected={interaction.selected} eligible={interaction.eligible} />
-      )}
+      {/* pop-in (BoosterOpeningOverlay) réutilisé ici : la zone vient d'accueillir une carte (invocation/pose). */}
+      <div className={flash ? 'motion-reduce:animate-none animate-[pop-in_0.5s_ease-out]' : undefined}>
+        {slot ? (
+          <MiniCard boardCard={slot} onClick={interaction.onClick} glow={interaction.glow} selected={interaction.selected} eligible={interaction.eligible} />
+        ) : (
+          <EmptyZone onClick={interaction.onClick} selected={interaction.selected} eligible={interaction.eligible} />
+        )}
+      </div>
       {label && <span className="text-[8px] uppercase tracking-wide text-neutral-600">{label}</span>}
     </div>
   );
 }
 
-function PileButton({ label, cards, onShow }: { label: string; cards: ApiDuelBoardCard[]; onShow: () => void }) {
+function PileButton({ label, cards, onShow, flash }: { label: string; cards: ApiDuelBoardCard[]; onShow: () => void; flash?: boolean }) {
   return (
     <button
       type="button"
@@ -782,7 +890,7 @@ function PileButton({ label, cards, onShow }: { label: string; cards: ApiDuelBoa
       disabled={cards.length === 0}
       className="flex h-24 w-16 shrink-0 flex-col items-center justify-center rounded border border-arena-700 bg-arena-800/60 text-[10px] text-neutral-400 hover:border-accent-500 disabled:cursor-default disabled:opacity-50"
     >
-      <span className="text-lg font-bold text-neutral-200">{cards.length}</span>
+      <span className={`text-lg font-bold motion-reduce:animate-none ${flash ? 'animate-[duel-counter-flash_0.9s_ease-out]' : 'text-neutral-200'}`}>{cards.length}</span>
       {label}
     </button>
   );
@@ -799,6 +907,10 @@ function ParticipantBoard({
   hideHand,
   resolveInteraction,
   onShowPile,
+  zoneFlashKeys,
+  graveyardFlash,
+  banishedFlash,
+  handFlash,
 }: {
   characterName: string;
   teamIndex: 0 | 1;
@@ -812,6 +924,11 @@ function ParticipantBoard({
   hideHand: boolean;
   resolveInteraction: (location: number, sequence: number, controller: 0 | 1, boardCard: ApiDuelBoardCard | null) => ZoneInteraction;
   onShowPile: (label: string, cards: ApiDuelBoardCard[]) => void;
+  /** Clés `${team}-mz${sequence}`/`${team}-st${sequence}` des zones qui viennent d'accueillir une carte (voir DuelBoardOverlay). */
+  zoneFlashKeys: Set<string>;
+  graveyardFlash: boolean;
+  banishedFlash: boolean;
+  handFlash: boolean;
 }) {
   // spell_trap_zones (8 emplacements confirmés en direct contre le vrai
   // moteur, voir CLAUDE.md §7) : 0-4 = Magie/Piège normales, 5 = Zone
@@ -842,33 +959,40 @@ function ParticipantBoard({
   const stMain = orderReverse(stZones.slice(0, 5).map((slot, i) => ({ slot, sequence: i, label: undefined as string | undefined })));
   const stPendulum = orderReverse(stZones.slice(6, 8).map((slot, i) => ({ slot, sequence: 6 + i, label: undefined as string | undefined })));
 
-  const mzGroups = mirrored
-    ? [
-        <ZoneSlot key="terrain" slot={fieldZoneEntry.slot} label={fieldZoneEntry.label} interaction={resolveInteraction(EngineLocation.SZONE, fieldZoneEntry.sequence, teamIndex, fieldZoneEntry.slot)} />,
-        <div key="extra" className="flex gap-1">
-          {mzExtra.map(({ slot, sequence }) => (
-            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
-          ))}
-        </div>,
-        <div key="main" className="flex gap-1">
-          {mzMain.map(({ slot, sequence }) => (
-            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
-          ))}
-        </div>,
-      ]
-    : [
-        <div key="main" className="flex gap-1">
-          {mzMain.map(({ slot, sequence }) => (
-            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
-          ))}
-        </div>,
-        <div key="extra" className="flex gap-1">
-          {mzExtra.map(({ slot, sequence }) => (
-            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
-          ))}
-        </div>,
-        <ZoneSlot key="terrain" slot={fieldZoneEntry.slot} label={fieldZoneEntry.label} interaction={resolveInteraction(EngineLocation.SZONE, fieldZoneEntry.sequence, teamIndex, fieldZoneEntry.slot)} />,
-      ];
+  const mzMainGroup = (
+    <div key="main" className="flex gap-1">
+      {mzMain.map(({ slot, sequence }) => (
+        <ZoneSlot
+          key={`mz${sequence}`}
+          slot={slot}
+          interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)}
+          flash={zoneFlashKeys.has(`${teamIndex}-mz${sequence}`)}
+        />
+      ))}
+    </div>
+  );
+  const mzExtraGroup = (
+    <div key="extra" className="flex gap-1">
+      {mzExtra.map(({ slot, sequence }) => (
+        <ZoneSlot
+          key={`mz${sequence}`}
+          slot={slot}
+          interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)}
+          flash={zoneFlashKeys.has(`${teamIndex}-mz${sequence}`)}
+        />
+      ))}
+    </div>
+  );
+  const fieldZoneSlot = (
+    <ZoneSlot
+      key="terrain"
+      slot={fieldZoneEntry.slot}
+      label={fieldZoneEntry.label}
+      interaction={resolveInteraction(EngineLocation.SZONE, fieldZoneEntry.sequence, teamIndex, fieldZoneEntry.slot)}
+      flash={zoneFlashKeys.has(`${teamIndex}-st${fieldZoneEntry.sequence}`)}
+    />
+  );
+  const mzGroups = mirrored ? [fieldZoneSlot, mzExtraGroup, mzMainGroup] : [mzMainGroup, mzExtraGroup, fieldZoneSlot];
 
   return (
     <div className="rounded border border-arena-700 bg-arena-900/40 p-2">
@@ -878,7 +1002,8 @@ function ParticipantBoard({
           {isNpc && <span className="text-neutral-500"> (PNJ)</span>}
         </span>
         <span className="text-neutral-500">
-          Main {handCount ?? '—'} · Deck {deckRemaining ?? '—'}
+          <span className={`motion-reduce:animate-none ${handFlash ? 'animate-[duel-counter-flash_0.9s_ease-out]' : ''}`}>Main {handCount ?? '—'}</span> · Deck{' '}
+          {deckRemaining ?? '—'}
           {fieldTeam?.extra_deck && fieldTeam.extra_deck.length > 0 ? ` · Extra ${fieldTeam.extra_deck.length}` : ''}
         </span>
       </div>
@@ -902,19 +1027,31 @@ function ParticipantBoard({
             <div className="flex items-center gap-3">
               <div className="flex gap-1">
                 {stMain.map(({ slot, sequence, label }) => (
-                  <ZoneSlot key={`st${sequence}`} slot={slot} label={label} interaction={resolveInteraction(EngineLocation.SZONE, sequence, teamIndex, slot)} />
+                  <ZoneSlot
+                    key={`st${sequence}`}
+                    slot={slot}
+                    label={label}
+                    interaction={resolveInteraction(EngineLocation.SZONE, sequence, teamIndex, slot)}
+                    flash={zoneFlashKeys.has(`${teamIndex}-st${sequence}`)}
+                  />
                 ))}
               </div>
               <div className="flex gap-1">
                 {stPendulum.map(({ slot, sequence, label }) => (
-                  <ZoneSlot key={`st${sequence}`} slot={slot} label={label} interaction={resolveInteraction(EngineLocation.SZONE, sequence, teamIndex, slot)} />
+                  <ZoneSlot
+                    key={`st${sequence}`}
+                    slot={slot}
+                    label={label}
+                    interaction={resolveInteraction(EngineLocation.SZONE, sequence, teamIndex, slot)}
+                    flash={zoneFlashKeys.has(`${teamIndex}-st${sequence}`)}
+                  />
                 ))}
               </div>
             </div>
           </div>
           <div className="flex shrink-0 gap-1 border-l border-arena-700 pl-3">
-            <PileButton label="Cimetière" cards={fieldTeam.graveyard} onShow={() => onShowPile(`Cimetière — ${characterName}`, fieldTeam.graveyard)} />
-            <PileButton label="Bannis" cards={fieldTeam.banished} onShow={() => onShowPile(`Bannis — ${characterName}`, fieldTeam.banished)} />
+            <PileButton label="Cimetière" cards={fieldTeam.graveyard} onShow={() => onShowPile(`Cimetière — ${characterName}`, fieldTeam.graveyard)} flash={graveyardFlash} />
+            <PileButton label="Bannis" cards={fieldTeam.banished} onShow={() => onShowPile(`Bannis — ${characterName}`, fieldTeam.banished)} flash={banishedFlash} />
           </div>
         </div>
       )}

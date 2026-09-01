@@ -80,3 +80,63 @@ body {
     transform: translateX(230%) skewX(-20deg);
   }
 }
+
+/* Plateau de duel (DuelBoardOverlay) : retour visuel demandé par les
+   joueurs — invocation/pose (zone qui vient de se remplir), cimetière/main
+   qui grossit (destruction/sacrifice/pioche, voir ZoneSlot/PileButton/
+   ParticipantBoard), et indicateur "à vous de jouer". */
+@keyframes duel-turn-blink {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scaleY(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes duel-counter-flash {
+  0% {
+    transform: scale(1);
+    color: var(--color-accent-400);
+  }
+  40% {
+    transform: scale(1.35);
+    color: #6ee7b7;
+  }
+  100% {
+    transform: scale(1);
+    color: inherit;
+  }
+}
+
+@keyframes duel-lp-up-flash {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+    color: #6ee7b7;
+  }
+  100% {
+    transform: scale(1);
+    color: var(--color-accent-400);
+  }
+}
+
+@keyframes duel-lp-down-flash {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+    color: #f87171;
+  }
+  100% {
+    transform: scale(1);
+    color: var(--color-accent-400);
+  }
+}
+
