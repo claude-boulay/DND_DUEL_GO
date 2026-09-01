@@ -197,4 +197,35 @@ describe('Diffusion temps réel : personnages et marchands créés/supprimés pa
     const list = await request(app).get(`/api/characters/session/${sessionId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
     expect(list.body.characters.find((c: { id: string }) => c.id === characterId)?.money).toBe(500);
   });
+
+  it("le MJ déjà connecté est notifié quand un joueur crée un deck (régression : POST .../decks ne diffusait rien, le deck n'apparaissait qu'après rechargement)", async () => {
+    // player a déjà son unique personnage joueur autorisé (voir "un joueur
+    // par session") depuis le test précédent — un tiers dédié ici évite le
+    // 409 already_has_character.
+    const deckOwner = await registerUser('rt_deck_owner');
+    await request(app).post(`/api/sessions/${sessionCode}/join`).set('Authorization', `Bearer ${deckOwner.token}`).expect(200);
+    const created = await request(app)
+      .post('/api/characters')
+      .set('Authorization', `Bearer ${deckOwner.token}`)
+      .send({
+        game_session_id: sessionId,
+        name: 'Personnage Deck Notifié',
+        is_npc: false,
+        stats: { history: 13, perception: 13, intelligence: 13, charisma: 20, luck: 8 },
+      })
+      .expect(201);
+    const characterId = created.body.character.id as string;
+
+    const changed = waitForEvent<{ resource: string; session_id: string }>(playerSocket, 'session_resource_changed');
+    const deck = await request(app)
+      .post(`/api/characters/${characterId}/decks`)
+      .set('Authorization', `Bearer ${deckOwner.token}`)
+      .send({ name: 'Deck Notifié' })
+      .expect(201);
+
+    const payload = await changed;
+    expect(payload.resource).toBe('characters');
+    expect(payload.session_id).toBe(sessionId);
+    expect(deck.body.character.decks.some((d: { name: string }) => d.name === 'Deck Notifié')).toBe(true);
+  });
 });

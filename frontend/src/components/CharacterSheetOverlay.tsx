@@ -508,11 +508,14 @@ function BoostersPanel({
 
   if (character.sealed_boosters.length === 0) return null;
 
-  const handleOpen = async (setCode: string, setName: string, cardSetId: string | null) => {
+  // quantity par défaut à 1 (bouton "ouvrir" simple) — le bouton "tout
+  // ouvrir" (demande utilisateur) passe le nombre réel de boosters scellés
+  // détenus, plafonné à 20 (max accepté par POST .../open-booster).
+  const handleOpen = async (setCode: string, setName: string, cardSetId: string | null, quantity = 1) => {
     setOpeningKey(cardSetId ?? setCode);
     setError(null);
     try {
-      const { character: updated, opened_cards } = await api.openBooster(token, character.id, setCode, 1, cardSetId);
+      const { character: updated, opened_cards } = await api.openBooster(token, character.id, setCode, quantity, cardSetId);
       onCharacterUpdate(character.id, { collection: updated.collection, sealed_boosters: updated.sealed_boosters });
       setOpening({ setCode, setName, cardSetId, cards: opened_cards });
     } catch (err) {
@@ -546,6 +549,17 @@ function BoostersPanel({
             >
               {openingKey === keyFor(b) ? 'ouverture...' : 'ouvrir'}
             </button>
+            {b.quantity > 1 && (
+              <button
+                type="button"
+                onClick={() => void handleOpen(b.set_code, b.set_name, b.card_set_id, Math.min(b.quantity, 20))}
+                disabled={openingKey === keyFor(b)}
+                title={b.quantity > 20 ? 'Plafonné à 20 boosters par ouverture' : undefined}
+                className="shrink-0 text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
+              >
+                tout ouvrir (×{Math.min(b.quantity, 20)})
+              </button>
+            )}
           </div>
         ))}
       </div>

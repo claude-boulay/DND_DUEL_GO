@@ -518,6 +518,10 @@ characterRouter.post(
     character.decks.push({ _id: new Types.ObjectId(), name, cards: [] });
     await character.save();
 
+    // Rend le nouveau deck immédiatement visible au MJ (et tout autre
+    // spectateur de la partie) sans attendre une action qui redéclenche un
+    // fetch — même convention que les autres mutations de personnage.
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
     res.status(201).json({ character: toCharacterDto(character) });
   }),
 );
@@ -588,6 +592,7 @@ characterRouter.patch(
     deck.name = name;
     await character.save();
 
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
     res.json({ character: toCharacterDto(character) });
   }),
 );
@@ -605,6 +610,7 @@ characterRouter.delete(
     character.decks.splice(index, 1);
     await character.save();
 
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
     res.json({ character: toCharacterDto(character) });
   }),
 );
@@ -665,6 +671,7 @@ characterRouter.post(
     for (let i = 0; i < quantity; i += 1) deck.cards.push(card_id);
     await character.save();
 
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
     res.status(201).json({ character: toCharacterDto(character) });
   }),
 );
@@ -692,6 +699,7 @@ characterRouter.delete(
     if (removed === 0) throw new AppError(404, 'Cette carte ne figure pas dans le deck', 'not_found');
 
     await character.save();
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
     res.json({ character: toCharacterDto(character) });
   }),
 );
