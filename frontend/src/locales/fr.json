@@ -31,7 +31,23 @@
     "conflict": "Nom d'utilisateur ou email déjà utilisé",
     "invalid_verification_code": "Code invalide ou expiré",
     "invalid_reset_code": "Code invalide ou expiré",
-    "invalid_credentials": "Identifiants invalides"
+    "invalid_credentials": "Identifiants invalides",
+    "already_has_character": "Vous avez déjà un personnage joueur dans ce salon",
+    "insufficient_boosters": "Pas assez de boosters scellés de ce set",
+    "no_engine": "Ce duel n'a pas (ou plus) de process moteur actif",
+    "wrong_participant": "Ce n'est pas à ce participant de répondre à cette invite en ce moment",
+    "engine_error": "Le moteur de duel a refusé la création (voir logs backend)",
+    "no_rerolls_left": "Plus de reroll de Chance disponible pour ce personnage",
+    "insufficient_stock": "Stock insuffisant",
+    "insufficient_funds": "Fonds insuffisants",
+    "already_linked": "Cette carte est déjà liée à ce booster",
+    "not_negotiable": "Cet article n'est pas négociable (le MJ n'a pas configuré de DC/remise)",
+    "not_owned": "Vous ne possédez que {{owned}} exemplaire(s) de « {{name}} » dans votre collection",
+    "copy_limit": "Maximum {{max}} exemplaires de « {{name}} » par deck",
+    "extra_deck_full": "L'Extra Deck est limité à {{max}} cartes",
+    "main_deck_full": "Le Main Deck est limité à {{max}} cartes",
+    "missing_engine_code": "« {{name}} » n'a pas de code moteur — réenregistrez cette carte",
+    "missing_lua_script": "« {{name}} » est une carte custom sans script Lua — un vrai script est obligatoire (CLAUDE.md §3.4)"
   },
   "cardFilters": {
     "monsterKind": {

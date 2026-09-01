@@ -645,12 +645,16 @@ characterRouter.post(
           400,
           `Vous ne possédez que ${ownedCopies} exemplaire(s) de « ${card.name} » dans votre collection`,
           'not_owned',
+          { owned: ownedCopies, name: card.name },
         );
       }
     }
 
     if (currentInDeck + quantity > MAX_COPIES_PER_CARD) {
-      throw new AppError(400, `Maximum ${MAX_COPIES_PER_CARD} exemplaires de « ${card.name} » par deck`, 'copy_limit');
+      throw new AppError(400, `Maximum ${MAX_COPIES_PER_CARD} exemplaires de « ${card.name} » par deck`, 'copy_limit', {
+        max: MAX_COPIES_PER_CARD,
+        name: card.name,
+      });
     }
 
     const existingCardIds = [...new Set(deck.cards)];
@@ -662,10 +666,10 @@ characterRouter.post(
     const zoneCount = deck.cards.filter((id) => isExtraDeckFrameType(frameById.get(id) ?? '') === isExtra).length;
 
     if (isExtra && zoneCount + quantity > EXTRA_DECK_MAX) {
-      throw new AppError(400, `L'Extra Deck est limité à ${EXTRA_DECK_MAX} cartes`, 'extra_deck_full');
+      throw new AppError(400, `L'Extra Deck est limité à ${EXTRA_DECK_MAX} cartes`, 'extra_deck_full', { max: EXTRA_DECK_MAX });
     }
     if (!isExtra && zoneCount + quantity > MAIN_DECK_MAX) {
-      throw new AppError(400, `Le Main Deck est limité à ${MAIN_DECK_MAX} cartes`, 'main_deck_full');
+      throw new AppError(400, `Le Main Deck est limité à ${MAIN_DECK_MAX} cartes`, 'main_deck_full', { max: MAIN_DECK_MAX });
     }
 
     for (let i = 0; i < quantity; i += 1) deck.cards.push(card_id);

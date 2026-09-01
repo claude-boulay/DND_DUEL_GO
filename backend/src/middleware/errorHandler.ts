@@ -8,6 +8,12 @@ export class AppError extends Error {
     public readonly statusCode: number,
     message: string,
     public readonly code = 'app_error',
+    // Paramètres structurés (additif, voir plan d'internationalisation §3) —
+    // seulement pour les rares codes interpolés qu'on choisit de cataloguer
+    // côté front (`errors.<code>` dans locales/{fr,en}.json). `message` reste
+    // TOUJOURS le repli français, jamais retiré : un code non catalogué (ou
+    // dont `params` est absent) continue de s'afficher exactement comme avant.
+    public readonly params?: Record<string, string | number>,
   ) {
     super(message);
     this.name = 'AppError';
@@ -34,7 +40,7 @@ export function errorHandler(
   }
 
   if (err instanceof AppError) {
-    res.status(err.statusCode).json({ error: { code: err.code, message: err.message } });
+    res.status(err.statusCode).json({ error: { code: err.code, message: err.message, params: err.params } });
     return;
   }
 

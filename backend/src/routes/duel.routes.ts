@@ -500,11 +500,16 @@ async function loadDeckPlan(characterId: string, deckId: string, session: GameSe
         card.engine_code = card.ygoprodeck_id;
         await card.save();
       } else {
-        throw new AppError(400, `« ${card.name} » n'a pas de code moteur — réenregistrez cette carte`, 'missing_engine_code');
+        throw new AppError(400, `« ${card.name} » n'a pas de code moteur — réenregistrez cette carte`, 'missing_engine_code', { name: card.name });
       }
     }
     if (card.is_custom && !card.lua_script) {
-      throw new AppError(400, `« ${card.name} » est une carte custom sans script Lua — un vrai script est obligatoire (CLAUDE.md §3.4)`, 'missing_lua_script');
+      throw new AppError(
+        400,
+        `« ${card.name} » est une carte custom sans script Lua — un vrai script est obligatoire (CLAUDE.md §3.4)`,
+        'missing_lua_script',
+        { name: card.name },
+      );
     }
     (isExtraDeckFrameType(card.frame_type) ? extraCodes : mainCodes).push(card.engine_code);
   }

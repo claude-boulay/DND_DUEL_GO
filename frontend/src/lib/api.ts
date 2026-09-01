@@ -574,6 +574,10 @@ export class ApiError extends Error {
     // lib/translateApiError.ts. Absent pour une erreur réseau/parsing pure
     // (ex. `Erreur HTTP 500` sans corps JSON exploitable).
     public readonly code?: string,
+    // Paramètres structurés pour les rares codes AppError interpolés qu'on a
+    // choisi de cataloguer (voir AppError côté backend) — absent pour tous
+    // les autres codes, `translateApiError` retombe alors sur `message`.
+    public readonly params?: Record<string, string | number>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -598,7 +602,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 
   if (!response.ok) {
     const message = body?.error?.message ?? `Erreur HTTP ${response.status}`;
-    throw new ApiError(response.status, message, body?.error?.code);
+    throw new ApiError(response.status, message, body?.error?.code, body?.error?.params);
   }
 
   return body as T;

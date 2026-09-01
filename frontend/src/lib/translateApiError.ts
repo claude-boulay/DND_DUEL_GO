@@ -18,7 +18,7 @@ import { ApiError } from './api';
 export function translateApiError(err: unknown, t: TFunction): string {
   if (err instanceof ApiError) {
     if (err.code) {
-      const translated = t(`errors.${err.code}`, { defaultValue: '' });
+      const translated = t(`errors.${err.code}`, { ...err.params, defaultValue: '' });
       if (translated) return translated;
     }
     return err.message;

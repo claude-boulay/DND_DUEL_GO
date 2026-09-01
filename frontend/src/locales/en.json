@@ -31,7 +31,23 @@
     "conflict": "Username or email already in use",
     "invalid_verification_code": "Invalid or expired code",
     "invalid_reset_code": "Invalid or expired code",
-    "invalid_credentials": "Invalid credentials"
+    "invalid_credentials": "Invalid credentials",
+    "already_has_character": "You already have a player character in this session",
+    "insufficient_boosters": "Not enough sealed boosters of this set",
+    "no_engine": "This duel has no active engine process (anymore)",
+    "wrong_participant": "It isn't this participant's turn to respond to this prompt right now",
+    "engine_error": "The duel engine refused creation (see backend logs)",
+    "no_rerolls_left": "No Luck rerolls left for this character",
+    "insufficient_stock": "Insufficient stock",
+    "insufficient_funds": "Insufficient funds",
+    "already_linked": "This card is already linked to this booster",
+    "not_negotiable": "This item isn't negotiable (the GM hasn't set a DC/discount)",
+    "not_owned": "You only own {{owned}} copy/copies of \"{{name}}\" in your collection",
+    "copy_limit": "Maximum {{max}} copies of \"{{name}}\" per deck",
+    "extra_deck_full": "The Extra Deck is limited to {{max}} cards",
+    "main_deck_full": "The Main Deck is limited to {{max}} cards",
+    "missing_engine_code": "\"{{name}}\" has no engine code — re-save this card",
+    "missing_lua_script": "\"{{name}}\" is a custom card with no Lua script — a real script is required (CLAUDE.md §3.4)"
   },
   "cardFilters": {
     "monsterKind": {
