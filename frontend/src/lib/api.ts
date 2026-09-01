@@ -438,6 +438,22 @@ export interface ApiDuelPromptSelectTribute {
   cards: ApiTributeCardOption[];
 }
 
+export interface ApiDuelPromptSelectUnselectCard {
+  type: 'select_unselect_card';
+  playerid: number;
+  /** Terminer avec la sélection actuelle (même sous `min`) sans annuler tout à fait — distinct de `cancelable`. */
+  finishable: boolean;
+  cancelable: boolean;
+  min: number;
+  max: number;
+  // Un coût "release" scripté (ex. Crush Card Virus) : cartes déjà
+  // "sélectionnées" (à désélectionner) séparées de celles pas encore
+  // choisies — l'API répond par un index dans la liste CONCATÉNÉE
+  // select_cards ++ unselect_cards (voir duelSelectUnselectCard).
+  select_cards: (ApiPromptCardOption & { position: number })[];
+  unselect_cards: (ApiPromptCardOption & { position: number })[];
+}
+
 export interface ApiDuelPromptSelectPosition {
   type: 'select_position';
   playerid: number;
@@ -478,6 +494,7 @@ export type ApiDuelPrompt =
   | ApiDuelPromptSelectPlace
   | ApiDuelPromptChain
   | ApiDuelPromptSelectTribute
+  | ApiDuelPromptSelectUnselectCard
   | ApiDuelPromptSelectPosition
   | ApiDuelPromptSelectOption
   | ApiDuelPromptYesNo
@@ -976,6 +993,13 @@ export const api = {
     request<{ duel: ApiDuel }>(
       `/duels/${encodeURIComponent(duelId)}/select-tribute`,
       { method: 'POST', body: JSON.stringify(indices === null ? { participant_id: participantId, cancel: true } : { participant_id: participantId, indices }) },
+      token,
+    ),
+
+  duelSelectUnselectCard: (token: string, duelId: string, participantId: string, index: number | null) =>
+    request<{ duel: ApiDuel }>(
+      `/duels/${encodeURIComponent(duelId)}/select-unselect-card`,
+      { method: 'POST', body: JSON.stringify(index === null ? { participant_id: participantId, cancel: true } : { participant_id: participantId, index }) },
       token,
     ),
 

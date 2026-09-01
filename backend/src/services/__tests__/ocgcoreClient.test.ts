@@ -27,6 +27,9 @@ import {
   parseSelectPlace,
   parseSelectPosition,
   parseSelectTribute,
+  parseSelectUnselectCard,
+  encodeSelectUnselectCardResponse,
+  encodeSelectUnselectCardCancel,
   parseTagSwap,
   Position,
   QUERY_ATTACK,
@@ -405,6 +408,69 @@ describe('parseSelectTribute (MSG_SELECT_TRIBUTE)', () => {
       { code: 91152256, controller: 0, location: Location.MZONE, sequence: 0, releaseParam: 1 },
       { code: 41392891, controller: 0, location: Location.MZONE, sequence: 1, releaseParam: 1 },
     ]);
+  });
+});
+
+describe('parseSelectUnselectCard (MSG_SELECT_UNSELECT_CARD, type 26)', () => {
+  // Format confirmé en lisant playerop.cpp field::process(SelectUnselectCard&)
+  // directement (jamais documenté ailleurs) — un coût "release" scripté (ex.
+  // Crush Card Virus) passe par ce message, distinct de MSG_SELECT_TRIBUTE et
+  // MSG_SELECT_CARD ; sans le décoder, le prompt tombait dans "unhandled" et
+  // bloquait tout choix côté joueur (bug utilisateur réel).
+  it('parse un payload avec un groupe "select" et un groupe "unselect"', () => {
+    const parts: Buffer[] = [
+      Buffer.from([26, 0, 1, 1]), // type, playerid=0, finishable=1, cancelable=1
+      (() => {
+        const b = Buffer.alloc(4 + 4);
+        b.writeUInt32LE(1, 0); // min
+        b.writeUInt32LE(1, 4); // max
+        return b;
+      })(),
+      (() => {
+        // 1 carte dans select_cards : Celtic Guardian, MZONE, seq 0.
+        const b = Buffer.alloc(4 + (4 + 1 + 1 + 4 + 4));
+        let off = 0;
+        b.writeUInt32LE(1, off); off += 4; // select_count
+        b.writeUInt32LE(91152256, off); off += 4;
+        b.writeUInt8(0, off); off += 1; // controller
+        b.writeUInt8(Location.MZONE, off); off += 1;
+        b.writeUInt32LE(0, off); off += 4; // sequence
+        b.writeUInt32LE(Position.FACEUP_ATTACK, off);
+        return b;
+      })(),
+      (() => {
+        // 1 carte dans unselect_cards : Feral Imp, déjà "sélectionné" au tour précédent.
+        const b = Buffer.alloc(4 + (4 + 1 + 1 + 4 + 4));
+        let off = 0;
+        b.writeUInt32LE(1, off); off += 4; // unselect_count
+        b.writeUInt32LE(41392891, off); off += 4;
+        b.writeUInt8(0, off); off += 1;
+        b.writeUInt8(Location.MZONE, off); off += 1;
+        b.writeUInt32LE(1, off); off += 4;
+        b.writeUInt32LE(Position.FACEUP_ATTACK, off);
+        return b;
+      })(),
+    ];
+    const parsed = parseSelectUnselectCard(Buffer.concat(parts));
+    expect(parsed.playerid).toBe(0);
+    expect(parsed.finishable).toBe(true);
+    expect(parsed.cancelable).toBe(true);
+    expect(parsed.min).toBe(1);
+    expect(parsed.max).toBe(1);
+    expect(parsed.selectCards).toEqual([{ code: 91152256, controller: 0, location: Location.MZONE, sequence: 0, position: Position.FACEUP_ATTACK }]);
+    expect(parsed.unselectCards).toEqual([{ code: 41392891, controller: 0, location: Location.MZONE, sequence: 1, position: Position.FACEUP_ATTACK }]);
+  });
+});
+
+describe('encodeSelectUnselectCardResponse / encodeSelectUnselectCardCancel', () => {
+  it('encode une sélection : 1 puis index en int32 LE', () => {
+    const buf = encodeSelectUnselectCardResponse(2);
+    expect(buf.readInt32LE(0)).toBe(1);
+    expect(buf.readInt32LE(4)).toBe(2);
+  });
+
+  it('encode une annulation : -1 seul', () => {
+    expect(encodeSelectUnselectCardCancel().readInt32LE(0)).toBe(-1);
   });
 });
 

@@ -40,6 +40,8 @@ import {
   encodeSelectOptionResponse,
   encodeSelectPlaceResponse,
   encodeSelectPositionResponse,
+  encodeSelectUnselectCardCancel,
+  encodeSelectUnselectCardResponse,
   encodeYesNoResponse,
   parseBattleCmd,
   parseEffectYesNo,
@@ -51,6 +53,7 @@ import {
   parseSelectPlace,
   parseSelectPosition,
   parseSelectTribute,
+  parseSelectUnselectCard,
   parseYesNo,
   type ProcessResult,
   type QueriedCard,
@@ -202,6 +205,7 @@ const PROMPT_TYPE_LABELS: Partial<Record<number, string>> = {
   [MessageType.SELECT_PLACE]: 'select_place',
   [MessageType.SELECT_CHAIN]: 'chain',
   [MessageType.SELECT_TRIBUTE]: 'select_tribute',
+  [MessageType.SELECT_UNSELECT_CARD]: 'select_unselect_card',
   [MessageType.SELECT_POSITION]: 'select_position',
   [MessageType.SELECT_OPTION]: 'select_option',
   [MessageType.SELECT_YESNO]: 'yesno',
@@ -284,6 +288,23 @@ async function describePendingPrompt(state: EngineDuelState, canSeeTeam: [boolea
       const p = parseSelectTribute(prompt.raw);
       // Un tribut ne cible que ses PROPRES monstres (règle réelle) : jamais besoin de redactFaceDown ici.
       return { type: 'select_tribute', playerid: p.playerid, cancelable: p.cancelable, min: p.min, max: p.max, cards: withCard(p.cards, cards) };
+    }
+    case MessageType.SELECT_UNSELECT_CARD: {
+      const p = parseSelectUnselectCard(prompt.raw);
+      // Un coût "release" scripté (Group.SelectUnselect, ex. Crush Card
+      // Virus) ne porte lui aussi que sur les PROPRES cartes de l'activateur
+      // (Duel.GetReleaseGroup(tp,...) — jamais celles de l'adversaire) : même
+      // exemption que select_tribute ci-dessus, jamais besoin de redactFaceDown.
+      return {
+        type: 'select_unselect_card',
+        playerid: p.playerid,
+        finishable: p.finishable,
+        cancelable: p.cancelable,
+        min: p.min,
+        max: p.max,
+        select_cards: withCard(p.selectCards, cards),
+        unselect_cards: withCard(p.unselectCards, cards),
+      };
     }
     case MessageType.SELECT_POSITION: {
       const p = parseSelectPosition(prompt.raw);
@@ -726,6 +747,20 @@ duelRouter.post(
     requirePendingPrompt(state, MessageType.SELECT_TRIBUTE, 'de tribut', participant);
     // Même encodage que MSG_SELECT_CARD : les deux passent par parse_response_cards côté moteur (playerop.cpp).
     const response = body.cancel ? encodeSelectCardCancel() : encodeSelectCardResponse(body.indices ?? []);
+    await respondAndAdvance(duel, state, response);
+    broadcastSessionResourceChanged(req, duel.game_session_id.toString(), 'duels');
+    res.json({ duel: await toDuelDto(duel, req.user!.sub, session) });
+  }),
+);
+
+duelRouter.post(
+  '/:id/select-unselect-card',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const body = z.object({ participant_id: z.string(), index: z.number().int().min(0).optional(), cancel: z.boolean().default(false) }).parse(req.body);
+    const { duel, participant, state, session } = await loadActionContext(req, body.participant_id);
+    requirePendingPrompt(state, MessageType.SELECT_UNSELECT_CARD, 'de coût (release)', participant);
+    if (!body.cancel && body.index === undefined) throw new AppError(400, '`index` requis (ou `cancel: true`)', 'invalid_input');
+    const response = body.cancel ? encodeSelectUnselectCardCancel() : encodeSelectUnselectCardResponse(body.index!);
     await respondAndAdvance(duel, state, response);
     broadcastSessionResourceChanged(req, duel.game_session_id.toString(), 'duels');
     res.json({ duel: await toDuelDto(duel, req.user!.sub, session) });

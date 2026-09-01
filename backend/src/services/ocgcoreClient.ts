@@ -79,6 +79,8 @@ export const MessageType = {
   SELECT_PLACE: 18,
   SELECT_POSITION: 19,
   SELECT_TRIBUTE: 20,
+  /** Coût "release" scripté (ex. Crush Card Virus : "Tribute 1 DARK monster..."), pas une Invocation Normale — voir parseSelectUnselectCard. */
+  SELECT_UNSELECT_CARD: 26,
   NEW_TURN: 40,
   NEW_PHASE: 41,
   MOVE: 50,
@@ -735,6 +737,85 @@ export function parseSelectTribute(raw: Buffer): ParsedSelectTribute {
     cards.push({ code, controller, location, sequence, releaseParam });
   }
   return { playerid, cancelable, min, max, cards };
+}
+
+export interface ParsedSelectUnselectCard {
+  playerid: number;
+  finishable: boolean;
+  cancelable: boolean;
+  min: number;
+  max: number;
+  selectCards: SelectableCard[];
+  unselectCards: SelectableCard[];
+}
+
+/**
+ * MSG_SELECT_UNSELECT_CARD (26) : un coût "release" SCRIPTÉ (ex. Crush Card
+ * Virus, "Tribute 1 DARK monster with 1000 or less ATK") passe par
+ * `Group.SelectUnselect` côté Lua (`Duel.SelectReleaseGroupCost`), PAS par
+ * `MSG_SELECT_TRIBUTE` (réservé à l'Invocation Normale native) ni par
+ * `MSG_SELECT_CARD` — un type de message à part entière, jamais décodé avant
+ * cette investigation (confirmé en lisant `playerop.cpp`
+ * `field::process(SelectUnselectCard&)` directement). Sans ce décodage, ce
+ * prompt tombait dans `unhandled` et bloquait tout choix côté joueur — bug
+ * utilisateur réel reproduit avec Crush Card Virus en tag duel ("le choix du
+ * sacrifice bloque, je ne peux rien choisir").
+ */
+export function parseSelectUnselectCard(raw: Buffer): ParsedSelectUnselectCard {
+  let off = 1;
+  const playerid = raw.readUInt8(off);
+  off += 1;
+  const finishable = raw.readUInt8(off) === 1;
+  off += 1;
+  const cancelable = raw.readUInt8(off) === 1;
+  off += 1;
+  const min = raw.readUInt32LE(off);
+  off += 4;
+  const max = raw.readUInt32LE(off);
+  off += 4;
+  const readGroup = (): SelectableCard[] => {
+    const count = raw.readUInt32LE(off);
+    off += 4;
+    const group: SelectableCard[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const code = raw.readUInt32LE(off);
+      off += 4;
+      const controller = raw.readUInt8(off);
+      off += 1;
+      const location = raw.readUInt8(off);
+      off += 1;
+      const sequence = raw.readUInt32LE(off);
+      off += 4;
+      const position = raw.readUInt32LE(off);
+      off += 4;
+      group.push({ code, controller, location, sequence, position });
+    }
+    return group;
+  };
+  const selectCards = readGroup();
+  const unselectCards = readGroup();
+  return { playerid, finishable, cancelable, min, max, selectCards, unselectCards };
+}
+
+/**
+ * Réponse à MSG_SELECT_UNSELECT_CARD — format à PART, distinct de
+ * `encodeSelectCardResponse` (confirmé en lisant
+ * `field::process(SelectUnselectCard&)`) : deux `int32 LE`, `returns.at(0)`
+ * (1 = sélection valide, -1 = annuler/terminer) puis `returns.at(1)` = index
+ * dans la liste concaténée `selectCards ++ unselectCards`.
+ */
+export function encodeSelectUnselectCardResponse(index: number): Buffer {
+  const buf = Buffer.alloc(8);
+  buf.writeInt32LE(1, 0);
+  buf.writeInt32LE(index, 4);
+  return buf;
+}
+
+/** Annuler/terminer une sélection MSG_SELECT_UNSELECT_CARD (si `cancelable` ou `finishable`). */
+export function encodeSelectUnselectCardCancel(): Buffer {
+  const buf = Buffer.alloc(4);
+  buf.writeInt32LE(-1, 0);
+  return buf;
 }
 
 export interface ParsedSelectPosition {

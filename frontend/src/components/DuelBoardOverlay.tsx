@@ -597,6 +597,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                 onSelectCard={(indices) => void run(() => api.duelSelectCard(token, duel.id, actingParticipant.id, indices))}
                 onChainAction={(index) => void run(() => api.duelChainAction(token, duel.id, actingParticipant.id, index))}
                 onSelectTribute={(indices) => void run(() => api.duelSelectTribute(token, duel.id, actingParticipant.id, indices))}
+                onSelectUnselectCard={(index) => void run(() => api.duelSelectUnselectCard(token, duel.id, actingParticipant.id, index))}
                 onSelectPosition={(position) => void run(() => api.duelSelectPosition(token, duel.id, actingParticipant.id, position))}
                 onSelectOption={(index) => void run(() => api.duelSelectOption(token, duel.id, actingParticipant.id, index))}
                 onYesNo={(yes) => void run(() => api.duelYesNo(token, duel.id, actingParticipant.id, yes))}
@@ -937,6 +938,7 @@ function PromptPanel({
   onSelectCard,
   onChainAction,
   onSelectTribute,
+  onSelectUnselectCard,
   onSelectPosition,
   onSelectOption,
   onYesNo,
@@ -956,6 +958,7 @@ function PromptPanel({
   onSelectCard: (indices: number[] | null) => void;
   onChainAction: (index: number) => void;
   onSelectTribute: (indices: number[] | null) => void;
+  onSelectUnselectCard: (index: number | null) => void;
   onSelectPosition: (position: 0x1 | 0x2 | 0x4 | 0x8) => void;
   onSelectOption: (index: number) => void;
   onYesNo: (yes: boolean) => void;
@@ -1175,6 +1178,69 @@ function PromptPanel({
             </button>
           )}
         </div>
+      </div>
+    );
+  }
+
+  if (prompt.type === 'select_unselect_card') {
+    // Un coût "release" scripté (ex. Crush Card Virus) : contrairement à
+    // select_card/select_tribute, chaque clic envoie IMMÉDIATEMENT un seul
+    // index (pas de sélection multiple à valider ensuite) — le moteur
+    // renvoie un nouveau prompt select_unselect_card à chaque étape tant
+    // que le coût n'est pas complet, la carte cliquée passant alors de
+    // "disponible" à "déjà choisi" (ou l'inverse pour la désélectionner).
+    const renderRow = (opt: (typeof prompt.select_cards)[number], index: number, chosen: boolean) => (
+      <div
+        key={`${chosen ? 'u' : 's'}${index}`}
+        className={`flex w-full items-center gap-2 rounded border p-1.5 text-left ${chosen ? 'border-accent-400 bg-accent-500/10' : 'border-arena-600'}`}
+      >
+        <button
+          type="button"
+          onClick={() => opt.card && onCardClick(opt.card)}
+          disabled={!opt.card}
+          title="Aperçu"
+          className="shrink-0 overflow-hidden rounded disabled:cursor-default"
+        >
+          {opt.card ? (
+            <img src={opt.card.card_images[0]?.image_url_small} alt={opt.card.name} className="h-10 w-7 object-cover" />
+          ) : (
+            <div className="h-10 w-7">
+              <CardBack />
+            </div>
+          )}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => onSelectUnselectCard(index)}
+          className="min-w-0 flex-1 truncate text-left text-neutral-200 hover:text-accent-400"
+        >
+          {opt.card?.name ?? `Carte #${opt.code}`}
+        </button>
+      </div>
+    );
+    return (
+      <div className="space-y-2">
+        <p className="text-neutral-400">
+          Choisissez {prompt.min === prompt.max ? prompt.min : `${prompt.min} à ${prompt.max}`} coût(s) — cliquez pour ajouter/retirer
+        </p>
+        {prompt.unselect_cards.length > 0 && (
+          <div>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Déjà choisi (cliquer pour retirer)</p>
+            <div className="space-y-1">{prompt.unselect_cards.map((opt, i) => renderRow(opt, prompt.select_cards.length + i, true))}</div>
+          </div>
+        )}
+        {prompt.select_cards.length > 0 && (
+          <div>
+            <p className="mb-1 text-[10px] uppercase tracking-wide text-neutral-500">Disponible</p>
+            <div className="space-y-1">{prompt.select_cards.map((opt, i) => renderRow(opt, i, false))}</div>
+          </div>
+        )}
+        {(prompt.finishable || prompt.cancelable) && (
+          <button type="button" disabled={busy} onClick={() => onSelectUnselectCard(null)} className={btnCls}>
+            {prompt.finishable ? 'Terminer' : 'Annuler'}
+          </button>
+        )}
       </div>
     );
   }
