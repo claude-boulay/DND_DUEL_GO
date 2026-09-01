@@ -815,18 +815,60 @@ function ParticipantBoard({
 }) {
   // spell_trap_zones (8 emplacements confirmés en direct contre le vrai
   // moteur, voir CLAUDE.md §7) : 0-4 = Magie/Piège normales, 5 = Zone
-  // Terrain, 6-7 = Zones Pendule. La Zone Terrain est isolée à l'extrémité
-  // gauche de la ligne (droite si `mirrored`, terrain adverse reflété),
-  // les zones Pendule restent à l'autre extrémité.
+  // Terrain, 6-7 = Zones Pendule. monster_zones : 7 emplacements, 0-4
+  // principales, 5-6 = Zones Monstre Extra.
+  //
+  // Layout demandé (retour utilisateur direct, confirmé via AskUserQuestion) :
+  // la Zone Terrain rejoint la rangée du HAUT (Monstres), à droite, séparée
+  // par un espace visuel des vraies zones Monstre — la rangée du bas ne
+  // porte plus que Magie/Piège + Pendule. Dans les deux rangées, les 5
+  // zones "cœur" (Monstre principales / Magie-Piège normales) restent
+  // groupées à part des zones "bonus" (Extra Monstre / Pendule), séparées
+  // par un espace visuel plutôt que mélangées à la suite sans distinction.
+  //
+  // Reflet (terrain adverse, `mirrored`) : chaque sous-groupe est inversé
+  // EN INTERNE (même technique déjà établie pour les autres rangées de ce
+  // plateau) et l'ORDRE des sous-groupes lui-même s'inverse aussi — la Zone
+  // Terrain se retrouve donc à gauche pour l'adversaire, pas à droite,
+  // cohérent avec "inversée selon la perspective".
+  const orderReverse = <T,>(arr: T[]): T[] => (mirrored ? [...arr].reverse() : arr);
+
   const stZones = fieldTeam?.spell_trap_zones ?? [];
-  const stRowBase = [
-    { slot: stZones[5] ?? null, sequence: 5, label: 'Terrain' as string | undefined },
-    ...stZones.slice(0, 5).map((slot, i) => ({ slot, sequence: i, label: undefined as string | undefined })),
-    ...stZones.slice(6, 8).map((slot, i) => ({ slot, sequence: 6 + i, label: undefined as string | undefined })),
-  ];
-  const mzRowBase = (fieldTeam?.monster_zones ?? []).map((slot, i) => ({ slot, sequence: i }));
-  const stRow = mirrored ? [...stRowBase].reverse() : stRowBase;
-  const mzRow = mirrored ? [...mzRowBase].reverse() : mzRowBase;
+  const mzZones = fieldTeam?.monster_zones ?? [];
+
+  const fieldZoneEntry = { slot: stZones[5] ?? null, sequence: 5, label: 'Terrain' as string | undefined };
+  const mzMain = orderReverse(mzZones.slice(0, 5).map((slot, i) => ({ slot, sequence: i })));
+  const mzExtra = orderReverse(mzZones.slice(5, 7).map((slot, i) => ({ slot, sequence: 5 + i })));
+  const stMain = orderReverse(stZones.slice(0, 5).map((slot, i) => ({ slot, sequence: i, label: undefined as string | undefined })));
+  const stPendulum = orderReverse(stZones.slice(6, 8).map((slot, i) => ({ slot, sequence: 6 + i, label: undefined as string | undefined })));
+
+  const mzGroups = mirrored
+    ? [
+        <ZoneSlot key="terrain" slot={fieldZoneEntry.slot} label={fieldZoneEntry.label} interaction={resolveInteraction(EngineLocation.SZONE, fieldZoneEntry.sequence, teamIndex, fieldZoneEntry.slot)} />,
+        <div key="extra" className="flex gap-1">
+          {mzExtra.map(({ slot, sequence }) => (
+            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
+          ))}
+        </div>,
+        <div key="main" className="flex gap-1">
+          {mzMain.map(({ slot, sequence }) => (
+            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
+          ))}
+        </div>,
+      ]
+    : [
+        <div key="main" className="flex gap-1">
+          {mzMain.map(({ slot, sequence }) => (
+            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
+          ))}
+        </div>,
+        <div key="extra" className="flex gap-1">
+          {mzExtra.map(({ slot, sequence }) => (
+            <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
+          ))}
+        </div>,
+        <ZoneSlot key="terrain" slot={fieldZoneEntry.slot} label={fieldZoneEntry.label} interaction={resolveInteraction(EngineLocation.SZONE, fieldZoneEntry.sequence, teamIndex, fieldZoneEntry.slot)} />,
+      ];
 
   return (
     <div className="rounded border border-arena-700 bg-arena-900/40 p-2">
@@ -854,17 +896,20 @@ function ParticipantBoard({
         <p className="text-xs text-neutral-600">Terrain indisponible.</p>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-1">
-          {/* Monstres au-dessus, Magie/Piège en dessous (avec la Zone Terrain à l'extrémité). */}
+          {/* Monstres au-dessus (+ Zone Terrain, séparée) ; Magie/Piège + Pendule en dessous. */}
           <div className="flex shrink-0 flex-col gap-1">
-            <div className="flex gap-1">
-              {mzRow.map(({ slot, sequence }) => (
-                <ZoneSlot key={`mz${sequence}`} slot={slot} interaction={resolveInteraction(EngineLocation.MZONE, sequence, teamIndex, slot)} />
-              ))}
-            </div>
-            <div className="flex gap-1">
-              {stRow.map(({ slot, sequence, label }) => (
-                <ZoneSlot key={`st${sequence}`} slot={slot} label={label} interaction={resolveInteraction(EngineLocation.SZONE, sequence, teamIndex, slot)} />
-              ))}
+            <div className="flex items-center gap-3">{mzGroups}</div>
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1">
+                {stMain.map(({ slot, sequence, label }) => (
+                  <ZoneSlot key={`st${sequence}`} slot={slot} label={label} interaction={resolveInteraction(EngineLocation.SZONE, sequence, teamIndex, slot)} />
+                ))}
+              </div>
+              <div className="flex gap-1">
+                {stPendulum.map(({ slot, sequence, label }) => (
+                  <ZoneSlot key={`st${sequence}`} slot={slot} label={label} interaction={resolveInteraction(EngineLocation.SZONE, sequence, teamIndex, slot)} />
+                ))}
+              </div>
             </div>
           </div>
           <div className="flex shrink-0 gap-1 border-l border-arena-700 pl-3">
