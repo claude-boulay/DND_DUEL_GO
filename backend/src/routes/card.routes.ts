@@ -112,6 +112,12 @@ const listCardsSchema = z.object({
   // besoin de précision doit passer par set_id (ou au moins set_name).
   set_code: z.string().trim().optional(),
   search: z.string().trim().max(100).optional(),
+  // Résolution directe par _id Mongo, plusieurs à la fois (ex. les articles
+  // "carte" d'un marchand, pour afficher leur vrai nom/traductions au lieu du
+  // simple instantané `MerchantItem.name` — voir MerchantShopOverlay.tsx).
+  // Les id invalides sont simplement ignorés plutôt que de faire échouer
+  // toute la requête.
+  ids: csvParam,
   category: csvParam,
   monster_kind: csvParam,
   pendulum: z.enum(['true', 'false']).optional(),
@@ -138,6 +144,7 @@ cardRouter.get(
       set_name,
       set_code,
       search,
+      ids,
       category,
       monster_kind,
       pendulum,
@@ -166,6 +173,10 @@ cardRouter.get(
       filter['card_sets.set_name'] = cardSet.set_name;
     }
     if (search) filter.name = { $regex: escapeRegex(search), $options: 'i' };
+    if (ids && ids.length > 0) {
+      const validIds = ids.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
+      filter._id = { $in: validIds };
+    }
 
     Object.assign(
       filter,

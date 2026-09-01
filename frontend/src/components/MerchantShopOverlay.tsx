@@ -43,6 +43,32 @@ export function MerchantShopOverlay({
   const [showAddItem, setShowAddItem] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshingImages, setRefreshingImages] = useState(false);
+  // MerchantItem.name n'est qu'un instantané figé à l'ajout (voir CLAUDE.md)
+  // — jamais mis à jour par une réimportation ultérieure du set d'origine.
+  // Résout ici le VRAI nom (traduit si dispo) de chaque article "carte" en
+  // un seul appel groupé, réutilisé par la grille de tuiles ET le panneau de
+  // détail plutôt que de refaire une requête par tuile affichée.
+  const [cardById, setCardById] = useState<Map<string, ApiCard>>(new Map());
+
+  useEffect(() => {
+    const cardIds = [...new Set(merchant.items.filter((i) => i.item_type === 'card' && i.card_id).map((i) => i.card_id!))];
+    if (cardIds.length === 0) {
+      setCardById(new Map());
+      return;
+    }
+    let cancelled = false;
+    api
+      .listCards(token, { ids: cardIds, limit: cardIds.length })
+      .then(({ cards }) => {
+        if (!cancelled) setCardById(new Map(cards.map((c) => [c.id, c])));
+      })
+      .catch(() => {
+        // Repli silencieux : les tuiles/le détail gardent le nom-instantané (comportement actuel), pas une vraie erreur pour l'utilisateur.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, merchant.items]);
 
   // Reste calé sur un article encore présent si la liste change (achat qui
   // épuise le stock, suppression par le MJ...) — jamais un id fantôme.
@@ -123,7 +149,13 @@ export function MerchantShopOverlay({
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-3">
               {merchant.items.map((item) => (
-                <ItemTile key={item.id} item={item} selected={item.id === selectedItemId} onClick={() => setSelectedItemId(item.id)} />
+                <ItemTile
+                  key={item.id}
+                  item={item}
+                  liveCard={item.card_id ? cardById.get(item.card_id) : undefined}
+                  selected={item.id === selectedItemId}
+                  onClick={() => setSelectedItemId(item.id)}
+                />
               ))}
             </div>
           )}
@@ -157,6 +189,7 @@ export function MerchantShopOverlay({
               token={token}
               merchant={merchant}
               item={selectedItem}
+              liveCard={selectedItem.card_id ? cardById.get(selectedItem.card_id) : undefined}
               currencyName={currencyName}
               isGm={isGm}
               buyableCharacters={buyableCharacters}
@@ -203,9 +236,23 @@ function HoverZoomImage({ src, alt, className }: { src: string; alt: string; cla
   );
 }
 
-function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected: boolean; onClick: () => void }) {
-  const { t } = useTranslation();
+function ItemTile({
+  item,
+  liveCard,
+  selected,
+  onClick,
+}: {
+  item: ApiMerchantItem;
+  // Carte réelle résolue via card_id (voir MerchantShopOverlay) — donne le
+  // vrai nom (traduit si dispo) au lieu de l'instantané figé MerchantItem.name.
+  // Absente tant que la résolution n'a pas fini (ou pour un article booster).
+  liveCard: ApiCard | undefined;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  const { t, i18n } = useTranslation();
   const soldOut = item.stock === 0;
+  const displayName = liveCard ? displayCardName(liveCard, i18n.language) : item.name;
   return (
     <button
       type="button"
@@ -220,14 +267,14 @@ function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected
           // lu en grand) — demande utilisateur : l'illustration d'un
           // booster est déjà assez visible telle quelle, pas de zoom dessus.
           item.item_type === 'card' ? (
-            <HoverZoomImage src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+            <HoverZoomImage src={item.image_url} alt={displayName} className="h-full w-full object-cover" />
           ) : (
-            <img src={item.image_url} alt={item.name} className="h-full w-full object-cover" />
+            <img src={item.image_url} alt={displayName} className="h-full w-full object-cover" />
           )
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-arena-800 via-arena-900 to-black p-2 text-center">
             <span className="text-[9px] uppercase tracking-widest text-accent-500">{item.set_code}</span>
-            <span className="font-display text-xs leading-tight text-neutral-100">{item.name}</span>
+            <span className="font-display text-xs leading-tight text-neutral-100">{displayName}</span>
           </div>
         )}
         {item.haggle_dc !== null && (
@@ -247,7 +294,7 @@ function ItemTile({ item, selected, onClick }: { item: ApiMerchantItem; selected
         )}
       </div>
       <div className="shrink-0 bg-arena-900/95 px-1.5 py-1 text-[10px]">
-        <p className="truncate text-neutral-200">{item.name}</p>
+        <p className="truncate text-neutral-200">{displayName}</p>
         <div className="flex items-center justify-between text-neutral-500">
           <span className="font-semibold text-accent-400">{item.price}</span>
           <span>{item.stock === null ? '∞' : item.stock}</span>
@@ -261,6 +308,7 @@ function ItemDetailPanel({
   token,
   merchant,
   item,
+  liveCard,
   currencyName,
   isGm,
   buyableCharacters,
@@ -271,6 +319,8 @@ function ItemDetailPanel({
   token: string;
   merchant: ApiMerchant;
   item: ApiMerchantItem;
+  // Voir ItemTile — même résolution, absente pour un article booster.
+  liveCard: ApiCard | undefined;
   currencyName: string;
   isGm: boolean;
   buyableCharacters: ApiCharacter[];
@@ -278,7 +328,8 @@ function ItemDetailPanel({
   onCharacterUpdate: (characterId: string, patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[] }) => void;
   onDeleted: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const displayName = liveCard ? displayCardName(liveCard, i18n.language) : item.name;
   const [price, setPrice] = useState(item.price);
   const [stock, setStock] = useState(item.stock === null ? '' : String(item.stock));
   const [negotiable, setNegotiable] = useState(item.haggle_dc !== null);
@@ -334,14 +385,14 @@ function ItemDetailPanel({
   return (
     <div className="flex flex-1 flex-col text-sm">
       {item.image_url ? (
-        <img src={item.image_url} alt={item.name} className="mb-3 w-full rounded-lg shadow-lg" />
+        <img src={item.image_url} alt={displayName} className="mb-3 w-full rounded-lg shadow-lg" />
       ) : (
         <div className="mb-3 flex aspect-[3/4] flex-col justify-between rounded-lg border-2 border-accent-500 bg-gradient-to-br from-arena-800 via-arena-900 to-black p-4">
           <p className="text-xs uppercase tracking-widest text-accent-500">{item.set_code}</p>
-          <p className="font-display text-lg leading-tight text-neutral-100">{item.name}</p>
+          <p className="font-display text-lg leading-tight text-neutral-100">{displayName}</p>
         </div>
       )}
-      <h3 className="font-display text-lg text-accent-400">{item.name}</h3>
+      <h3 className="font-display text-lg text-accent-400">{displayName}</h3>
       <p className="mb-1 text-xs text-neutral-500">{item.item_type === 'card' ? t('merchantPicker.type_card') : t('merchantPicker.type_booster')}</p>
 
       {item.item_type === 'booster' && item.set_code && (

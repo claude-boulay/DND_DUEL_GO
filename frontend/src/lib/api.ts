@@ -605,11 +605,11 @@ export class ApiError extends Error {
   }
 }
 
-function buildQuery(params?: Record<string, string | number | boolean | undefined>): string {
+function buildQuery(params?: Record<string, string | number | boolean | string[] | undefined>): string {
   if (!params) return '';
-  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '');
+  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0));
   if (entries.length === 0) return '';
-  return `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString()}`;
+  return `?${new URLSearchParams(entries.map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : String(v)])).toString()}`;
 }
 
 /** Requêtes relatives : le proxy Vite (dev) ou Nginx (prod) route vers le backend. */
@@ -781,6 +781,11 @@ export const api = {
       // set trouvé avec ce code) : à éviter si set_name est disponible.
       set_code?: string;
       search?: string;
+      // Résolution directe par _id Mongo, plusieurs à la fois — voir
+      // card.routes.ts. Utilisé pour retrouver le nom/les traductions réels
+      // d'articles marchand "carte" (MerchantItem.name n'est qu'un
+      // instantané figé à l'ajout, voir CLAUDE.md).
+      ids?: string[];
       // Filtre directement le catalogue côté serveur (mêmes dimensions que
       // CollectionFilters) : évite de filtrer côté client une page qui ne
       // représente qu'une fraction du catalogue complet.
