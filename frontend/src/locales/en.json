@@ -32,5 +32,117 @@
     "invalid_verification_code": "Invalid or expired code",
     "invalid_reset_code": "Invalid or expired code",
     "invalid_credentials": "Invalid credentials"
+  },
+  "cardFilters": {
+    "monsterKind": {
+      "normal": "Normal",
+      "effect": "Effect",
+      "ritual": "Ritual",
+      "fusion": "Fusion",
+      "synchro": "Synchro",
+      "xyz": "Xyz",
+      "link": "Link"
+    },
+    "spellType": {
+      "normal": "Normal",
+      "continuous": "Continuous",
+      "quickPlay": "Quick-Play",
+      "equip": "Equip",
+      "field": "Field",
+      "ritual": "Ritual"
+    },
+    "trapType": {
+      "normal": "Normal",
+      "continuous": "Continuous",
+      "counter": "Counter"
+    },
+    "category": {
+      "monster": "Monster",
+      "spell": "Spell",
+      "trap": "Trap"
+    },
+    "ability": {
+      "flip": "Flip",
+      "tuner": "Tuner",
+      "union": "Union",
+      "toon": "Toon",
+      "gemini": "Gemini",
+      "spirit": "Spirit"
+    },
+    "sort": {
+      "type": "Type (monster → spell → trap)",
+      "name": "Name (A → Z)",
+      "releaseDate": "Release date",
+      "acquiredOrder": "Acquisition order",
+      "atk": "ATK",
+      "level": "Level/Rank"
+    },
+    "pendulumOnly": "Pendulum only",
+    "modal": {
+      "title": "Filter cards",
+      "category": "Category",
+      "monsterKind": "Monster type",
+      "ability": "Ability (monster)",
+      "atk": "ATK",
+      "level": "Level / Rank",
+      "min": "min",
+      "max": "max",
+      "spellType": "Spell type",
+      "trapType": "Trap type",
+      "attribute": "Attribute",
+      "race": "Race (monster)",
+      "reset": "Reset",
+      "apply": "Apply"
+    }
+  },
+  "cardLabels": {
+    "attribute": {
+      "dark": "DARK",
+      "light": "LIGHT",
+      "earth": "EARTH",
+      "water": "WATER",
+      "fire": "FIRE",
+      "wind": "WIND",
+      "divine": "DIVINE"
+    },
+    "race": {
+      "aqua": "Aqua",
+      "beast": "Beast",
+      "beast_warrior": "Beast-Warrior",
+      "cyberse": "Cyberse",
+      "dinosaur": "Dinosaur",
+      "divine_beast": "Divine-Beast",
+      "dragon": "Dragon",
+      "fairy": "Fairy",
+      "fiend": "Fiend",
+      "fish": "Fish",
+      "illusion": "Illusion",
+      "insect": "Insect",
+      "machine": "Machine",
+      "plant": "Plant",
+      "psychic": "Psychic",
+      "pyro": "Pyro",
+      "reptile": "Reptile",
+      "rock": "Rock",
+      "sea_serpent": "Sea Serpent",
+      "spellcaster": "Spellcaster",
+      "thunder": "Thunder",
+      "warrior": "Warrior",
+      "winged_beast": "Winged Beast",
+      "wyrm": "Wyrm",
+      "zombie": "Zombie"
+    },
+    "duelPhase": {
+      "draw": "Draw Phase",
+      "standby": "Standby Phase",
+      "main1": "Main Phase 1",
+      "battle_start": "Battle Phase (start)",
+      "battle_step": "Battle Step",
+      "damage": "Damage Step",
+      "damage_cal": "Damage Calculation",
+      "battle": "Battle Phase",
+      "main2": "Main Phase 2",
+      "end": "End Phase"
+    }
   }
 }

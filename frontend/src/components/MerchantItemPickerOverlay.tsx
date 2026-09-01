@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { api, ApiError, type ApiCard, type ApiCardSet, type ApiMerchant, type ApiMerchantItemType } from '../lib/api';
+import { translateAttribute, translateRace } from '../lib/cardLabels';
 import {
   EMPTY_FILTERS,
   MERCHANT_CARD_SORT_OPTIONS,
@@ -22,6 +24,7 @@ interface MerchantItemPickerOverlayProps {
 type BoosterSortKey = 'name' | 'release_date';
 
 export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }: MerchantItemPickerOverlayProps) {
+  const { t } = useTranslation();
   const [itemType, setItemType] = useState<ApiMerchantItemType>('card');
   const [price, setPrice] = useState(100);
   const [stock, setStock] = useState('');
@@ -274,7 +277,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                 >
                   {MERCHANT_CARD_SORT_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
-                      {opt.label}
+                      {t(opt.label)}
                     </option>
                   ))}
                 </select>
@@ -438,6 +441,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
 }
 
 function CardSelectionPreview({ card }: { card: ApiCard | null }) {
+  const { t } = useTranslation();
   if (!card) return <p className="text-sm text-neutral-500">Cliquez sur une carte pour la sélectionner.</p>;
   const image = card.card_images[0];
   return (
@@ -446,8 +450,8 @@ function CardSelectionPreview({ card }: { card: ApiCard | null }) {
       <h3 className="mb-1 font-display text-lg text-accent-400">{card.name}</h3>
       <p className="mb-2 text-neutral-400">
         {card.type}
-        {card.race ? ` · ${card.race}` : ''}
-        {card.attribute ? ` · ${card.attribute}` : ''}
+        {card.race ? ` · ${translateRace(card.race, t)}` : ''}
+        {card.attribute ? ` · ${translateAttribute(card.attribute, t)}` : ''}
       </p>
       {(card.atk !== null || card.def !== null) && (
         <p className="text-neutral-300">

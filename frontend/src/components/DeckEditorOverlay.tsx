@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
+import { translateAttribute, translateRace } from '../lib/cardLabels';
 import {
   api,
   ApiError,
@@ -42,6 +44,7 @@ interface BrowsableEntry {
 }
 
 export function DeckEditorOverlay({ token, character, deckId, onClose, onCharacterUpdate }: DeckEditorOverlayProps) {
+  const { t } = useTranslation();
   const [deck, setDeck] = useState<ApiDeckDetail | null>(null);
   const [loadingDeck, setLoadingDeck] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -269,7 +272,7 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
                 >
                   {DECK_SORT_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
-                      {opt.label}
+                      {t(opt.label)}
                     </option>
                   ))}
                 </select>
@@ -321,7 +324,7 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
-                  {opt.label}
+                  {t(opt.label)}
                 </option>
               ))}
             </select>
@@ -403,6 +406,7 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
 }
 
 function CardPreview({ card }: { card: ApiCard | null }) {
+  const { t } = useTranslation();
   if (!card) {
     return <p className="text-sm text-neutral-500">Cliquez sur une carte pour l'afficher ici.</p>;
   }
@@ -412,9 +416,12 @@ function CardPreview({ card }: { card: ApiCard | null }) {
       {image && <img src={image.image_url} alt={card.name} className="mb-3 w-full rounded-lg shadow-lg" />}
       <h3 className="mb-1 font-display text-lg text-accent-400">{card.name}</h3>
       <p className="mb-2 text-neutral-400">
+        {/* card.type reste en anglais brut pour l'instant (combinatoire trop
+            large pour ce lot — voir le plan d'internationalisation) ; race et
+            attribut, eux, ont une énumération bornée et sont traduits. */}
         {card.type}
-        {card.race ? ` · ${card.race}` : ''}
-        {card.attribute ? ` · ${card.attribute}` : ''}
+        {card.race ? ` · ${translateRace(card.race, t)}` : ''}
+        {card.attribute ? ` · ${translateAttribute(card.attribute, t)}` : ''}
       </p>
       {(card.atk !== null || card.def !== null || card.level_rank !== null) && (
         <p className="mb-2 text-neutral-300">

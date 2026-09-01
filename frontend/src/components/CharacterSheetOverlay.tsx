@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import { api, ApiError, type ApiCharacter, type ApiCollectionEntry, type ApiOpenedCard, type ApiSealedBooster } from '../lib/api';
 import { STAT_LABELS, STAT_NAMES, abilityModifier, effectiveStat } from '../lib/pointBuy';
+import { translateAttribute, translateRace } from '../lib/cardLabels';
 import {
   EMPTY_FILTERS,
   SORT_OPTIONS,
@@ -591,6 +593,7 @@ function BoostersPanel({
  * deck — ici on parcourt, on ne construit pas.
  */
 function CollectionTab({ token, character }: { token: string; character: ApiCharacter }) {
+  const { t } = useTranslation();
   const [collection, setCollection] = useState<ApiCollectionEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -648,8 +651,8 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
             <h3 className="mb-1 font-display text-lg text-accent-400">{previewCard.name}</h3>
             <p className="mb-2 text-neutral-400">
               {previewCard.type}
-              {previewCard.race ? ` · ${previewCard.race}` : ''}
-              {previewCard.attribute ? ` · ${previewCard.attribute}` : ''}
+              {previewCard.race ? ` · ${translateRace(previewCard.race, t)}` : ''}
+              {previewCard.attribute ? ` · ${translateAttribute(previewCard.attribute, t)}` : ''}
             </p>
             {(previewCard.atk !== null || previewCard.def !== null || previewCard.level_rank !== null) && (
               <p className="mb-2 text-neutral-300">
@@ -682,7 +685,7 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
           >
             {SORT_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label}
+                {t(opt.label)}
               </option>
             ))}
           </select>

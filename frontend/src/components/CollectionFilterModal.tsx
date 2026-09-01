@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   ABILITY_OPTIONS,
   ATTRIBUTE_OPTIONS,
@@ -10,6 +11,7 @@ import {
   type CardCategory,
   type CollectionFilters,
 } from '../lib/cardFilters';
+import { translateAttribute, translateRace } from '../lib/cardLabels';
 
 interface CollectionFilterModalProps {
   filters: CollectionFilters;
@@ -42,6 +44,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 }
 
 export function CollectionFilterModal({ filters, onChange, onClose, availableRaces }: CollectionFilterModalProps) {
+  const { t } = useTranslation();
   const set = (patch: Partial<CollectionFilters>) => onChange({ ...filters, ...patch });
 
   return (
@@ -51,40 +54,40 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
         className="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-5 text-sm text-neutral-100 shadow-xl"
       >
         <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-display text-lg text-accent-400">Filtrer les cartes</h3>
+          <h3 className="font-display text-lg text-accent-400">{t('cardFilters.modal.title')}</h3>
           <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
             ✕
           </button>
         </div>
 
-        <FilterSection title="Catégorie">
+        <FilterSection title={t('cardFilters.modal.category')}>
           {CATEGORY_OPTIONS.map((opt) => (
             <FilterChip
               key={opt.value}
-              label={opt.label}
+              label={t(opt.label)}
               active={filters.categories.includes(opt.value)}
               onClick={() => set({ categories: toggleInArray<CardCategory>(filters.categories, opt.value) })}
             />
           ))}
         </FilterSection>
 
-        <FilterSection title="Type de monstre">
+        <FilterSection title={t('cardFilters.modal.monsterKind')}>
           {MONSTER_KIND_OPTIONS.map((opt) => (
             <FilterChip
               key={opt.value}
-              label={opt.label}
+              label={t(opt.label)}
               active={filters.monsterKinds.includes(opt.value)}
               onClick={() => set({ monsterKinds: toggleInArray(filters.monsterKinds, opt.value) })}
             />
           ))}
-          <FilterChip label="Pendule uniquement" active={filters.pendulumOnly} onClick={() => set({ pendulumOnly: !filters.pendulumOnly })} />
+          <FilterChip label={t('cardFilters.pendulumOnly')} active={filters.pendulumOnly} onClick={() => set({ pendulumOnly: !filters.pendulumOnly })} />
         </FilterSection>
 
-        <FilterSection title="Capacité (monstre)">
+        <FilterSection title={t('cardFilters.modal.ability')}>
           {ABILITY_OPTIONS.map((opt) => (
             <FilterChip
               key={opt.value}
-              label={opt.label}
+              label={t(opt.label)}
               active={filters.abilities.includes(opt.value)}
               onClick={() => set({ abilities: toggleInArray(filters.abilities, opt.value) })}
             />
@@ -93,12 +96,12 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
 
         <div className="mb-4 flex gap-4">
           <div className="flex-1">
-            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">ATK</h4>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('cardFilters.modal.atk')}</h4>
             <div className="flex items-center gap-1.5">
               <input
                 type="number"
                 min={0}
-                placeholder="min"
+                placeholder={t('cardFilters.modal.min')}
                 value={filters.atkMin ?? ''}
                 onChange={(e) => set({ atkMin: e.target.value === '' ? null : Number(e.target.value) })}
                 className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -107,7 +110,7 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
               <input
                 type="number"
                 min={0}
-                placeholder="max"
+                placeholder={t('cardFilters.modal.max')}
                 value={filters.atkMax ?? ''}
                 onChange={(e) => set({ atkMax: e.target.value === '' ? null : Number(e.target.value) })}
                 className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -115,12 +118,12 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
             </div>
           </div>
           <div className="flex-1">
-            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">Niveau / Rang</h4>
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('cardFilters.modal.level')}</h4>
             <div className="flex items-center gap-1.5">
               <input
                 type="number"
                 min={0}
-                placeholder="min"
+                placeholder={t('cardFilters.modal.min')}
                 value={filters.levelMin ?? ''}
                 onChange={(e) => set({ levelMin: e.target.value === '' ? null : Number(e.target.value) })}
                 className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -129,7 +132,7 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
               <input
                 type="number"
                 min={0}
-                placeholder="max"
+                placeholder={t('cardFilters.modal.max')}
                 value={filters.levelMax ?? ''}
                 onChange={(e) => set({ levelMax: e.target.value === '' ? null : Number(e.target.value) })}
                 className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -138,33 +141,33 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
           </div>
         </div>
 
-        <FilterSection title="Type de magie">
+        <FilterSection title={t('cardFilters.modal.spellType')}>
           {SPELL_RACE_OPTIONS.map((opt) => (
             <FilterChip
               key={opt.value}
-              label={opt.label}
+              label={t(opt.label)}
               active={filters.spellTypes.includes(opt.value)}
               onClick={() => set({ spellTypes: toggleInArray(filters.spellTypes, opt.value) })}
             />
           ))}
         </FilterSection>
 
-        <FilterSection title="Type de piège">
+        <FilterSection title={t('cardFilters.modal.trapType')}>
           {TRAP_RACE_OPTIONS.map((opt) => (
             <FilterChip
               key={opt.value}
-              label={opt.label}
+              label={t(opt.label)}
               active={filters.trapTypes.includes(opt.value)}
               onClick={() => set({ trapTypes: toggleInArray(filters.trapTypes, opt.value) })}
             />
           ))}
         </FilterSection>
 
-        <FilterSection title="Attribut">
+        <FilterSection title={t('cardFilters.modal.attribute')}>
           {ATTRIBUTE_OPTIONS.map((attr) => (
             <FilterChip
               key={attr}
-              label={attr}
+              label={translateAttribute(attr, t)}
               active={filters.attributes.includes(attr)}
               onClick={() => set({ attributes: toggleInArray(filters.attributes, attr) })}
             />
@@ -172,11 +175,11 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
         </FilterSection>
 
         {availableRaces.length > 0 && (
-          <FilterSection title="Race (monstre)">
+          <FilterSection title={t('cardFilters.modal.race')}>
             {availableRaces.map((race) => (
               <FilterChip
                 key={race}
-                label={race}
+                label={translateRace(race, t)}
                 active={filters.races.includes(race)}
                 onClick={() => set({ races: toggleInArray(filters.races, race) })}
               />
@@ -190,14 +193,14 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
             onClick={() => onChange(EMPTY_FILTERS)}
             className="rounded-md border border-arena-600 px-3 py-1.5 text-neutral-300 transition hover:border-red-400 hover:text-red-400"
           >
-            Réinitialiser
+            {t('cardFilters.modal.reset')}
           </button>
           <button
             type="button"
             onClick={onClose}
             className="rounded-md bg-accent-500 px-4 py-1.5 font-semibold text-arena-950 transition hover:bg-accent-400"
           >
-            Appliquer
+            {t('cardFilters.modal.apply')}
           </button>
         </div>
       </div>

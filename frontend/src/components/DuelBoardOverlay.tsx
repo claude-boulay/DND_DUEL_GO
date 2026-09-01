@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import cardBackImage from '../assets/card-back.jpg';
 import { socket } from '../lib/socket';
+import { translateDuelPhase } from '../lib/cardLabels';
 import {
   api,
   ApiError,
@@ -147,6 +149,7 @@ interface ZoneInteraction {
 
 /** Panneau plein écran : duel réel piloté par le moteur ocgcore (EDOPro), voir CLAUDE.md §7. */
 export function DuelBoardOverlay({ token, session, duel, characters, currentUserId, onUpdated, onClose }: DuelBoardOverlayProps) {
+  const { t } = useTranslation();
   const [field, setField] = useState<ApiDuelField | null>(null);
   // Retour visuel demandé par les joueurs (playtest) : une brève animation
   // quand une zone Monstre/Magie-Piège vient d'accueillir une carte
@@ -523,7 +526,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
         <div className="flex flex-wrap items-center gap-3 text-xs">
           <span className="text-neutral-400">
             {duel.status === 'active'
-              ? <>Tour {duel.turn_number ?? '?'} · Phase <span className="text-accent-400">{duel.phase ?? '?'}</span></>
+              ? <>Tour {duel.turn_number ?? '?'} · Phase <span className="text-accent-400">{duel.phase ? translateDuelPhase(duel.phase, t) : '?'}</span></>
               : duel.status === 'lost'
                 ? <span className="text-red-400">Process moteur perdu (redémarrage serveur) — non reprenable</span>
                 : <span className="text-emerald-400">Duel terminé{duel.winner_team !== null ? ` — ${duel.teams[duel.winner_team]?.name} gagne` : ''}</span>}

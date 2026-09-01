@@ -17,53 +17,60 @@ export function isPendulum(card: ApiCard): boolean {
   return card.frame_type.endsWith('_pendulum');
 }
 
+// `label` : clé de traduction i18next (voir locales/{fr,en}.json,
+// namespace `cardFilters.*`), pas du texte affichable directement — les
+// composants appellent `t(opt.label)` au rendu. `value`, lui, reste
+// TOUJOURS la valeur anglaise brute (convention YGOPRODeck/moteur de duel),
+// jamais traduit : c'est une donnée fonctionnelle (filtre serveur), pas de
+// l'affichage — voir CLAUDE.md, plan d'internationalisation §6.
 export const MONSTER_KIND_OPTIONS = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'effect', label: 'Effet' },
-  { value: 'ritual', label: 'Rituel' },
-  { value: 'fusion', label: 'Fusion' },
-  { value: 'synchro', label: 'Synchro' },
-  { value: 'xyz', label: 'Xyz' },
-  { value: 'link', label: 'Lien' },
+  { value: 'normal', label: 'cardFilters.monsterKind.normal' },
+  { value: 'effect', label: 'cardFilters.monsterKind.effect' },
+  { value: 'ritual', label: 'cardFilters.monsterKind.ritual' },
+  { value: 'fusion', label: 'cardFilters.monsterKind.fusion' },
+  { value: 'synchro', label: 'cardFilters.monsterKind.synchro' },
+  { value: 'xyz', label: 'cardFilters.monsterKind.xyz' },
+  { value: 'link', label: 'cardFilters.monsterKind.link' },
 ];
 
 // Sous-type magie/piège stocké dans `race` (convention YGOPRODeck, reprise
 // telle quelle par nos cartes custom — voir customCardRules.ts côté backend).
 export const SPELL_RACE_OPTIONS = [
-  { value: 'Normal', label: 'Normale' },
-  { value: 'Continuous', label: 'Continue' },
-  { value: 'Quick-Play', label: 'Jeu Rapide' },
-  { value: 'Equip', label: 'Équipement' },
-  { value: 'Field', label: 'Terrain' },
-  { value: 'Ritual', label: 'Rituelle' },
+  { value: 'Normal', label: 'cardFilters.spellType.normal' },
+  { value: 'Continuous', label: 'cardFilters.spellType.continuous' },
+  { value: 'Quick-Play', label: 'cardFilters.spellType.quickPlay' },
+  { value: 'Equip', label: 'cardFilters.spellType.equip' },
+  { value: 'Field', label: 'cardFilters.spellType.field' },
+  { value: 'Ritual', label: 'cardFilters.spellType.ritual' },
 ];
 
 export const TRAP_RACE_OPTIONS = [
-  { value: 'Normal', label: 'Normal' },
-  { value: 'Continuous', label: 'Continu' },
-  { value: 'Counter', label: 'Contre-piège' },
+  { value: 'Normal', label: 'cardFilters.trapType.normal' },
+  { value: 'Continuous', label: 'cardFilters.trapType.continuous' },
+  { value: 'Counter', label: 'cardFilters.trapType.counter' },
 ];
 
 export const ATTRIBUTE_OPTIONS = ['DARK', 'LIGHT', 'EARTH', 'WATER', 'FIRE', 'WIND', 'DIVINE'];
 
 export const CATEGORY_OPTIONS: { value: CardCategory; label: string }[] = [
-  { value: 'monster', label: 'Monstre' },
-  { value: 'spell', label: 'Magie' },
-  { value: 'trap', label: 'Piège' },
+  { value: 'monster', label: 'cardFilters.category.monster' },
+  { value: 'spell', label: 'cardFilters.category.spell' },
+  { value: 'trap', label: 'cardFilters.category.trap' },
 ];
 
 // Capacités de monstre repérées par sous-chaîne dans `card.type` (convention
 // YGOPRODeck déjà stockée telle quelle, ex. "Flip Effect Monster", "Tuner
 // Monster", "Union Effect Monster", "Toon Monster", "Gemini Monster",
 // "Spirit Monster") — pas de champ dédié en base, ces types composés le
-// portent déjà nativement.
+// portent déjà nativement. `needle` reste anglais (matching réel), `label`
+// est une clé de traduction.
 export const ABILITY_OPTIONS: { value: string; label: string; needle: string }[] = [
-  { value: 'flip', label: 'Flip', needle: 'Flip' },
-  { value: 'tuner', label: 'Syntoniseur', needle: 'Tuner' },
-  { value: 'union', label: 'Union', needle: 'Union' },
-  { value: 'toon', label: 'Toon', needle: 'Toon' },
-  { value: 'gemini', label: 'Gémeau', needle: 'Gemini' },
-  { value: 'spirit', label: 'Esprit', needle: 'Spirit' },
+  { value: 'flip', label: 'cardFilters.ability.flip', needle: 'Flip' },
+  { value: 'tuner', label: 'cardFilters.ability.tuner', needle: 'Tuner' },
+  { value: 'union', label: 'cardFilters.ability.union', needle: 'Union' },
+  { value: 'toon', label: 'cardFilters.ability.toon', needle: 'Toon' },
+  { value: 'gemini', label: 'cardFilters.ability.gemini', needle: 'Gemini' },
+  { value: 'spirit', label: 'cardFilters.ability.spirit', needle: 'Spirit' },
 ];
 
 export interface CollectionFilters {
@@ -200,27 +207,29 @@ export type SortKey = 'type' | 'name' | 'release_date' | 'acquired_order' | 'atk
 // Options complètes (collection d'un personnage : deckbuilder). Le
 // sélecteur du marchand (catalogue global, rien "acquis") n'en propose
 // qu'un sous-sélectionné — voir MERCHANT_CARD_SORT_OPTIONS ci-dessous.
+// `label` : clé de traduction (namespace `cardFilters.sort.*`, partagée par
+// les 3 tableaux ci-dessous puisqu'ils réutilisent les mêmes `SortKey`).
 export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'type', label: 'Type (monstre → magie → piège)' },
-  { value: 'release_date', label: 'Date de sortie' },
-  { value: 'acquired_order', label: "Ordre d'acquisition" },
-  { value: 'atk', label: 'ATK' },
-  { value: 'level', label: 'Niveau/Rang' },
+  { value: 'type', label: 'cardFilters.sort.type' },
+  { value: 'release_date', label: 'cardFilters.sort.releaseDate' },
+  { value: 'acquired_order', label: 'cardFilters.sort.acquiredOrder' },
+  { value: 'atk', label: 'cardFilters.sort.atk' },
+  { value: 'level', label: 'cardFilters.sort.level' },
 ];
 
 export const MERCHANT_CARD_SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'type', label: 'Type (monstre → magie → piège)' },
-  { value: 'name', label: 'Nom (A → Z)' },
+  { value: 'type', label: 'cardFilters.sort.type' },
+  { value: 'name', label: 'cardFilters.sort.name' },
 ];
 
 // Tri de l'affichage DANS le deck (Main/Extra) — pas de date de sortie ni
 // d'ordre d'acquisition disponibles pour une entrée de deck (ApiDeckCardEntry
 // ne porte que card+quantity), donc uniquement les clés qui ont un sens ici.
 export const DECK_SORT_OPTIONS: { value: SortKey; label: string }[] = [
-  { value: 'type', label: 'Type (monstre → magie → piège)' },
-  { value: 'name', label: 'Nom (A → Z)' },
-  { value: 'atk', label: 'ATK' },
-  { value: 'level', label: 'Niveau/Rang' },
+  { value: 'type', label: 'cardFilters.sort.type' },
+  { value: 'name', label: 'cardFilters.sort.name' },
+  { value: 'atk', label: 'cardFilters.sort.atk' },
+  { value: 'level', label: 'cardFilters.sort.level' },
 ];
 
 const CATEGORY_ORDER: Record<CardCategory, number> = { monster: 0, spell: 1, trap: 2 };

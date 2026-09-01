@@ -32,5 +32,117 @@
     "invalid_verification_code": "Code invalide ou expiré",
     "invalid_reset_code": "Code invalide ou expiré",
     "invalid_credentials": "Identifiants invalides"
+  },
+  "cardFilters": {
+    "monsterKind": {
+      "normal": "Normal",
+      "effect": "Effet",
+      "ritual": "Rituel",
+      "fusion": "Fusion",
+      "synchro": "Synchro",
+      "xyz": "Xyz",
+      "link": "Lien"
+    },
+    "spellType": {
+      "normal": "Normale",
+      "continuous": "Continue",
+      "quickPlay": "Jeu Rapide",
+      "equip": "Équipement",
+      "field": "Terrain",
+      "ritual": "Rituelle"
+    },
+    "trapType": {
+      "normal": "Normal",
+      "continuous": "Continu",
+      "counter": "Contre-piège"
+    },
+    "category": {
+      "monster": "Monstre",
+      "spell": "Magie",
+      "trap": "Piège"
+    },
+    "ability": {
+      "flip": "Flip",
+      "tuner": "Syntoniseur",
+      "union": "Union",
+      "toon": "Toon",
+      "gemini": "Gémeau",
+      "spirit": "Esprit"
+    },
+    "sort": {
+      "type": "Type (monstre → magie → piège)",
+      "name": "Nom (A → Z)",
+      "releaseDate": "Date de sortie",
+      "acquiredOrder": "Ordre d'acquisition",
+      "atk": "ATK",
+      "level": "Niveau/Rang"
+    },
+    "pendulumOnly": "Pendule uniquement",
+    "modal": {
+      "title": "Filtrer les cartes",
+      "category": "Catégorie",
+      "monsterKind": "Type de monstre",
+      "ability": "Capacité (monstre)",
+      "atk": "ATK",
+      "level": "Niveau / Rang",
+      "min": "min",
+      "max": "max",
+      "spellType": "Type de magie",
+      "trapType": "Type de piège",
+      "attribute": "Attribut",
+      "race": "Race (monstre)",
+      "reset": "Réinitialiser",
+      "apply": "Appliquer"
+    }
+  },
+  "cardLabels": {
+    "attribute": {
+      "dark": "Ténèbres",
+      "light": "Lumière",
+      "earth": "Terre",
+      "water": "Eau",
+      "fire": "Feu",
+      "wind": "Vent",
+      "divine": "Divin"
+    },
+    "race": {
+      "aqua": "Aqua",
+      "beast": "Bête",
+      "beast_warrior": "Bête-Guerrier",
+      "cyberse": "Cyberse",
+      "dinosaur": "Dinosaure",
+      "divine_beast": "Bête Divine",
+      "dragon": "Dragon",
+      "fairy": "Fée",
+      "fiend": "Démon",
+      "fish": "Poisson",
+      "illusion": "Illusion",
+      "insect": "Insecte",
+      "machine": "Machine",
+      "plant": "Plante",
+      "psychic": "Psychique",
+      "pyro": "Pyro",
+      "reptile": "Reptile",
+      "rock": "Rocher",
+      "sea_serpent": "Serpent de Mer",
+      "spellcaster": "Magicien",
+      "thunder": "Tonnerre",
+      "warrior": "Guerrier",
+      "winged_beast": "Bête Ailée",
+      "wyrm": "Wyrm",
+      "zombie": "Zombie"
+    },
+    "duelPhase": {
+      "draw": "Phase de Pioche",
+      "standby": "Standby",
+      "main1": "Main Phase 1",
+      "battle_start": "Début de Battle Phase",
+      "battle_step": "Battle Step",
+      "damage": "Damage Step",
+      "damage_cal": "Calcul des dégâts",
+      "battle": "Battle Phase",
+      "main2": "Main Phase 2",
+      "end": "End Phase"
+    }
   }
 }
