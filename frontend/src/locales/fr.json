@@ -1,0 +1,36 @@
+{
+  "common": {
+    "error_generic": "Une erreur est survenue",
+    "loading": "Chargement...",
+    "back_to_login": "Retour à la connexion",
+    "resend_code": "Renvoyer le code",
+    "new_code_sent": "Nouveau code envoyé.",
+    "language_toggle": "Langue"
+  },
+  "auth": {
+    "tab_login": "Connexion",
+    "tab_register": "Inscription",
+    "title_forgot_password": "Mot de passe oublié",
+    "title_verify_email": "Vérification de l'email",
+    "placeholder_username": "Nom d'utilisateur",
+    "placeholder_email": "Email",
+    "placeholder_password": "Mot de passe",
+    "placeholder_new_password": "Nouveau mot de passe",
+    "placeholder_code": "Code à 6 chiffres",
+    "code_sent_to_prefix": "Code envoyé à",
+    "forgot_password_link": "Mot de passe oublié ?",
+    "submit_login": "Se connecter",
+    "submit_register": "S'inscrire",
+    "submit_verify": "Vérifier le code",
+    "submit_forgot_request": "Envoyer le code",
+    "submit_reset_password": "Réinitialiser le mot de passe",
+    "register_pending_info": "Un code de vérification vient d'être envoyé à {{email}} — vérifiez votre boîte mail (et les spams).",
+    "forgot_request_info": "Si un compte existe avec cet email, un code de réinitialisation vient d'être envoyé — vérifiez votre boîte mail (et les spams)."
+  },
+  "errors": {
+    "conflict": "Nom d'utilisateur ou email déjà utilisé",
+    "invalid_verification_code": "Code invalide ou expiré",
+    "invalid_reset_code": "Code invalide ou expiré",
+    "invalid_credentials": "Identifiants invalides"
+  }
+}

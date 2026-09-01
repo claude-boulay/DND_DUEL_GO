@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { ApiError } from '../lib/api';
+import { useTranslation } from 'react-i18next';
+import { translateApiError } from '../lib/translateApiError';
 
 interface AuthPanelProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -16,6 +17,7 @@ interface AuthPanelProps {
 type Mode = 'login' | 'register' | 'register-verify' | 'forgot-request' | 'forgot-reset';
 
 export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotPassword, onResetPassword }: AuthPanelProps) {
+  const { t } = useTranslation();
   const [mode, setMode] = useState<Mode>('login');
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -42,7 +44,7 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
       } else if (mode === 'register') {
         const result = await onRegister(username, email, password);
         if (result.pending) {
-          setInfo(`Un code de vérification vient d'être envoyé à ${email} — vérifiez votre boîte mail (et les spams).`);
+          setInfo(t('auth.register_pending_info', { email }));
           setMode('register-verify');
         }
         // sinon (pending: false, SMTP non configuré côté serveur) : déjà
@@ -51,13 +53,13 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
         await onVerifyRegistration(email, code);
       } else if (mode === 'forgot-request') {
         await onForgotPassword(email);
-        setInfo("Si un compte existe avec cet email, un code de réinitialisation vient d'être envoyé — vérifiez votre boîte mail (et les spams).");
+        setInfo(t('auth.forgot_request_info'));
         setMode('forgot-reset');
       } else {
         await onResetPassword(email, code, newPassword);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -80,7 +82,7 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
               mode === 'login' ? 'bg-accent-500 text-arena-950' : 'text-neutral-400 hover:text-neutral-200'
             }`}
           >
-            Connexion
+            {t('auth.tab_login')}
           </button>
           <button
             type="button"
@@ -89,23 +91,23 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
               mode === 'register' ? 'bg-accent-500 text-arena-950' : 'text-neutral-400 hover:text-neutral-200'
             }`}
           >
-            Inscription
+            {t('auth.tab_register')}
           </button>
         </div>
       )}
 
       {isForgotFlow && (
-        <h3 className="mb-4 font-display text-sm uppercase tracking-wider text-accent-400">Mot de passe oublié</h3>
+        <h3 className="mb-4 font-display text-sm uppercase tracking-wider text-accent-400">{t('auth.title_forgot_password')}</h3>
       )}
       {mode === 'register-verify' && (
-        <h3 className="mb-4 font-display text-sm uppercase tracking-wider text-accent-400">Vérification de l'email</h3>
+        <h3 className="mb-4 font-display text-sm uppercase tracking-wider text-accent-400">{t('auth.title_verify_email')}</h3>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-3">
         {mode === 'register' && (
           <input
             type="text"
-            placeholder="Nom d'utilisateur"
+            placeholder={t('auth.placeholder_username')}
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
@@ -117,7 +119,7 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
         {!showsCode && (
           <input
             type="email"
-            placeholder="Email"
+            placeholder={t('auth.placeholder_email')}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -128,7 +130,7 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
         {(mode === 'login' || mode === 'register') && (
           <input
             type="password"
-            placeholder="Mot de passe"
+            placeholder={t('auth.placeholder_password')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -140,12 +142,12 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
         {showsCode && (
           <>
             <p className="text-xs text-neutral-400">
-              Code envoyé à <span className="text-neutral-200">{email}</span>
+              {t('auth.code_sent_to_prefix')} <span className="text-neutral-200">{email}</span>
             </p>
             <input
               type="text"
               inputMode="numeric"
-              placeholder="Code à 6 chiffres"
+              placeholder={t('auth.placeholder_code')}
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               required
@@ -159,7 +161,7 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
         {mode === 'forgot-reset' && (
           <input
             type="password"
-            placeholder="Nouveau mot de passe"
+            placeholder={t('auth.placeholder_new_password')}
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
@@ -174,7 +176,7 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
             onClick={() => switchMode('forgot-request')}
             className="text-xs text-neutral-400 underline hover:text-accent-400"
           >
-            Mot de passe oublié ?
+            {t('auth.forgot_password_link')}
           </button>
         )}
 
@@ -187,21 +189,21 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
           className="w-full rounded-md bg-accent-500 py-2 text-sm font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
         >
           {submitting
-            ? 'Chargement...'
+            ? t('common.loading')
             : mode === 'login'
-              ? 'Se connecter'
+              ? t('auth.submit_login')
               : mode === 'register'
-                ? "S'inscrire"
+                ? t('auth.submit_register')
                 : mode === 'register-verify'
-                  ? 'Vérifier le code'
+                  ? t('auth.submit_verify')
                   : mode === 'forgot-request'
-                    ? 'Envoyer le code'
-                    : 'Réinitialiser le mot de passe'}
+                    ? t('auth.submit_forgot_request')
+                    : t('auth.submit_reset_password')}
         </button>
 
         {(isForgotFlow || mode === 'register-verify') && (
           <button type="button" onClick={() => switchMode('login')} className="w-full text-center text-xs text-neutral-400 underline hover:text-accent-400">
-            Retour à la connexion
+            {t('common.back_to_login')}
           </button>
         )}
         {mode === 'register-verify' && (
@@ -209,21 +211,21 @@ export function AuthPanel({ onLogin, onRegister, onVerifyRegistration, onForgotP
             type="button"
             onClick={() =>
               void onRegister(username, email, password)
-                .then(() => setInfo('Nouveau code envoyé.'))
-                .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+                .then(() => setInfo(t('common.new_code_sent')))
+                .catch((err) => setError(translateApiError(err, t)))
             }
             className="w-full text-center text-xs text-neutral-400 underline hover:text-accent-400"
           >
-            Renvoyer le code
+            {t('common.resend_code')}
           </button>
         )}
         {mode === 'forgot-reset' && (
           <button
             type="button"
-            onClick={() => void onForgotPassword(email).then(() => setInfo('Nouveau code envoyé.')).catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))}
+            onClick={() => void onForgotPassword(email).then(() => setInfo(t('common.new_code_sent'))).catch((err) => setError(translateApiError(err, t)))}
             className="w-full text-center text-xs text-neutral-400 underline hover:text-accent-400"
           >
-            Renvoyer le code
+            {t('common.resend_code')}
           </button>
         )}
       </form>

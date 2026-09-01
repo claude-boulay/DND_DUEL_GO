@@ -1,0 +1,36 @@
+{
+  "common": {
+    "error_generic": "An error occurred",
+    "loading": "Loading...",
+    "back_to_login": "Back to login",
+    "resend_code": "Resend code",
+    "new_code_sent": "New code sent.",
+    "language_toggle": "Language"
+  },
+  "auth": {
+    "tab_login": "Login",
+    "tab_register": "Register",
+    "title_forgot_password": "Forgot password",
+    "title_verify_email": "Email verification",
+    "placeholder_username": "Username",
+    "placeholder_email": "Email",
+    "placeholder_password": "Password",
+    "placeholder_new_password": "New password",
+    "placeholder_code": "6-digit code",
+    "code_sent_to_prefix": "Code sent to",
+    "forgot_password_link": "Forgot password?",
+    "submit_login": "Log in",
+    "submit_register": "Sign up",
+    "submit_verify": "Verify code",
+    "submit_forgot_request": "Send code",
+    "submit_reset_password": "Reset password",
+    "register_pending_info": "A verification code was just sent to {{email}} — check your inbox (and spam folder).",
+    "forgot_request_info": "If an account exists with this email, a reset code was just sent — check your inbox (and spam folder)."
+  },
+  "errors": {
+    "conflict": "Username or email already in use",
+    "invalid_verification_code": "Invalid or expired code",
+    "invalid_reset_code": "Invalid or expired code",
+    "invalid_credentials": "Invalid credentials"
+  }
+}

@@ -569,6 +569,11 @@ export class ApiError extends Error {
   constructor(
     public readonly status: number,
     message: string,
+    // Code machine renvoyé par errorHandler.ts (déjà sur le fil aujourd'hui,
+    // auparavant jeté ici) — sert de clé de traduction FR/EN, voir
+    // lib/translateApiError.ts. Absent pour une erreur réseau/parsing pure
+    // (ex. `Erreur HTTP 500` sans corps JSON exploitable).
+    public readonly code?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -593,7 +598,7 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 
   if (!response.ok) {
     const message = body?.error?.message ?? `Erreur HTTP ${response.status}`;
-    throw new ApiError(response.status, message);
+    throw new ApiError(response.status, message, body?.error?.code);
   }
 
   return body as T;

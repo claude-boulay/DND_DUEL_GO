@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { socket } from './lib/socket';
 import { useAuth } from './hooks/useAuth';
+import { useLanguage } from './hooks/useLanguage';
 import { api, ApiError, type ApiCharacter, type ApiSession } from './lib/api';
 import { AuthPanel } from './components/AuthPanel';
 import { SessionPanel } from './components/SessionPanel';
@@ -25,6 +27,31 @@ function StatusDot({ status }: { status: Status }) {
   const color =
     status === 'ok' ? 'bg-emerald-400' : status === 'error' ? 'bg-red-400' : 'bg-amber-400';
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${color}`} aria-hidden />;
+}
+
+/** Bascule FR/EN — fixe en haut à gauche pour ne pas chevaucher le bouton "🧙 fiche" (fixed right-4 top-4, voir CharacterList.tsx). */
+function LanguageToggle() {
+  const { t } = useTranslation();
+  const { language, setLanguage } = useLanguage();
+  return (
+    <div
+      className="fixed left-4 top-4 z-40 flex overflow-hidden rounded-full border border-arena-600 bg-arena-900/95 text-xs shadow-xl backdrop-blur"
+      title={t('common.language_toggle')}
+    >
+      {(['fr', 'en'] as const).map((lang) => (
+        <button
+          key={lang}
+          type="button"
+          onClick={() => setLanguage(lang)}
+          className={`px-3 py-2 font-semibold uppercase transition ${
+            language === lang ? 'bg-accent-500 text-arena-950' : 'text-neutral-400 hover:text-neutral-200'
+          }`}
+        >
+          {lang}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 export default function App() {
@@ -158,6 +185,8 @@ export default function App() {
 
   return (
     <main className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-8 px-6 py-16">
+      <LanguageToggle />
+
       {duelInvites.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 px-4">
           {duelInvites.map((invite) => (
