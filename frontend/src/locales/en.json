@@ -139,6 +139,28 @@
     "empty_collection": "No cards in the collection.",
     "empty_filtered": "No cards match the filters."
   },
+  "deckEditor": {
+    "eyebrow": "Deckbuilder",
+    "main_count": "Main {{count}}/{{min}}-{{max}}",
+    "extra_count": "Extra {{count}}/{{max}}",
+    "legal": "✓ legal deck",
+    "export_ydk_tooltip": "Export this deck as .ydk (usable in another EDOPro/YGOPro emulator)",
+    "export_ydk": "Export as .ydk",
+    "sort_deck_label": "Sort deck:",
+    "main_deck_title": "Main Deck",
+    "extra_deck_title": "Extra Deck",
+    "drag_drop_help": "Drag a card from the collection, or double-click it to add it. A single click shows it large on the left. Double-click a card in the deck to remove one copy.",
+    "search_placeholder_npc": "Search for a card (all imported cards)",
+    "reset_filters_tooltip": "Reset filters",
+    "reset": "Reset",
+    "no_cards_match_catalog": "No cards match the filtered catalog.",
+    "cards_loaded": "{{loaded}} / {{total}} cards loaded",
+    "no_cards": "No cards.",
+    "load_more_cards": "Load more cards ({{count}} remaining)",
+    "empty_zone": "Empty — drag or double-click a card on the right.",
+    "remove_copy_tooltip": "{{name}} — double-click to remove one copy",
+    "add_card_tooltip": "{{name}} — double-click or drag to add to the deck"
+  },
   "characterSheet": {
     "eyebrow": "Character sheet",
     "npc_badge": "NPC",

@@ -139,6 +139,28 @@
     "empty_collection": "Aucune carte dans la collection.",
     "empty_filtered": "Aucune carte ne correspond aux filtres."
   },
+  "deckEditor": {
+    "eyebrow": "Deckbuilder",
+    "main_count": "Main {{count}}/{{min}}-{{max}}",
+    "extra_count": "Extra {{count}}/{{max}}",
+    "legal": "✓ deck légal",
+    "export_ydk_tooltip": "Exporter ce deck au format .ydk (utilisable dans un autre émulateur EDOPro/YGOPro)",
+    "export_ydk": "Exporter en .ydk",
+    "sort_deck_label": "Trier le deck :",
+    "main_deck_title": "Deck Principal",
+    "extra_deck_title": "Extra Deck",
+    "drag_drop_help": "Glissez une carte depuis la collection, ou double-cliquez dessus pour l'ajouter. Un clic simple l'affiche en grand à gauche. Double-cliquez une carte du deck pour en retirer un exemplaire.",
+    "search_placeholder_npc": "Rechercher une carte (toutes cartes importées)",
+    "reset_filters_tooltip": "Réinitialiser les filtres",
+    "reset": "Reset",
+    "no_cards_match_catalog": "Aucune carte ne correspond au catalogue filtré.",
+    "cards_loaded": "{{loaded}} / {{total}} cartes chargées",
+    "no_cards": "Aucune carte.",
+    "load_more_cards": "Charger plus de cartes ({{count}} restantes)",
+    "empty_zone": "Vide — glissez ou double-cliquez une carte à droite.",
+    "remove_copy_tooltip": "{{name}} — double-clic pour retirer un exemplaire",
+    "add_card_tooltip": "{{name}} — double-clic ou glisser-déposer pour ajouter au deck"
+  },
   "characterSheet": {
     "eyebrow": "Fiche de personnage",
     "npc_badge": "PNJ",
