@@ -900,6 +900,18 @@ duelRouter.get(
     const cards = await resolveCardSummaries(allCodes);
 
     const toBoard = (slots: Array<QueriedCard | null>, reveal = true) => slots.map((s) => (s ? toBoardCard(s, cards, reveal) : null));
+    // Main/Extra Deck : le moteur renvoie `position` avec un bit
+    // FACEDOWN_DEFENSE par défaut pour toute carte hors terrain (aucune
+    // "position" réelle n'existe pour ces zones, ce n'est qu'une valeur
+    // interne inerte côté ocgcore) — sans correction, une carte de main
+    // s'affichait comme un dos de carte côté front (`MiniCard` s'appuie sur
+    // `face_down` pour décider quoi montrer) alors que son identité est déjà
+    // révélée légitimement (bug utilisateur réel : "afficher l'image des
+    // cartes face recto pour la main").
+    const toHandBoard = (slots: Array<QueriedCard | null>) =>
+      toBoard(slots)
+        .filter((c): c is BoardCard => c !== null)
+        .map((c) => ({ ...c, face_down: false }));
 
     res.json({
       field: {
@@ -910,8 +922,8 @@ duelRouter.get(
           spell_trap_zones: toBoard(z.szone.slots, canSeeSecrets[team as 0 | 1]),
           graveyard: toBoard(z.grave.slots).filter((c): c is BoardCard => c !== null),
           banished: toBoard(z.removed.slots).filter((c): c is BoardCard => c !== null),
-          hand: z.hand ? toBoard(z.hand.slots).filter((c): c is BoardCard => c !== null) : null,
-          extra_deck: z.extra ? toBoard(z.extra.slots).filter((c): c is BoardCard => c !== null) : null,
+          hand: z.hand ? toHandBoard(z.hand.slots) : null,
+          extra_deck: z.extra ? toHandBoard(z.extra.slots) : null,
         })),
       },
     });

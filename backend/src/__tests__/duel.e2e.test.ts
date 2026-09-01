@@ -272,6 +272,14 @@ describe('Duel piloté par le moteur ocgcore réel, via l’API HTTP (E2E)', () 
       const [teamAAsPlayer, teamBAsPlayer] = asPlayer.body.field.teams;
       expect(teamAAsPlayer.hand).not.toBeNull(); // équipe du joueur : visible pour lui-même
       expect(teamBAsPlayer.hand).toBeNull(); // équipe du PNJ (contrôlé par le MJ) : caché pour le joueur
+      // Régression : le moteur renvoie un bit "face down" par défaut pour
+      // toute carte hors terrain (aucune position réelle en main) — une
+      // carte de sa propre main, déjà révélée, ne doit jamais s'afficher
+      // comme un dos de carte côté front (bug utilisateur réel, voir CLAUDE.md).
+      for (const c of teamAAsPlayer.hand as Array<{ face_down: boolean; card: { name: string } | null }>) {
+        expect(c.face_down).toBe(false);
+        expect(c.card).not.toBeNull();
+      }
 
       // Le MJ pilote npcChar (Camp PNJ) dans CE duel précis : il n'est plus
       // "superviseur pur" ici (voir computeCanSeeTeam) — il voit la main de
