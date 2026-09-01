@@ -149,9 +149,9 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
-        <header className="mb-3 flex items-center justify-between gap-2">
+        <header className="mb-3 flex items-start justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('cardImport.title_sets')}</h2>
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="flex shrink-0 flex-col items-end gap-1">
             <button
               type="button"
               onClick={() => void handleReimportAll()}
