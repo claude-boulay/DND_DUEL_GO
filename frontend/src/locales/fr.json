@@ -49,6 +49,22 @@
     "missing_engine_code": "« {{name}} » n'a pas de code moteur — réenregistrez cette carte",
     "missing_lua_script": "« {{name}} » est une carte custom sans script Lua — un vrai script est obligatoire (CLAUDE.md §3.4)"
   },
+  "duelEvents": {
+    "summoned": "Invocation résolue.",
+    "chaining": "Activation en chaîne.",
+    "chain_solved": "Un lien de la chaîne se résout.",
+    "attack_declared": "Déclaration d'attaque.",
+    "battle_resolved": "Résolution de combat.",
+    "lp_damage": "Équipe {{team}} : -{{amount}} PV ({{total}})",
+    "lp_recover": "Équipe {{team}} : +{{amount}} PV ({{total}})",
+    "new_turn": "Tour {{turn}} — équipe {{team}}",
+    "new_phase": "Phase : {{phase}}",
+    "duelist_swap": "Équipe {{team}} : le duelist actif change (duelist n°{{duelist}})",
+    "duel_won": "Le duel est terminé.",
+    "engine_lost": "Le process du moteur a été perdu (redémarrage du serveur) — duel non reprenable.",
+    "duel_started": "Duel « {{name}} » commencé",
+    "stopped_by_gm": "Duel arrêté par le MJ"
+  },
   "cardFilters": {
     "monsterKind": {
       "normal": "Normal",

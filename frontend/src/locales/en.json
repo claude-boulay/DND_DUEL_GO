@@ -49,6 +49,22 @@
     "missing_engine_code": "\"{{name}}\" has no engine code — re-save this card",
     "missing_lua_script": "\"{{name}}\" is a custom card with no Lua script — a real script is required (CLAUDE.md §3.4)"
   },
+  "duelEvents": {
+    "summoned": "Summon resolved.",
+    "chaining": "Chain activation.",
+    "chain_solved": "A chain link resolves.",
+    "attack_declared": "Attack declared.",
+    "battle_resolved": "Battle resolved.",
+    "lp_damage": "Team {{team}}: -{{amount}} LP ({{total}})",
+    "lp_recover": "Team {{team}}: +{{amount}} LP ({{total}})",
+    "new_turn": "Turn {{turn}} — team {{team}}",
+    "new_phase": "Phase: {{phase}}",
+    "duelist_swap": "Team {{team}}: active duelist changes (duelist #{{duelist}})",
+    "duel_won": "The duel is over.",
+    "engine_lost": "The engine process was lost (server restart) — duel not resumable.",
+    "duel_started": "Duel \"{{name}}\" started",
+    "stopped_by_gm": "Duel stopped by the GM"
+  },
   "cardFilters": {
     "monsterKind": {
       "normal": "Normal",

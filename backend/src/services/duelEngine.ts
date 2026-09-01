@@ -161,6 +161,18 @@ export async function pumpUntilSettled(ocgDuel: OcgcoreDuel, initial: ProcessRes
 }
 
 /**
+ * Une ligne de journal, structurée (voir Duel.model.ts `DuelEventAttrs`) :
+ * `message` reste TOUJOURS le texte français (repli), `code`/`params`
+ * permettent au frontend de la traduire via `duelEvents.<code>` quand
+ * catalogués (voir locales/{fr,en}.json, plan d'internationalisation §6).
+ */
+export interface DuelLogEntry {
+  message: string;
+  code?: string;
+  params?: Record<string, string | number>;
+}
+
+/**
  * Applique un lot de messages moteur à l'état en mémoire, renvoie les
  * lignes de journal humain correspondantes (à ajouter au document Duel).
  * Ne cherche PAS à reconstruire le contenu exact des zones (main/terrain en
@@ -168,34 +180,46 @@ export async function pumpUntilSettled(ocgDuel: OcgcoreDuel, initial: ProcessRes
  * le détail zone par zone est laissé au travail frontend à venir (voir le
  * plan d'intégration).
  */
-export function applyMessages(state: EngineDuelState, result: ProcessResult): string[] {
-  const log: string[] = [];
+export function applyMessages(state: EngineDuelState, result: ProcessResult): DuelLogEntry[] {
+  const log: DuelLogEntry[] = [];
 
   for (const msg of result.messages) {
     switch (msg.type) {
       case MessageType.DAMAGE: {
         const { team, amount } = parseDamageOrRecover(msg.raw);
         state.teams[team]!.lp = Math.max(0, state.teams[team]!.lp - amount);
-        log.push(`Équipe ${team + 1} : -${amount} PV (${state.teams[team]!.lp})`);
+        log.push({
+          message: `Équipe ${team + 1} : -${amount} PV (${state.teams[team]!.lp})`,
+          code: 'lp_damage',
+          params: { team: team + 1, amount, total: state.teams[team]!.lp },
+        });
         break;
       }
       case MessageType.RECOVER: {
         const { team, amount } = parseDamageOrRecover(msg.raw);
         state.teams[team]!.lp += amount;
-        log.push(`Équipe ${team + 1} : +${amount} PV (${state.teams[team]!.lp})`);
+        log.push({
+          message: `Équipe ${team + 1} : +${amount} PV (${state.teams[team]!.lp})`,
+          code: 'lp_recover',
+          params: { team: team + 1, amount, total: state.teams[team]!.lp },
+        });
         break;
       }
       case MessageType.NEW_TURN: {
         const team = parseNewTurn(msg.raw);
         state.currentTeam = team === 1 ? 1 : 0;
         state.turnNumber += 1;
-        log.push(`Tour ${state.turnNumber} — équipe ${state.currentTeam + 1}`);
+        log.push({
+          message: `Tour ${state.turnNumber} — équipe ${state.currentTeam + 1}`,
+          code: 'new_turn',
+          params: { turn: state.turnNumber, team: state.currentTeam + 1 },
+        });
         break;
       }
       case MessageType.NEW_PHASE: {
         const phaseFlag = parseNewPhase(msg.raw);
         state.phase = PHASE_LABELS[phaseFlag] ?? String(phaseFlag);
-        log.push(`Phase : ${state.phase}`);
+        log.push({ message: `Phase : ${state.phase}`, code: 'new_phase', params: { phase: state.phase } });
         break;
       }
       case MessageType.DRAW: {
@@ -247,14 +271,18 @@ export function applyMessages(state: EngineDuelState, result: ProcessResult): st
           active.handCount = swap.hand.length;
           active.deckCount = swap.mainCount;
         }
-        log.push(`Équipe ${team + 1} : le duelist actif change (duelist n°${state.activeDuelistIndex[team] + 1})`);
+        log.push({
+          message: `Équipe ${team + 1} : le duelist actif change (duelist n°${state.activeDuelistIndex[team] + 1})`,
+          code: 'duelist_swap',
+          params: { team: team + 1, duelist: state.activeDuelistIndex[team] + 1 },
+        });
         break;
       }
       case MessageType.WIN: {
         state.finished = true;
         // Le camp gagnant est le premier octet du payload (0 ou 1) — con.
         state.winnerTeam = msg.raw.length > 1 ? msg.raw.readUInt8(1) : null;
-        log.push('Le duel est terminé.');
+        log.push({ message: 'Le duel est terminé.', code: 'duel_won' });
         break;
       }
       default:
@@ -284,18 +312,18 @@ export function applyMessages(state: EngineDuelState, result: ProcessResult): st
   return log;
 }
 
-export function summarizeMessage(msg: EngineMessage): string | null {
+export function summarizeMessage(msg: EngineMessage): DuelLogEntry | null {
   switch (msg.type) {
     case MessageType.SUMMONED:
-      return 'Invocation résolue.';
+      return { message: 'Invocation résolue.', code: 'summoned' };
     case MessageType.CHAINING:
-      return 'Activation en chaîne.';
+      return { message: 'Activation en chaîne.', code: 'chaining' };
     case MessageType.CHAIN_SOLVED:
-      return 'Un lien de la chaîne se résout.';
+      return { message: 'Un lien de la chaîne se résout.', code: 'chain_solved' };
     case MessageType.ATTACK:
-      return 'Déclaration d’attaque.';
+      return { message: 'Déclaration d’attaque.', code: 'attack_declared' };
     case MessageType.BATTLE:
-      return 'Résolution de combat.';
+      return { message: 'Résolution de combat.', code: 'battle_resolved' };
     default:
       return null;
   }

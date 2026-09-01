@@ -90,7 +90,11 @@ async function loadDuelOrThrow(duelId: string): Promise<DuelDocument> {
 async function syncLostStatus(duel: DuelDocument): Promise<void> {
   if (duel.status === 'active' && !getEngineDuel(duel._id.toString())) {
     duel.status = 'lost';
-    duel.events.push({ message: 'Le process du moteur a été perdu (redémarrage du serveur) — duel non reprenable.', created_at: new Date() });
+    duel.events.push({
+      message: 'Le process du moteur a été perdu (redémarrage du serveur) — duel non reprenable.',
+      code: 'engine_lost',
+      created_at: new Date(),
+    });
     await duel.save();
   }
 }
@@ -422,7 +426,7 @@ async function respondAndAdvance(duel: DuelDocument, state: EngineDuelState, res
     const summary = summarizeMessage(msg);
     if (summary) log.push(summary);
   }
-  for (const line of log) duel.events.push({ message: line, created_at: new Date() });
+  for (const entry of log) duel.events.push({ message: entry.message, code: entry.code, params: entry.params, created_at: new Date() });
 
   if (state.finished) {
     duel.status = 'finished';
@@ -609,7 +613,7 @@ duelRouter.post(
           })),
         ),
         winner_team: null,
-        events: [{ message: `Duel « ${body.name} » commencé`, created_at: new Date() }],
+        events: [{ message: `Duel « ${body.name} » commencé`, code: 'duel_started', params: { name: body.name }, created_at: new Date() }],
       });
 
       const duelistSeeds: [DuelistSeed[], DuelistSeed[]] = [
@@ -621,7 +625,7 @@ duelRouter.post(
 
       const startResult = await pumpUntilSettled(ocgDuel, await ocgDuel.start());
       const log = applyMessages(state, startResult);
-      for (const line of log) duel.events.push({ message: line, created_at: new Date() });
+      for (const entry of log) duel.events.push({ message: entry.message, code: entry.code, params: entry.params, created_at: new Date() });
       await duel.save();
 
       broadcastSessionResourceChanged(req, session._id.toString(), 'duels');
@@ -835,7 +839,7 @@ duelRouter.post(
     dropEngineDuel(duel._id.toString());
     duel.status = 'finished';
     duel.winner_team = winner_team ?? null;
-    duel.events.push({ message: 'Duel arrêté par le MJ', created_at: new Date() });
+    duel.events.push({ message: 'Duel arrêté par le MJ', code: 'stopped_by_gm', created_at: new Date() });
     await duel.save();
     broadcastSessionResourceChanged(req, session._id.toString(), 'duels');
     res.json({ duel: await toDuelDto(duel, req.user!.sub, session) });

@@ -50,6 +50,14 @@ export interface DuelParticipantAttrs {
 
 export interface DuelEventAttrs {
   message: string;
+  // Additif (voir plan d'internationalisation §3, même conception que
+  // `AppError.params` côté errorHandler.ts) : `code`/`params` permettent au
+  // frontend de traduire l'évènement via `duelEvents.<code>` dans
+  // locales/{fr,en}.json quand présents ; `message` (toujours le français,
+  // jamais retiré) reste le repli pour tout évènement plus ancien ou pas
+  // encore catalogué.
+  code?: string;
+  params?: Record<string, string | number>;
   created_at: Date;
 }
 
@@ -80,7 +88,12 @@ const duelParticipantSchema = new Schema<DuelParticipantAttrs>({
 const duelTeamSchema = new Schema<{ name: string }>({ name: { type: String, required: true, trim: true, maxlength: 64 } }, { _id: false });
 
 const duelEventSchema = new Schema<DuelEventAttrs>(
-  { message: { type: String, required: true }, created_at: { type: Date, required: true, default: Date.now } },
+  {
+    message: { type: String, required: true },
+    code: { type: String },
+    params: { type: Schema.Types.Mixed },
+    created_at: { type: Date, required: true, default: Date.now },
+  },
   { _id: false },
 );
 

@@ -11,6 +11,7 @@ import {
   type ApiCard,
   type ApiCharacter,
   type ApiDuel,
+  type ApiDuelEvent,
   type ApiDuelBoardCard,
   type ApiDuelField,
   type ApiDuelFieldTeam,
@@ -100,6 +101,23 @@ function szoneLabel(sequence: number, t: TFunction): string {
   if (sequence === 5) return t('duelBoard.zone_field');
   if (sequence === 6 || sequence === 7) return sequence === 6 ? t('duelBoard.zone_pendulum_left') : t('duelBoard.zone_pendulum_right');
   return t('duelBoard.zone_spell_trap', { n: sequence + 1 });
+}
+
+/**
+ * Traduit une ligne de journal via `duelEvents.<code>` (voir DuelEventAttrs
+ * côté backend, plan d'internationalisation §6) — retombe sur `message`
+ * (toujours le français) pour tout évènement sans `code` catalogué,
+ * notamment tous ceux créés avant ce changement. `new_phase` est le seul
+ * code dont un paramètre (`phase`, ex. 'main1') est lui-même une clé à
+ * traduire plutôt qu'une valeur brute à interpoler telle quelle.
+ */
+function translateDuelEvent(event: ApiDuelEvent, t: TFunction): string {
+  if (!event.code) return event.message;
+  const params: Record<string, string | number> = { ...event.params };
+  if (event.code === 'new_phase' && typeof params.phase === 'string') {
+    params.phase = translateDuelPhase(params.phase, t);
+  }
+  return t(`duelEvents.${event.code}`, { ...params, defaultValue: event.message });
 }
 
 function isDefensePosition(position: number): boolean {
@@ -730,7 +748,7 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
             <div className="max-h-64 space-y-0.5 overflow-y-auto font-mono text-[10px] text-neutral-500">
               {[...duel.events].reverse().map((event, i) => (
                 <div key={i}>
-                  {new Date(event.created_at).toLocaleTimeString()} — {event.message}
+                  {new Date(event.created_at).toLocaleTimeString()} — {translateDuelEvent(event, t)}
                 </div>
               ))}
             </div>

@@ -503,6 +503,11 @@ export type ApiDuelPrompt =
 
 export interface ApiDuelEvent {
   message: string;
+  // Additif (voir DuelEventAttrs côté backend, plan d'internationalisation
+  // §6) : présents seulement pour un évènement catalogué — `message` reste
+  // le repli français pour tout le reste (évènements plus anciens compris).
+  code?: string;
+  params?: Record<string, string | number>;
   created_at: string;
 }
 
