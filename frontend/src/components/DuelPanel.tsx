@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { socket } from '../lib/socket';
-import { api, ApiError, type ApiCharacter, type ApiDuel, type ApiSession } from '../lib/api';
+import { api, type ApiCharacter, type ApiDuel, type ApiSession } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 import { DuelBoardOverlay } from './DuelBoardOverlay';
 
 interface DuelPanelProps {
@@ -26,6 +28,7 @@ interface DuelPanelProps {
  * pas possible : le moteur ocgcore n'a que 2 réservoirs de PV, en dur.
  */
 export function DuelPanel({ token, session, characters, currentUserId, requestedOpenDuelId, onRequestedOpenDuelHandled }: DuelPanelProps) {
+  const { t } = useTranslation();
   const [duels, setDuels] = useState<ApiDuel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +48,7 @@ export function DuelPanel({ token, session, characters, currentUserId, requested
       return api
         .listDuels(token, session.id)
         .then(({ duels: fetched }) => setDuels(fetched))
-        .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+        .catch((err) => setError(translateApiError(err, t)))
         .finally(() => setLoading(false));
     },
     [token, session.id],
@@ -69,13 +72,13 @@ export function DuelPanel({ token, session, characters, currentUserId, requested
   }, [session.id, loadDuels]);
 
   const handleDelete = async (duel: ApiDuel) => {
-    if (!window.confirm(`Supprimer le duel « ${duel.name} » ?`)) return;
+    if (!window.confirm(t('duelPanel.confirm_delete', { name: duel.name }))) return;
     try {
       await api.deleteDuel(token, duel.id);
       setDuels((prev) => prev.filter((d) => d.id !== duel.id));
       if (openedId === duel.id) setOpenedId(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     }
   };
 
@@ -86,20 +89,20 @@ export function DuelPanel({ token, session, characters, currentUserId, requested
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Duels</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('duelPanel.title')}</h2>
         {session.is_gm && (
           <button
             type="button"
             onClick={() => setShowCreate((v) => !v)}
             className="text-xs text-accent-400 underline hover:text-accent-300"
           >
-            {showCreate ? 'Fermer' : '+ Organiser un duel'}
+            {showCreate ? t('duelPanel.close') : t('duelPanel.create_duel')}
           </button>
         )}
       </header>
 
       {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
-      {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
+      {loading && <p className="text-xs text-neutral-500">{t('common.loading')}</p>}
 
       {showCreate && (
         <CreateDuelForm
@@ -115,7 +118,7 @@ export function DuelPanel({ token, session, characters, currentUserId, requested
         />
       )}
 
-      {!loading && duels.length === 0 && !showCreate && <p className="text-xs text-neutral-500">Aucun duel pour l'instant.</p>}
+      {!loading && duels.length === 0 && !showCreate && <p className="text-xs text-neutral-500">{t('duelPanel.no_duels_yet')}</p>}
 
       <div className="mt-3 space-y-2">
         {[...activeDuels, ...otherDuels].map((duel) => (
@@ -123,13 +126,19 @@ export function DuelPanel({ token, session, characters, currentUserId, requested
             <button type="button" onClick={() => setOpenedId(duel.id)} className="flex-1 text-left text-neutral-200 hover:text-accent-400">
               <span className="font-semibold text-accent-400">{duel.name}</span>{' '}
               <span className={duel.status === 'active' ? 'text-emerald-400' : duel.status === 'lost' ? 'text-red-400' : 'text-neutral-500'}>
-                {duel.status === 'active' ? `tour ${duel.turn_number ?? '?'}` : duel.status === 'lost' ? 'process perdu (non reprenable)' : 'terminé'}
+                {duel.status === 'active'
+                  ? t('duelPanel.status_active', { turn: duel.turn_number ?? '?' })
+                  : duel.status === 'lost'
+                    ? t('duelPanel.status_lost')
+                    : t('duelPanel.status_finished')}
               </span>{' '}
-              <span className="text-neutral-500">— {duel.teams.map((t) => `${t.name} ${t.life_points ?? '?'} PV`).join(' vs ')}</span>
+              <span className="text-neutral-500">
+                — {duel.teams.map((team) => t('duelPanel.team_lp', { name: team.name, lp: team.life_points ?? '?' })).join(' vs ')}
+              </span>
             </button>
             {session.is_gm && (
               <button type="button" onClick={() => void handleDelete(duel)} className="shrink-0 text-red-400 hover:text-red-300">
-                Supprimer
+                {t('duelPanel.delete')}
               </button>
             )}
           </div>
@@ -173,8 +182,9 @@ function CreateDuelForm({
   onCreated: (duel: ApiDuel) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
-  const [teamNames, setTeamNames] = useState<[string, string]>(['Camp 1', 'Camp 2']);
+  const [teamNames, setTeamNames] = useState<[string, string]>(() => [t('duelPanel.default_team_1'), t('duelPanel.default_team_2')]);
   const [teamMembers, setTeamMembers] = useState<[TeamMemberDraft[], TeamMemberDraft[]]>([[emptyMember()], [emptyMember()]]);
   const [startingLp, setStartingLp] = useState(8000);
   const [handSize, setHandSize] = useState(5);
@@ -216,12 +226,12 @@ function CreateDuelForm({
 
     const allMembers = [...teamMembers[0], ...teamMembers[1]];
     if (allMembers.some((m) => !m.characterId || !m.deckId)) {
-      setError('Choisissez un personnage et un deck pour chaque participant.');
+      setError(t('duelPanel.error_missing_selection'));
       return;
     }
     const allCharacterIds = allMembers.map((m) => m.characterId);
     if (new Set(allCharacterIds).size !== allCharacterIds.length) {
-      setError('Un même personnage ne peut pas participer deux fois (même camp ou camps différents).');
+      setError(t('duelPanel.error_duplicate_character'));
       return;
     }
 
@@ -229,16 +239,16 @@ function CreateDuelForm({
     try {
       const { duel } = await api.createDuel(token, {
         game_session_id: session.id,
-        name: name.trim() || 'Duel',
+        name: name.trim() || t('duelPanel.default_duel_name'),
         rules: { starting_lp: startingLp, hand_size: handSize, draw_count_per_turn: drawCount, skip_first_battle_phase: skipFirstBattlePhase },
         teams: [
-          { name: teamNames[0] || 'Camp 1', participants: teamMembers[0].map((m) => ({ character_id: m.characterId, deck_id: m.deckId })) },
-          { name: teamNames[1] || 'Camp 2', participants: teamMembers[1].map((m) => ({ character_id: m.characterId, deck_id: m.deckId })) },
+          { name: teamNames[0] || t('duelPanel.default_team_1'), participants: teamMembers[0].map((m) => ({ character_id: m.characterId, deck_id: m.deckId })) },
+          { name: teamNames[1] || t('duelPanel.default_team_2'), participants: teamMembers[1].map((m) => ({ character_id: m.characterId, deck_id: m.deckId })) },
         ],
       });
       onCreated(duel);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -248,7 +258,7 @@ function CreateDuelForm({
     <form onSubmit={handleSubmit} className="mb-3 space-y-3 rounded-lg border border-arena-600 bg-arena-800 p-3 text-xs">
       <input
         type="text"
-        placeholder="Nom du duel"
+        placeholder={t('duelPanel.duel_name_placeholder')}
         value={name}
         onChange={(e) => setName(e.target.value)}
         className="w-full rounded border border-arena-600 bg-arena-900 px-2 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
@@ -273,11 +283,11 @@ function CreateDuelForm({
                       onChange={(e) => updateMember(team, i, { characterId: e.target.value, deckId: '' })}
                       className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-900 px-1.5 py-1 text-neutral-200"
                     >
-                      <option value="">Choisir un personnage…</option>
+                      <option value="">{t('duelPanel.choose_character')}</option>
                       {characters.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
-                          {c.is_npc ? ' (PNJ)' : ''}
+                          {c.is_npc ? t('duelPanel.npc_suffix') : ''}
                         </option>
                       ))}
                     </select>
@@ -293,7 +303,7 @@ function CreateDuelForm({
                     onChange={(e) => updateMember(team, i, { deckId: e.target.value })}
                     className="w-full rounded border border-arena-600 bg-arena-900 px-1.5 py-1 text-neutral-200 disabled:opacity-40"
                   >
-                    <option value="">Choisir un deck…</option>
+                    <option value="">{t('duelPanel.choose_deck')}</option>
                     {decksFor(member.characterId).map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.name} ({d.cards.length})
@@ -305,7 +315,7 @@ function CreateDuelForm({
             </div>
             {teamMembers[team].length < MAX_TEAM_SIZE && (
               <button type="button" onClick={() => addMember(team)} className="mt-1.5 text-accent-400 underline hover:text-accent-300">
-                + Ajouter un participant (Duel Tag)
+                {t('duelPanel.add_participant')}
               </button>
             )}
           </div>
@@ -313,39 +323,36 @@ function CreateDuelForm({
       </div>
 
       <div>
-        <div className="mb-1.5 text-neutral-400">Règles</div>
+        <div className="mb-1.5 text-neutral-400">{t('duelPanel.rules')}</div>
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-1 text-neutral-300">
-            PV de départ
+            {t('duelPanel.starting_lp')}
             <input type="number" min={100} value={startingLp} onChange={(e) => setStartingLp(Number(e.target.value) || 8000)} className="w-20 rounded border border-arena-600 bg-arena-900 px-1.5 py-0.5 text-neutral-100" />
           </label>
           <label className="flex items-center gap-1 text-neutral-300">
-            Main de départ
+            {t('duelPanel.starting_hand')}
             <input type="number" min={0} value={handSize} onChange={(e) => setHandSize(Number(e.target.value) || 0)} className="w-16 rounded border border-arena-600 bg-arena-900 px-1.5 py-0.5 text-neutral-100" />
           </label>
           <label className="flex items-center gap-1 text-neutral-300">
-            Pioche/tour
+            {t('duelPanel.draw_per_turn')}
             <input type="number" min={0} value={drawCount} onChange={(e) => setDrawCount(Number(e.target.value) || 0)} className="w-16 rounded border border-arena-600 bg-arena-900 px-1.5 py-0.5 text-neutral-100" />
           </label>
           <label className="flex items-center gap-1.5 text-neutral-300">
             <input type="checkbox" checked={skipFirstBattlePhase} onChange={(e) => setSkipFirstBattlePhase(e.target.checked)} />
-            Pas de Battle Phase au tour 1 (règle standard)
+            {t('duelPanel.skip_first_battle')}
           </label>
         </div>
-        <p className="mt-1.5 text-[10px] leading-snug text-neutral-500">
-          PV de départ et main de départ s'appliquent par CAMP (partagés entre ses participants), pas par participant. En Duel Tag, seul le premier
-          participant ajouté pioche la main de départ — les suivants prennent le relais au fil des tours de leur camp.
-        </p>
+        <p className="mt-1.5 text-[10px] leading-snug text-neutral-500">{t('duelPanel.rules_help')}</p>
       </div>
 
       {error && <p className="text-red-400">{error}</p>}
 
       <div className="flex gap-2">
         <button type="submit" disabled={submitting} className="rounded bg-accent-500 px-3 py-1.5 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50">
-          Lancer le duel
+          {t('duelPanel.start_duel')}
         </button>
         <button type="button" onClick={onCancel} className="text-neutral-400 underline hover:text-neutral-200">
-          Annuler
+          {t('duelPanel.cancel')}
         </button>
       </div>
     </form>
