@@ -14,6 +14,14 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
   const [loadingSets, setLoadingSets] = useState(false);
   const [importingSetId, setImportingSetId] = useState<string | null>(null);
   const [setsError, setSetsError] = useState<string | null>(null);
+  // "Réimporter tous les boosters" (demande utilisateur : réimporter un par
+  // un après chaque mise à jour, ex. pour peupler les traductions FR d'un
+  // coup, était trop long) — séquentiel via la MÊME route par set que le
+  // bouton individuel, pour rester sur l'unique throttle déjà partagé côté
+  // ygoprodeck.ts plutôt que d'en ajouter un second.
+  const [bulkReimporting, setBulkReimporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkSummary, setBulkSummary] = useState<string | null>(null);
 
   const [cards, setCards] = useState<ApiCard[]>([]);
   const [cardsTotal, setCardsTotal] = useState(0);
@@ -109,20 +117,64 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
     await loadCards(set.id);
   };
 
+  const handleReimportAll = async () => {
+    setSetsError(null);
+    setBulkSummary(null);
+    setBulkReimporting(true);
+    try {
+      // Liste COMPLÈTE des sets déjà importés (imported_only=true, voir
+      // card.routes.ts) — jamais tronquée par une recherche affichée à
+      // l'écran ni par le plafond de 500 de la liste normale.
+      const { sets: allImported } = await api.listCardSets(token, { imported_only: true });
+      setBulkProgress({ done: 0, total: allImported.length });
+      let failed = 0;
+      for (let i = 0; i < allImported.length; i += 1) {
+        try {
+          await api.importCardSet(token, allImported[i]!.id);
+        } catch {
+          failed += 1;
+        }
+        setBulkProgress({ done: i + 1, total: allImported.length });
+      }
+      const succeeded = allImported.length - failed;
+      setBulkSummary(t('cardImport.reimport_all_done', { count: succeeded }) + (failed > 0 ? t('cardImport.reimport_all_failed', { count: failed }) : ''));
+      await loadSets(setsSearchInput);
+    } catch (err) {
+      setSetsError(translateApiError(err, t));
+    } finally {
+      setBulkReimporting(false);
+    }
+  };
+
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
-        <header className="mb-3 flex items-center justify-between">
+        <header className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('cardImport.title_sets')}</h2>
-          <button
-            type="button"
-            onClick={() => void loadSets(setsSearchInput, true)}
-            disabled={loadingSets}
-            className="text-xs text-neutral-400 underline transition hover:text-accent-400 disabled:opacity-40"
-          >
-            {t('cardImport.sync_button')}
-          </button>
+          <div className="flex shrink-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => void handleReimportAll()}
+              disabled={bulkReimporting || importingSetId !== null}
+              title={t('cardImport.reimport_all_tooltip')}
+              className="text-xs text-neutral-400 underline transition hover:text-accent-400 disabled:opacity-40"
+            >
+              {bulkReimporting && bulkProgress
+                ? t('cardImport.reimport_all_progress', { done: bulkProgress.done, total: bulkProgress.total })
+                : t('cardImport.reimport_all_button')}
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadSets(setsSearchInput, true)}
+              disabled={loadingSets || bulkReimporting}
+              className="text-xs text-neutral-400 underline transition hover:text-accent-400 disabled:opacity-40"
+            >
+              {t('cardImport.sync_button')}
+            </button>
+          </div>
         </header>
+
+        {bulkSummary && <p className="mb-2 text-xs text-emerald-400">{bulkSummary}</p>}
 
         <form onSubmit={handleSetsSearch} className="mb-3 flex gap-2">
           <input
@@ -178,7 +230,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
                   <button
                     type="button"
                     onClick={() => void handleImport(set)}
-                    disabled={importingSetId === set.id}
+                    disabled={importingSetId === set.id || bulkReimporting}
                     className="text-[10px] text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
                   >
                     {importingSetId === set.id ? t('cardImport.reimporting') : t('cardImport.reimport')}
@@ -188,7 +240,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
                 <button
                   type="button"
                   onClick={() => void handleImport(set)}
-                  disabled={importingSetId === set.id}
+                  disabled={importingSetId === set.id || bulkReimporting}
                   className="shrink-0 rounded-md bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
                 >
                   {importingSetId === set.id ? t('cardImport.importing') : t('cardImport.import_button')}

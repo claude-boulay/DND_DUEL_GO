@@ -51,12 +51,18 @@ const listSetsSchema = z.object({
   // a besoin de VOIR les boosters custom pour pouvoir les stocker — d'où ce
   // paramètre plutôt qu'une exclusion en dur.
   include_custom: z.enum(['true', 'false']).optional(),
+  // Réservé au bouton "Réimporter tous les boosters" (CardImportPanel.tsx) :
+  // il a besoin de la liste COMPLÈTE des sets déjà importés, jamais tronquée
+  // par la recherche affichée à l'écran ni par le plafond de 500 ci-dessous
+  // (voir la limite dédiée plus bas — le sous-ensemble "déjà importé" reste
+  // d'une échelle raisonnable pour cette appli, jamais des dizaines de milliers).
+  imported_only: z.enum(['true', 'false']).optional(),
 });
 
 cardRouter.get(
   '/sets',
   asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const { refresh, search, include_custom } = listSetsSchema.parse(req.query);
+    const { refresh, search, include_custom, imported_only } = listSetsSchema.parse(req.query);
 
     const isEmpty = (await CardSet.estimatedDocumentCount()) === 0;
     if (refresh === 'true' || isEmpty) {
@@ -69,7 +75,10 @@ cardRouter.get(
     const filter: Record<string, unknown> =
       include_custom === 'true' ? { $or: [{ is_custom: { $ne: true } }, { is_custom: true, owner_id: req.user!.sub }] } : { is_custom: { $ne: true } };
     if (search) filter.set_name = { $regex: escapeRegex(search), $options: 'i' };
-    const sets = await CardSet.find(filter).sort({ set_name: 1 }).limit(500);
+    if (imported_only === 'true') filter.imported_at = { $ne: null };
+    const sets = await CardSet.find(filter)
+      .sort({ set_name: 1 })
+      .limit(imported_only === 'true' ? 2000 : 500);
     res.json({ sets: sets.map(toCardSetDto) });
   }),
 );

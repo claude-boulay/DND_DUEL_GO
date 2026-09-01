@@ -576,7 +576,14 @@
     "clear_filter": "Clear filter",
     "no_cards_to_display": "No cards to display — import a set or run a search.",
     "total_cards_one": "{{count}} card total",
-    "total_cards_other": "{{count}} cards total"
+    "total_cards_other": "{{count}} cards total",
+    "reimport_all_button": "Reimport all boosters",
+    "reimport_all_tooltip": "Reimports every already-imported booster, one by one — useful after an app update (e.g. to populate translations) instead of doing it by hand one at a time",
+    "reimport_all_progress": "Reimporting {{done}}/{{total}}...",
+    "reimport_all_done_one": "{{count}} booster reimported.",
+    "reimport_all_done_other": "{{count}} boosters reimported.",
+    "reimport_all_failed_one": " {{count}} failure.",
+    "reimport_all_failed_other": " {{count}} failures."
   },
   "characterList": {
     "empty": "No characters in this session yet.",

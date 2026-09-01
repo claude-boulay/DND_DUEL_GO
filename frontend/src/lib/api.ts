@@ -745,7 +745,7 @@ export const api = {
     return body as { character: ApiCharacter; summary: ApiCsvImportSummary };
   },
 
-  listCardSets: (token: string, params?: { refresh?: boolean; search?: string; include_custom?: boolean }) =>
+  listCardSets: (token: string, params?: { refresh?: boolean; search?: string; include_custom?: boolean; imported_only?: boolean }) =>
     request<{ sets: ApiCardSet[] }>(`/cards/sets${buildQuery(params)}`, {}, token),
 
   /** Booster custom vide (pas encore de carte liée) — voir CustomCardPanel.tsx, la gestion des cartes qu'il contient passe par linkCustomCardToBooster/unlinkCustomCardFromBooster. */

@@ -576,7 +576,14 @@
     "clear_filter": "Effacer le filtre",
     "no_cards_to_display": "Aucune carte à afficher — importez un set ou lancez une recherche.",
     "total_cards_one": "{{count}} carte au total",
-    "total_cards_other": "{{count}} cartes au total"
+    "total_cards_other": "{{count}} cartes au total",
+    "reimport_all_button": "Réimporter tous les boosters",
+    "reimport_all_tooltip": "Réimporte chaque booster déjà importé, un par un — utile après une mise à jour de l'appli (ex. pour peupler les traductions) plutôt que de le faire à la main un par un",
+    "reimport_all_progress": "Réimport {{done}}/{{total}}...",
+    "reimport_all_done_one": "{{count}} booster réimporté.",
+    "reimport_all_done_other": "{{count}} boosters réimportés.",
+    "reimport_all_failed_one": " {{count}} échec.",
+    "reimport_all_failed_other": " {{count}} échecs."
   },
   "characterList": {
     "empty": "Aucun personnage dans ce salon pour l'instant.",
