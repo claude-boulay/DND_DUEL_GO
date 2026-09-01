@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { api, ApiError, type ApiCharacter, type ApiCollectionEntry, type ApiOpenedCard, type ApiSealedBooster } from '../lib/api';
+import { api, type ApiCharacter, type ApiCollectionEntry, type ApiOpenedCard, type ApiSealedBooster } from '../lib/api';
 import { STAT_LABELS, STAT_NAMES, abilityModifier, effectiveStat } from '../lib/pointBuy';
 import { translateAttribute, translateRace } from '../lib/cardLabels';
+import { translateApiError } from '../lib/translateApiError';
 import {
   EMPTY_FILTERS,
   SORT_OPTIONS,
@@ -47,6 +48,7 @@ function formatModifier(modifier: number): string {
  * aucun affichage ni édition après la création du personnage.
  */
 export function CharacterSheetOverlay({ token, character, currentUserId, isGm, currencyName, onCharacterUpdate, onClose }: CharacterSheetOverlayProps) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<'fiche' | 'collection'>('fiche');
   const canManage = isGm || character.user_id === currentUserId;
 
@@ -54,10 +56,10 @@ export function CharacterSheetOverlay({ token, character, currentUserId, isGm, c
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Fiche de personnage</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('characterSheet.eyebrow')}</p>
           <h2 className="font-display text-2xl text-accent-400">
             {character.name}
-            {character.is_npc && <span className="ml-2 align-middle text-xs uppercase text-neutral-500">NPC</span>}
+            {character.is_npc && <span className="ml-2 align-middle text-xs uppercase text-neutral-500">{t('characterSheet.npc_badge')}</span>}
           </h2>
         </div>
         <div className="flex items-center gap-4">
@@ -67,14 +69,14 @@ export function CharacterSheetOverlay({ token, character, currentUserId, isGm, c
               onClick={() => setTab('fiche')}
               className={`rounded px-3 py-1.5 transition ${tab === 'fiche' ? 'bg-accent-500 text-arena-950' : 'text-neutral-300 hover:text-accent-400'}`}
             >
-              Fiche
+              {t('characterSheet.tab_sheet')}
             </button>
             <button
               type="button"
               onClick={() => setTab('collection')}
               className={`rounded px-3 py-1.5 transition ${tab === 'collection' ? 'bg-accent-500 text-arena-950' : 'text-neutral-300 hover:text-accent-400'}`}
             >
-              Collection
+              {t('characterSheet.tab_collection')}
             </button>
           </nav>
           <button
@@ -82,7 +84,7 @@ export function CharacterSheetOverlay({ token, character, currentUserId, isGm, c
             onClick={onClose}
             className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Fermer
+            {t('characterSheet.close')}
           </button>
         </div>
       </header>
@@ -121,6 +123,7 @@ function FicheTab({
   currencyName: string;
   onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="mx-auto grid max-w-5xl gap-4 p-6 lg:grid-cols-3">
       <div className="space-y-4 lg:col-span-2">
@@ -131,9 +134,9 @@ function FicheTab({
       </div>
       <div className="space-y-4">
         <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Économie</h3>
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('characterSheet.economy')}</h3>
           <p className="mb-2 text-sm text-neutral-300">
-            niveau {character.level} · argent{' '}
+            {t('characterSheet.level_money', { level: character.level })}{' '}
             <span className="font-semibold text-accent-400">
               {character.money} {currencyName}
             </span>
@@ -145,7 +148,7 @@ function FicheTab({
 
         {canManage && (
           <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Decks</h3>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('deckManager.title')}</h3>
             <DeckManager token={token} character={character} onCharacterUpdate={onCharacterUpdate} />
           </section>
         )}
@@ -155,22 +158,23 @@ function FicheTab({
 }
 
 function StatsPanel({ character }: { character: ApiCharacter }) {
+  const { t } = useTranslation();
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">Statistiques</h3>
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('characterSheet.statistics')}</h3>
       <div className="grid grid-cols-5 gap-2">
         {STAT_NAMES.map((stat) => {
           const modifier = abilityModifier(effectiveStat(character.stats[stat], character.level));
           return (
             <div key={stat} className="rounded-lg border border-arena-700 bg-arena-800 py-3 text-center">
-              <div className="text-[10px] uppercase tracking-wide text-neutral-500">{STAT_LABELS[stat]}</div>
+              <div className="text-[10px] uppercase tracking-wide text-neutral-500">{t(STAT_LABELS[stat])}</div>
               <div className="font-display text-2xl text-neutral-100">{character.stats[stat]}</div>
               <div className="text-xs text-accent-400">{formatModifier(modifier)}</div>
             </div>
           );
         })}
       </div>
-      <p className="mt-2 text-xs text-neutral-500">rerolls de Chance restants : {character.remaining_luck_rerolls}</p>
+      <p className="mt-2 text-xs text-neutral-500">{t('characterSheet.luck_rerolls_remaining', { count: character.remaining_luck_rerolls })}</p>
     </section>
   );
 }
@@ -186,6 +190,7 @@ function RpPanel({
   canManage: boolean;
   onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [backstory, setBackstory] = useState(character.backstory);
   const [personality, setPersonality] = useState(character.personality);
@@ -218,25 +223,25 @@ function RpPanel({
       });
       setEditing(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
   };
 
   const fields: { label: string; value: string }[] = [
-    { label: 'Historique', value: character.backstory },
-    { label: 'Personnalité', value: character.personality },
-    { label: 'Description visuelle', value: character.visual_description },
+    { label: t('characterForm.placeholder_backstory'), value: character.backstory },
+    { label: t('characterForm.placeholder_personality'), value: character.personality },
+    { label: t('characterForm.placeholder_visual_description'), value: character.visual_description },
   ];
 
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Roleplay</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('characterSheet.roleplay')}</h3>
         {canManage && !editing && (
           <button type="button" onClick={startEditing} className="text-xs text-accent-400 underline hover:text-accent-300">
-            Modifier
+            {t('characterSheet.edit')}
           </button>
         )}
       </div>
@@ -254,21 +259,21 @@ function RpPanel({
         <form onSubmit={handleSave} className="space-y-2">
           <div className="grid gap-2 sm:grid-cols-3">
             <textarea
-              placeholder="Historique"
+              placeholder={t('characterForm.placeholder_backstory')}
               value={backstory}
               onChange={(e) => setBackstory(e.target.value)}
               rows={4}
               className="w-full resize-none rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
             />
             <textarea
-              placeholder="Personnalité"
+              placeholder={t('characterForm.placeholder_personality')}
               value={personality}
               onChange={(e) => setPersonality(e.target.value)}
               rows={4}
               className="w-full resize-none rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
             />
             <textarea
-              placeholder="Description visuelle"
+              placeholder={t('characterForm.placeholder_visual_description')}
               value={visualDescription}
               onChange={(e) => setVisualDescription(e.target.value)}
               rows={4}
@@ -282,14 +287,14 @@ function RpPanel({
               disabled={submitting}
               className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
             >
-              Enregistrer
+              {t('characterSheet.save')}
             </button>
             <button
               type="button"
               onClick={() => setEditing(false)}
               className="rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
             >
-              Annuler
+              {t('characterSheet.cancel')}
             </button>
           </div>
         </form>
@@ -315,6 +320,7 @@ function NotesPanel({
   canManage: boolean;
   onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
 }) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [notes, setNotes] = useState(character.notes);
   const [submitting, setSubmitting] = useState(false);
@@ -335,7 +341,7 @@ function NotesPanel({
       onCharacterUpdate(character.id, { notes: updated.notes });
       setEditing(false);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -344,10 +350,10 @@ function NotesPanel({
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Notes</h3>
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('characterSheet.notes')}</h3>
         {canManage && !editing && (
           <button type="button" onClick={startEditing} className="text-xs text-accent-400 underline hover:text-accent-300">
-            Modifier
+            {t('characterSheet.edit')}
           </button>
         )}
       </div>
@@ -357,7 +363,7 @@ function NotesPanel({
       ) : (
         <form onSubmit={handleSave} className="space-y-2">
           <textarea
-            placeholder="Informations importantes à retenir..."
+            placeholder={t('characterSheet.notes_placeholder')}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={5}
@@ -370,14 +376,14 @@ function NotesPanel({
               disabled={submitting}
               className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
             >
-              Enregistrer
+              {t('characterSheet.save')}
             </button>
             <button
               type="button"
               onClick={() => setEditing(false)}
               className="rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
             >
-              Annuler
+              {t('characterSheet.cancel')}
             </button>
           </div>
         </form>
@@ -397,6 +403,7 @@ function InventoryPanel({
   canManage: boolean;
   onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
 }) {
+  const { t } = useTranslation();
   const [newItem, setNewItem] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -408,7 +415,7 @@ function InventoryPanel({
       const { character: updated } = await api.updateCharacterProfile(token, character.id, { inventory });
       onCharacterUpdate(character.id, { inventory: updated.inventory });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -427,8 +434,8 @@ function InventoryPanel({
 
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
-      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">Inventaire</h3>
-      {character.inventory.length === 0 && <p className="text-sm text-neutral-500">Rien pour l'instant.</p>}
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('characterSheet.inventory')}</h3>
+      {character.inventory.length === 0 && <p className="text-sm text-neutral-500">{t('characterSheet.inventory_empty')}</p>}
       {character.inventory.length > 0 && (
         <ul className="mb-2 space-y-1">
           {character.inventory.map((item, index) => (
@@ -436,7 +443,7 @@ function InventoryPanel({
               <span className="min-w-0 truncate">{item}</span>
               {canManage && (
                 <button type="button" onClick={() => handleRemove(index)} disabled={submitting} className="shrink-0 text-red-400 hover:text-red-300 disabled:opacity-50">
-                  Retirer
+                  {t('characterSheet.remove')}
                 </button>
               )}
             </li>
@@ -447,7 +454,7 @@ function InventoryPanel({
         <form onSubmit={handleAdd} className="flex gap-2">
           <input
             type="text"
-            placeholder="Ajouter un objet"
+            placeholder={t('characterSheet.add_item_placeholder')}
             value={newItem}
             onChange={(e) => setNewItem(e.target.value)}
             className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-3 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -457,7 +464,7 @@ function InventoryPanel({
             disabled={submitting || !newItem.trim()}
             className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
           >
-            Ajouter
+            {t('characterSheet.add')}
           </button>
         </form>
       )}
@@ -475,6 +482,7 @@ function BoostersPanel({
   character: ApiCharacter;
   onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
 }) {
+  const { t } = useTranslation();
   // Clé sur card_set_id (repli sur set_code pour une entrée héritée d'avant
   // ce correctif) — set_code seul ne distingue pas deux entrées différentes
   // qui le partagent (voir CLAUDE.md).
@@ -521,7 +529,7 @@ function BoostersPanel({
       onCharacterUpdate(character.id, { collection: updated.collection, sealed_boosters: updated.sealed_boosters });
       setOpening({ setCode, setName, cardSetId, cards: opened_cards });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setOpeningKey(null);
     }
@@ -529,7 +537,7 @@ function BoostersPanel({
 
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
-      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Boosters scellés</h3>
+      <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('characterSheet.sealed_boosters')}</h3>
       {/* Scrollbar si la liste devient trop haute (demande utilisateur) — max-h
           tuné à ~5 lignes à cette hauteur de ligne, le reste défile. */}
       <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1 text-sm">
@@ -549,17 +557,17 @@ function BoostersPanel({
               disabled={openingKey === keyFor(b)}
               className="shrink-0 text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
             >
-              {openingKey === keyFor(b) ? 'ouverture...' : 'ouvrir'}
+              {openingKey === keyFor(b) ? t('characterSheet.opening') : t('characterSheet.open')}
             </button>
             {b.quantity > 1 && (
               <button
                 type="button"
                 onClick={() => void handleOpen(b.set_code, b.set_name, b.card_set_id, Math.min(b.quantity, 20))}
                 disabled={openingKey === keyFor(b)}
-                title={b.quantity > 20 ? 'Plafonné à 20 boosters par ouverture' : undefined}
+                title={b.quantity > 20 ? t('characterSheet.open_capped_tooltip') : undefined}
                 className="shrink-0 text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
               >
-                tout ouvrir (×{Math.min(b.quantity, 20)})
+                {t('characterSheet.open_all', { count: Math.min(b.quantity, 20) })}
               </button>
             )}
           </div>
@@ -615,7 +623,7 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
         setPreviewCard((prev) => prev ?? fetched[0]?.card ?? null);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+        if (!cancelled) setError(translateApiError(err, t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -658,14 +666,14 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
               <p className="mb-2 text-neutral-300">
                 {previewCard.atk !== null && `ATK ${previewCard.atk}`}
                 {previewCard.def !== null && ` / DEF ${previewCard.def}`}
-                {previewCard.level_rank !== null && ` · Niv./Rang ${previewCard.level_rank}`}
+                {previewCard.level_rank !== null && ` · ${t('cardPreview.level_rank', { level: previewCard.level_rank })}`}
               </p>
             )}
-            {previewCard.pendulum_scale !== null && <p className="mb-2 text-neutral-300">Échelle Pendule {previewCard.pendulum_scale}</p>}
+            {previewCard.pendulum_scale !== null && <p className="mb-2 text-neutral-300">{t('cardPreview.pendulum_scale', { scale: previewCard.pendulum_scale })}</p>}
             <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{previewCard.description}</p>
           </div>
         ) : (
-          <p className="text-sm text-neutral-500">Cliquez sur une carte pour l'afficher ici.</p>
+          <p className="text-sm text-neutral-500">{t('cardPreview.empty')}</p>
         )}
       </aside>
 
@@ -673,7 +681,7 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
         <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
           <input
             type="text"
-            placeholder="Rechercher dans la collection"
+            placeholder={t('collectionBrowser.search_placeholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
@@ -692,7 +700,7 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
           <button
             type="button"
             onClick={() => setSortDir((d) => (d === 1 ? -1 : 1))}
-            title={sortDir === 1 ? 'Ordre croissant — cliquer pour inverser' : 'Ordre décroissant — cliquer pour inverser'}
+            title={sortDir === 1 ? t('collectionBrowser.sort_asc_tooltip') : t('collectionBrowser.sort_desc_tooltip')}
             className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
           >
             {sortDir === 1 ? '↑' : '↓'}
@@ -702,7 +710,7 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
             onClick={() => setShowFilterModal(true)}
             className="flex items-center gap-1 rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Filtrer
+            {t('collectionBrowser.filter_button')}
             {activeFilterCount(filters) > 0 && (
               <span className="rounded-full bg-accent-500 px-1.5 text-[10px] font-semibold text-arena-950">{activeFilterCount(filters)}</span>
             )}
@@ -710,11 +718,11 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading && <p className="text-sm text-neutral-500">Chargement...</p>}
+          {loading && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
           {error && <p className="text-sm text-red-400">{error}</p>}
-          {!loading && collection && collection.length === 0 && <p className="text-sm text-neutral-500">Aucune carte dans la collection.</p>}
+          {!loading && collection && collection.length === 0 && <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_collection')}</p>}
           {!loading && collection && collection.length > 0 && entries.length === 0 && (
-            <p className="text-sm text-neutral-500">Aucune carte ne correspond aux filtres.</p>
+            <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_filtered')}</p>
           )}
           <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
             {entries.map((entry) => (

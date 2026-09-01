@@ -126,6 +126,46 @@
     "creating": "Création...",
     "submit": "Créer le personnage"
   },
+  "cardPreview": {
+    "empty": "Cliquez sur une carte pour l'afficher ici.",
+    "level_rank": "Niv./Rang {{level}}",
+    "pendulum_scale": "Échelle Pendule {{scale}}"
+  },
+  "collectionBrowser": {
+    "search_placeholder": "Rechercher dans la collection",
+    "sort_asc_tooltip": "Ordre croissant — cliquer pour inverser",
+    "sort_desc_tooltip": "Ordre décroissant — cliquer pour inverser",
+    "filter_button": "Filtrer",
+    "empty_collection": "Aucune carte dans la collection.",
+    "empty_filtered": "Aucune carte ne correspond aux filtres."
+  },
+  "characterSheet": {
+    "eyebrow": "Fiche de personnage",
+    "npc_badge": "PNJ",
+    "tab_sheet": "Fiche",
+    "tab_collection": "Collection",
+    "close": "Fermer",
+    "economy": "Économie",
+    "level_money": "niveau {{level}} · argent",
+    "statistics": "Statistiques",
+    "luck_rerolls_remaining": "rerolls de Chance restants : {{count}}",
+    "roleplay": "Roleplay",
+    "edit": "Modifier",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "notes": "Notes",
+    "notes_placeholder": "Informations importantes à retenir...",
+    "inventory": "Inventaire",
+    "inventory_empty": "Rien pour l'instant.",
+    "remove": "Retirer",
+    "add_item_placeholder": "Ajouter un objet",
+    "add": "Ajouter",
+    "sealed_boosters": "Boosters scellés",
+    "opening": "ouverture...",
+    "open": "ouvrir",
+    "open_capped_tooltip": "Plafonné à 20 boosters par ouverture",
+    "open_all": "tout ouvrir (×{{count}})"
+  },
   "dice": {
     "title": "Dés",
     "coin_label": "Pièce (Pile/Face)",

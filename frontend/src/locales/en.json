@@ -126,6 +126,46 @@
     "creating": "Creating...",
     "submit": "Create character"
   },
+  "cardPreview": {
+    "empty": "Click a card to preview it here.",
+    "level_rank": "Level/Rank {{level}}",
+    "pendulum_scale": "Pendulum Scale {{scale}}"
+  },
+  "collectionBrowser": {
+    "search_placeholder": "Search the collection",
+    "sort_asc_tooltip": "Ascending order — click to reverse",
+    "sort_desc_tooltip": "Descending order — click to reverse",
+    "filter_button": "Filter",
+    "empty_collection": "No cards in the collection.",
+    "empty_filtered": "No cards match the filters."
+  },
+  "characterSheet": {
+    "eyebrow": "Character sheet",
+    "npc_badge": "NPC",
+    "tab_sheet": "Sheet",
+    "tab_collection": "Collection",
+    "close": "Close",
+    "economy": "Economy",
+    "level_money": "level {{level}} · money",
+    "statistics": "Statistics",
+    "luck_rerolls_remaining": "Luck rerolls remaining: {{count}}",
+    "roleplay": "Roleplay",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "notes": "Notes",
+    "notes_placeholder": "Important info to remember...",
+    "inventory": "Inventory",
+    "inventory_empty": "Nothing yet.",
+    "remove": "Remove",
+    "add_item_placeholder": "Add an item",
+    "add": "Add",
+    "sealed_boosters": "Sealed boosters",
+    "opening": "opening...",
+    "open": "open",
+    "open_capped_tooltip": "Capped at 20 boosters per opening",
+    "open_all": "open all (×{{count}})"
+  },
   "dice": {
     "title": "Dice",
     "coin_label": "Coin (Heads/Tails)",
