@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api, ApiError, type ApiCard, type ApiCardSet } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 
 interface CardImportPanelProps {
   token: string;
 }
 
 export function CardImportPanel({ token }: CardImportPanelProps) {
+  const { t } = useTranslation();
   const [sets, setSets] = useState<ApiCardSet[]>([]);
   const [setsSearchInput, setSetsSearchInput] = useState('');
   const [loadingSets, setLoadingSets] = useState(false);
@@ -35,7 +38,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
       setSets(fetched);
     } catch (err) {
       if (requestId !== setsRequestIdRef.current) return;
-      setSetsError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setSetsError(translateApiError(err, t));
     } finally {
       if (requestId === setsRequestIdRef.current) setLoadingSets(false);
     }
@@ -61,7 +64,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
       setCardsTotal(total);
     } catch (err) {
       if (requestId !== cardsRequestIdRef.current) return;
-      setCardsError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setCardsError(translateApiError(err, t));
     } finally {
       if (requestId === cardsRequestIdRef.current) setLoadingCards(false);
     }
@@ -89,7 +92,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
       // elle porte quand même un vrai message ("Failed to fetch"...) plus
       // utile que le texte générique, qui ne devrait rester qu'en tout
       // dernier recours (erreur qui n'est même pas un vrai Error).
-      setSetsError(err instanceof Error ? err.message : 'Une erreur est survenue');
+      setSetsError(err instanceof ApiError ? translateApiError(err, t) : err instanceof Error ? err.message : t('common.error_generic'));
       setImportingSetId(null);
       return;
     }
@@ -110,21 +113,21 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
     <div className="grid gap-4 sm:grid-cols-2">
       <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
         <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Sets de cartes (boosters)</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('cardImport.title_sets')}</h2>
           <button
             type="button"
             onClick={() => void loadSets(setsSearchInput, true)}
             disabled={loadingSets}
             className="text-xs text-neutral-400 underline transition hover:text-accent-400 disabled:opacity-40"
           >
-            Synchroniser depuis YGOPRODeck
+            {t('cardImport.sync_button')}
           </button>
         </header>
 
         <form onSubmit={handleSetsSearch} className="mb-3 flex gap-2">
           <input
             type="text"
-            placeholder="Rechercher un set (ex. Legend of Blue Eyes)"
+            placeholder={t('cardImport.search_set_placeholder')}
             value={setsSearchInput}
             onChange={(e) => setSetsSearchInput(e.target.value)}
             className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -133,16 +136,16 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
             type="submit"
             className="rounded-md border border-arena-600 px-3 py-2 text-xs text-neutral-200 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Chercher
+            {t('cardImport.search_button')}
           </button>
         </form>
 
         {setsError && <p className="mb-2 text-xs text-red-400">{setsError}</p>}
-        {loadingSets && <p className="text-xs text-neutral-500">Chargement...</p>}
+        {loadingSets && <p className="text-xs text-neutral-500">{t('common.loading')}</p>}
 
         <div className="max-h-80 space-y-1 overflow-y-auto font-mono text-xs">
           {!loadingSets && sets.length === 0 && (
-            <p className="text-neutral-500">Aucun set trouvé, essayez une autre recherche.</p>
+            <p className="text-neutral-500">{t('cardImport.no_sets_found')}</p>
           )}
           {sets.map((set) => (
             <div key={set.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-arena-800">
@@ -158,7 +161,8 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
                   {set.set_name} <span className="text-neutral-500">({set.set_code})</span>
                 </div>
                 <div className="text-neutral-500">
-                  {set.num_of_cards} cartes{set.tcg_date ? ` · ${set.tcg_date}` : ''}
+                  {t('cardImport.num_cards', { count: set.num_of_cards })}
+                  {set.tcg_date ? ` · ${set.tcg_date}` : ''}
                 </div>
               </div>
               {set.imported ? (
@@ -167,13 +171,9 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
                     className={`rounded border px-2 py-1 ${
                       set.had_code_collision ? 'border-amber-600 text-amber-400' : 'border-emerald-700 text-emerald-400'
                     }`}
-                    title={
-                      set.had_code_collision
-                        ? "Un AUTRE set partage ce même code (voir la recherche) — importable et différenciable séparément, ce n'est plus un signe de données erronées."
-                        : undefined
-                    }
+                    title={set.had_code_collision ? t('cardImport.collision_tooltip') : undefined}
                   >
-                    {set.had_code_collision ? '⚠️ Code partagé' : 'Importé'}
+                    {set.had_code_collision ? t('cardImport.collision_badge') : t('merchantPicker.imported_badge')}
                   </span>
                   <button
                     type="button"
@@ -181,7 +181,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
                     disabled={importingSetId === set.id}
                     className="text-[10px] text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
                   >
-                    {importingSetId === set.id ? 'Réimport...' : 'Réimporter'}
+                    {importingSetId === set.id ? t('cardImport.reimporting') : t('cardImport.reimport')}
                   </button>
                 </div>
               ) : (
@@ -191,7 +191,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
                   disabled={importingSetId === set.id}
                   className="shrink-0 rounded-md bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
                 >
-                  {importingSetId === set.id ? 'Import...' : 'Importer'}
+                  {importingSetId === set.id ? t('cardImport.importing') : t('cardImport.import_button')}
                 </button>
               )}
             </div>
@@ -201,13 +201,13 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
 
       <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-200">
-          Cartes importées{cardsSetFilter ? ` — ${cardsSetFilter.name}` : ''}
+          {cardsSetFilter ? t('cardImport.title_cards_filtered', { name: cardsSetFilter.name }) : t('cardImport.title_cards')}
         </h2>
 
         <form onSubmit={handleCardsSearch} className="mb-3 flex gap-2">
           <input
             type="text"
-            placeholder="Rechercher une carte par nom"
+            placeholder={t('grantCards.search_placeholder')}
             value={cardsSearchInput}
             onChange={(e) => setCardsSearchInput(e.target.value)}
             className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -216,7 +216,7 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
             type="submit"
             className="rounded-md border border-arena-600 px-3 py-2 text-xs text-neutral-200 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Chercher
+            {t('cardImport.search_button')}
           </button>
           {cardsSetFilter && (
             <button
@@ -228,18 +228,18 @@ export function CardImportPanel({ token }: CardImportPanelProps) {
               }}
               className="shrink-0 text-xs text-neutral-400 underline hover:text-accent-400"
             >
-              Effacer le filtre
+              {t('cardImport.clear_filter')}
             </button>
           )}
         </form>
 
         {cardsError && <p className="mb-2 text-xs text-red-400">{cardsError}</p>}
-        {loadingCards && <p className="text-xs text-neutral-500">Chargement...</p>}
+        {loadingCards && <p className="text-xs text-neutral-500">{t('common.loading')}</p>}
         {!loadingCards && cards.length === 0 && (
-          <p className="text-xs text-neutral-500">Aucune carte à afficher — importez un set ou lancez une recherche.</p>
+          <p className="text-xs text-neutral-500">{t('cardImport.no_cards_to_display')}</p>
         )}
         {!loadingCards && cards.length > 0 && (
-          <p className="mb-2 text-xs text-neutral-500">{cardsTotal} carte(s) au total</p>
+          <p className="mb-2 text-xs text-neutral-500">{t('cardImport.total_cards', { count: cardsTotal })}</p>
         )}
 
         {/* max-h/overflow sur ce conteneur EXTÉRIEUR seulement (pas la

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { socket } from '../lib/socket';
-import { api, ApiError, type ApiCharacter, type ApiMerchant, type ApiSealedBooster } from '../lib/api';
+import { api, type ApiCharacter, type ApiMerchant, type ApiSealedBooster } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 import { MerchantShopOverlay } from './MerchantShopOverlay';
 
 interface MerchantPanelProps {
@@ -22,6 +24,7 @@ export function MerchantPanel({
   currentUserId,
   onCharacterUpdate,
 }: MerchantPanelProps) {
+  const { t } = useTranslation();
   const [merchants, setMerchants] = useState<ApiMerchant[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +42,7 @@ export function MerchantPanel({
       return api
         .listMerchants(token, sessionId)
         .then(({ merchants: fetched }) => setMerchants(fetched))
-        .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+        .catch((err) => setError(translateApiError(err, t)))
         .finally(() => setLoading(false));
     },
     [token, sessionId],
@@ -55,7 +58,7 @@ export function MerchantPanel({
         if (!cancelled) setMerchants(fetched);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+        if (!cancelled) setError(translateApiError(err, t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -89,20 +92,20 @@ export function MerchantPanel({
       setNewDescription('');
       setNewHaggleDc(15);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setCreating(false);
     }
   };
 
   const handleDeleteMerchant = async (merchantId: string) => {
-    if (!window.confirm('Supprimer ce marchand ?')) return;
+    if (!window.confirm(t('merchantPanel.confirm_delete'))) return;
     try {
       await api.deleteMerchant(token, merchantId);
       setMerchants((prev) => prev.filter((m) => m.id !== merchantId));
       if (openMerchantId === merchantId) setOpenMerchantId(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     }
   };
 
@@ -114,13 +117,13 @@ export function MerchantPanel({
 
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-200">Marchands</h2>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('merchantPanel.title')}</h2>
 
       {isGm && (
         <form onSubmit={handleCreateMerchant} className="mb-4 flex flex-wrap gap-2">
           <input
             type="text"
-            placeholder="Nom du marchand"
+            placeholder={t('merchantPanel.name_placeholder')}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             required
@@ -128,13 +131,13 @@ export function MerchantPanel({
           />
           <input
             type="text"
-            placeholder="Description (optionnelle)"
+            placeholder={t('merchantPanel.description_placeholder')}
             value={newDescription}
             onChange={(e) => setNewDescription(e.target.value)}
             className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
           />
-          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-neutral-400" title="DC proposé par défaut quand un nouvel article négociable est ajouté à ce marchand — chaque article garde ensuite son propre DC/remise.">
-            DC par défaut
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-neutral-400" title={t('merchantPanel.default_dc_tooltip')}>
+            {t('merchantPanel.default_dc_label')}
             <input
               type="number"
               min={1}
@@ -149,34 +152,32 @@ export function MerchantPanel({
             disabled={creating}
             className="rounded-md bg-accent-500 px-3 py-2 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
           >
-            Créer
+            {t('merchantPanel.create')}
           </button>
         </form>
       )}
 
       {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
-      {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
-      {!loading && merchants.length === 0 && <p className="text-xs text-neutral-500">Aucun marchand dans ce salon.</p>}
+      {loading && <p className="text-xs text-neutral-500">{t('common.loading')}</p>}
+      {!loading && merchants.length === 0 && <p className="text-xs text-neutral-500">{t('merchantPanel.empty')}</p>}
 
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {merchants.map((merchant) => (
           <article key={merchant.id} className="flex flex-col rounded-lg border border-arena-700 bg-arena-800 p-3 text-sm">
             <h3 className="truncate font-semibold text-accent-400">{merchant.name}</h3>
             {merchant.description && <p className="mt-0.5 line-clamp-2 text-xs text-neutral-400">{merchant.description}</p>}
-            <p className="mt-1 text-xs text-neutral-500">
-              {merchant.items.length} article{merchant.items.length > 1 ? 's' : ''}
-            </p>
+            <p className="mt-1 text-xs text-neutral-500">{t('merchantPanel.item_count', { count: merchant.items.length })}</p>
             <div className="mt-2 flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setOpenMerchantId(merchant.id)}
                 className="flex-1 rounded-md bg-accent-500 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400"
               >
-                Ouvrir la boutique
+                {t('merchantPanel.open_shop')}
               </button>
               {isGm && (
                 <button type="button" onClick={() => void handleDeleteMerchant(merchant.id)} className="shrink-0 text-xs text-red-400 hover:text-red-300">
-                  Supprimer
+                  {t('merchantPanel.delete')}
                 </button>
               )}
             </div>

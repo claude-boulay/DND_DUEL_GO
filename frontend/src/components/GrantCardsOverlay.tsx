@@ -1,6 +1,8 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { api, ApiError, type ApiCard, type ApiCharacter, type ApiCsvImportSummary } from '../lib/api';
+import { useTranslation } from 'react-i18next';
+import { api, type ApiCard, type ApiCharacter, type ApiCsvImportSummary } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 
 interface GrantCardsOverlayProps {
   token: string;
@@ -19,6 +21,7 @@ type Tab = 'search' | 'csv';
  * collection déjà existante (export "My Collection" de YGOPRODeck).
  */
 export function GrantCardsOverlay({ token, character, onCharacterUpdate, onClose }: GrantCardsOverlayProps) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('search');
 
   return createPortal(
@@ -27,7 +30,7 @@ export function GrantCardsOverlay({ token, character, onCharacterUpdate, onClose
         <header className="flex shrink-0 items-center justify-between border-b border-arena-700 p-4">
           <div>
             <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">
-              Ajouter des cartes — <span className="text-accent-400">{character.name}</span>
+              {t('grantCards.title')} <span className="text-accent-400">{character.name}</span>
             </h2>
             <div className="mt-2 flex gap-1 text-xs">
               <button
@@ -35,14 +38,14 @@ export function GrantCardsOverlay({ token, character, onCharacterUpdate, onClose
                 onClick={() => setTab('search')}
                 className={`rounded px-2 py-1 ${tab === 'search' ? 'bg-accent-500 text-arena-950' : 'border border-arena-600 text-neutral-300'}`}
               >
-                Rechercher une carte
+                {t('grantCards.tab_search')}
               </button>
               <button
                 type="button"
                 onClick={() => setTab('csv')}
                 className={`rounded px-2 py-1 ${tab === 'csv' ? 'bg-accent-500 text-arena-950' : 'border border-arena-600 text-neutral-300'}`}
               >
-                Importer un CSV
+                {t('grantCards.tab_csv')}
               </button>
             </div>
           </div>
@@ -73,6 +76,7 @@ function SearchTab({
   character: ApiCharacter;
   onCharacterUpdate: (characterId: string, patch: { collection?: string[] }) => void;
 }) {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<ApiCard[]>([]);
   const [total, setTotal] = useState(0);
@@ -92,11 +96,11 @@ function SearchTab({
           setResults(cards);
           setTotal(t);
         })
-        .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+        .catch((err) => setError(translateApiError(err, t)))
         .finally(() => setLoading(false));
     }, 300);
     return () => clearTimeout(handle);
-  }, [token, search]);
+  }, [token, search, t]);
 
   const handleAdd = async () => {
     if (!selectedCard) return;
@@ -109,7 +113,7 @@ function SearchTab({
       setLastAdded({ name: added.card.name, quantity: added.quantity });
       setQuantity(1);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -119,16 +123,20 @@ function SearchTab({
     <div className="flex h-full flex-col gap-3 text-xs">
       <input
         type="text"
-        placeholder="Rechercher une carte par nom"
+        placeholder={t('grantCards.search_placeholder')}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         className="w-full rounded border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
       />
 
-      {!loading && <p className="text-neutral-500">{total === 0 ? 'Aucune carte trouvée.' : `${results.length} / ${total} carte${total > 1 ? 's' : ''}`}</p>}
+      {!loading && (
+        <p className="text-neutral-500">
+          {total === 0 ? t('grantCards.no_cards_found') : t('grantCards.results_count', { count: total, shown: results.length, total })}
+        </p>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {loading && <p className="text-neutral-500">Chargement...</p>}
+        {loading && <p className="text-neutral-500">{t('common.loading')}</p>}
         <div className="grid grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-2">
           {results.map((card) => (
             <button
@@ -153,7 +161,7 @@ function SearchTab({
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold text-accent-400">{selectedCard.name}</p>
               <label className="mt-1 flex items-center gap-2 text-neutral-400">
-                Quantité
+                {t('grantCards.quantity_label')}
                 <input
                   type="number"
                   min={1}
@@ -170,16 +178,14 @@ function SearchTab({
               disabled={submitting}
               className="shrink-0 rounded-md bg-accent-500 px-3 py-1.5 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
             >
-              {submitting ? 'Ajout...' : 'Ajouter'}
+              {submitting ? t('grantCards.adding') : t('grantCards.add')}
             </button>
           </div>
         ) : (
-          <p className="text-neutral-500">Sélectionnez une carte ci-dessus.</p>
+          <p className="text-neutral-500">{t('grantCards.select_prompt')}</p>
         )}
         {lastAdded && (
-          <p className="mt-2 text-emerald-400">
-            ✓ {lastAdded.quantity} × {lastAdded.name} ajouté{lastAdded.quantity > 1 ? 's' : ''} à la collection.
-          </p>
+          <p className="mt-2 text-emerald-400">{t('grantCards.added_confirmation', { count: lastAdded.quantity, quantity: lastAdded.quantity, name: lastAdded.name })}</p>
         )}
         {error && <p className="mt-2 text-red-400">{error}</p>}
       </div>
@@ -196,6 +202,7 @@ function CsvImportTab({
   character: ApiCharacter;
   onCharacterUpdate: (characterId: string, patch: { collection?: string[] }) => void;
 }) {
+  const { t } = useTranslation();
   const [fileName, setFileName] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -220,7 +227,7 @@ function CsvImportTab({
       onCharacterUpdate(character.id, { collection: updated.collection });
       setSummary(result);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -229,17 +236,17 @@ function CsvImportTab({
   return (
     <div className="space-y-3 text-xs">
       <p className="text-neutral-400">
-        Pour migrer une collection déjà existante (ex. d'une partie en cours ailleurs) : importez le fichier CSV "My Collection" exporté depuis{' '}
+        {t('grantCards.csv_help_before')}{' '}
         <a href="https://ygoprodeck.com" target="_blank" rel="noreferrer" className="text-accent-400 underline">
           ygoprodeck.com
         </a>{' '}
-        (colonnes cardname, cardq, cardrarity, card_edition, cardset, cardcode, cardid, print_id). Les cartes sont reconnues par leur passcode
-        (colonne <code>cardid</code>) — une carte pas encore dans la base locale est récupérée automatiquement.
+        {t('grantCards.csv_help_columns')} <code>cardid</code>
+        {t('grantCards.csv_help_after')}
       </p>
 
       <div className="flex items-center gap-2 rounded-md border border-arena-700 bg-arena-800/60 p-3">
         <label className="flex items-center gap-2 text-neutral-400">
-          Fichier CSV
+          {t('grantCards.csv_file_label')}
           <input type="file" accept=".csv,text/csv" onChange={handleFileChange} className="text-neutral-300" />
         </label>
         {fileName && <span className="text-neutral-500">{fileName}</span>}
@@ -249,7 +256,7 @@ function CsvImportTab({
           disabled={!file || submitting}
           className="ml-auto shrink-0 rounded-md bg-accent-500 px-3 py-1.5 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
         >
-          {submitting ? 'Import...' : 'Importer'}
+          {submitting ? t('grantCards.importing') : t('grantCards.import_button')}
         </button>
       </div>
 
@@ -257,13 +264,10 @@ function CsvImportTab({
 
       {summary && (
         <div className="space-y-2 rounded-md border border-arena-700 bg-arena-800/60 p-3">
-          <p className="font-semibold text-emerald-400">
-            ✓ {summary.total_copies_added} carte{summary.total_copies_added > 1 ? 's' : ''} ajoutée{summary.total_copies_added > 1 ? 's' : ''} à la
-            collection.
-          </p>
+          <p className="font-semibold text-emerald-400">{t('grantCards.summary_added', { count: summary.total_copies_added })}</p>
           {summary.added.length > 0 && (
             <div>
-              <p className="text-neutral-400">Ajoutées ({summary.added.length}) :</p>
+              <p className="text-neutral-400">{t('grantCards.added_list_label', { count: summary.added.length })}</p>
               <ul className="ml-3 max-h-32 list-disc overflow-y-auto text-neutral-300">
                 {summary.added.map((a, i) => (
                   <li key={i}>
@@ -275,24 +279,20 @@ function CsvImportTab({
           )}
           {summary.not_found.length > 0 && (
             <div>
-              <p className="text-amber-400">Introuvables sur YGOPRODeck ({summary.not_found.length}) :</p>
+              <p className="text-amber-400">{t('grantCards.not_found_label', { count: summary.not_found.length })}</p>
               <ul className="ml-3 max-h-32 list-disc overflow-y-auto text-neutral-300">
                 {summary.not_found.map((n, i) => (
-                  <li key={i}>
-                    {n.cardname} (id {n.cardid})
-                  </li>
+                  <li key={i}>{t('grantCards.not_found_row', { name: n.cardname, id: n.cardid })}</li>
                 ))}
               </ul>
             </div>
           )}
           {summary.skipped.length > 0 && (
             <div>
-              <p className="text-red-400">Lignes ignorées ({summary.skipped.length}) :</p>
+              <p className="text-red-400">{t('grantCards.skipped_label', { count: summary.skipped.length })}</p>
               <ul className="ml-3 max-h-32 list-disc overflow-y-auto text-neutral-300">
                 {summary.skipped.map((s, i) => (
-                  <li key={i}>
-                    ligne {s.row} ({s.cardname}) — {s.reason}
-                  </li>
+                  <li key={i}>{t('grantCards.skipped_row', { row: s.row, name: s.cardname, reason: s.reason })}</li>
                 ))}
               </ul>
             </div>

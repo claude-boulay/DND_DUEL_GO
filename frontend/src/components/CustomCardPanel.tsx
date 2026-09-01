@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   api,
   ApiError,
@@ -15,29 +17,34 @@ import {
   type SpellType,
   type TrapType,
 } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 
+// `label` : clé de traduction i18next, réutilise le même catalogue que
+// cardFilters.ts (`cardFilters.monsterKind/spellType/trapType.*`) — texte
+// identique, seules les `value` diffèrent (convention de création de carte
+// custom, distincte du filtrage par `race` des cartes officielles).
 const MONSTER_KINDS: { value: MonsterKind; label: string }[] = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'effect', label: 'Effet' },
-  { value: 'ritual', label: 'Rituel' },
-  { value: 'fusion', label: 'Fusion' },
-  { value: 'synchro', label: 'Synchro' },
-  { value: 'xyz', label: 'Xyz' },
-  { value: 'link', label: 'Lien' },
+  { value: 'normal', label: 'cardFilters.monsterKind.normal' },
+  { value: 'effect', label: 'cardFilters.monsterKind.effect' },
+  { value: 'ritual', label: 'cardFilters.monsterKind.ritual' },
+  { value: 'fusion', label: 'cardFilters.monsterKind.fusion' },
+  { value: 'synchro', label: 'cardFilters.monsterKind.synchro' },
+  { value: 'xyz', label: 'cardFilters.monsterKind.xyz' },
+  { value: 'link', label: 'cardFilters.monsterKind.link' },
 ];
 const ATTRIBUTES: CardAttribute[] = ['DARK', 'LIGHT', 'EARTH', 'WATER', 'FIRE', 'WIND', 'DIVINE'];
 const SPELL_TYPES: { value: SpellType; label: string }[] = [
-  { value: 'normal', label: 'Normale' },
-  { value: 'continuous', label: 'Continue' },
-  { value: 'quick-play', label: 'Jeu Rapide' },
-  { value: 'equip', label: 'Équipement' },
-  { value: 'field', label: 'Terrain' },
-  { value: 'ritual', label: 'Rituelle' },
+  { value: 'normal', label: 'cardFilters.spellType.normal' },
+  { value: 'continuous', label: 'cardFilters.spellType.continuous' },
+  { value: 'quick-play', label: 'cardFilters.spellType.quickPlay' },
+  { value: 'equip', label: 'cardFilters.spellType.equip' },
+  { value: 'field', label: 'cardFilters.spellType.field' },
+  { value: 'ritual', label: 'cardFilters.spellType.ritual' },
 ];
 const TRAP_TYPES: { value: TrapType; label: string }[] = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'continuous', label: 'Continu' },
-  { value: 'counter', label: 'Contre-piège' },
+  { value: 'normal', label: 'cardFilters.trapType.normal' },
+  { value: 'continuous', label: 'cardFilters.trapType.continuous' },
+  { value: 'counter', label: 'cardFilters.trapType.counter' },
 ];
 const LINK_ARROWS: LinkArrow[] = ['top-left', 'top', 'top-right', 'left', 'right', 'bottom-left', 'bottom', 'bottom-right'];
 const LINK_ARROW_SYMBOLS: Record<LinkArrow, string> = {
@@ -68,6 +75,7 @@ interface CustomCardPanelProps {
 }
 
 export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps) {
+  const { t } = useTranslation();
   const [cards, setCards] = useState<ApiCustomCard[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -87,7 +95,7 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
         if (!cancelled) setCards(fetched);
       })
       .catch((err) => {
-        if (!cancelled) setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+        if (!cancelled) setError(translateApiError(err, t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -111,7 +119,7 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
     api
       .listCardSets(token, { include_custom: true })
       .then(({ sets }) => setBoosters(sets.filter((s) => s.is_custom)))
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+      .catch((err) => setError(translateApiError(err, t)))
       .finally(() => setBoostersLoading(false));
   }, [token]);
 
@@ -124,7 +132,7 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
       await api.deleteCustomCard(token, cardId);
       setCards((prev) => prev.filter((c) => c.id !== cardId));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     }
   };
 
@@ -134,7 +142,7 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
     <div className="space-y-4">
       <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
         <header className="mb-3 flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Cartes custom</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('customCards.title')}</h2>
           <div className="flex shrink-0 items-center gap-3">
             {cards.length > 0 && (
               <button
@@ -142,7 +150,7 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
                 onClick={() => setDetailInitialId(cards[0]!.id)}
                 className="text-xs text-accent-400 underline hover:text-accent-300"
               >
-                Voir toutes les cartes custom
+                {t('customCards.view_all')}
               </button>
             )}
             {isGm && (
@@ -151,7 +159,7 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
                 onClick={() => setShowCreate((v) => !v)}
                 className="text-xs text-accent-400 underline hover:text-accent-300"
               >
-                {showCreate ? 'Annuler' : '+ Créer une carte'}
+                {showCreate ? t('duelBoard.cancel') : t('customCards.create_button')}
               </button>
             )}
           </div>
@@ -172,8 +180,8 @@ export function CustomCardPanel({ token, sessionId, isGm }: CustomCardPanelProps
         )}
 
         {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
-        {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
-        {!loading && cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte custom dans ce salon.</p>}
+        {loading && <p className="text-xs text-neutral-500">{t('common.loading')}</p>}
+        {!loading && cards.length === 0 && <p className="text-xs text-neutral-500">{t('customCards.empty')}</p>}
 
         {/* Liste compacte (demande utilisateur) : nom + type seulement, plus
             de détail/actions inline — voir CustomCardDetailOverlay pour ça.
@@ -246,6 +254,7 @@ function CustomBoosterManager({
   onRefresh: () => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
@@ -262,7 +271,7 @@ function CustomBoosterManager({
       setShowCreate(false);
       onRefresh();
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     } finally {
       setCreating(false);
     }
@@ -273,10 +282,10 @@ function CustomBoosterManager({
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
       <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Boosters custom</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('customBooster.title')}</h2>
         {isGm && (
           <button type="button" onClick={() => setShowCreate((v) => !v)} className="text-xs text-accent-400 underline hover:text-accent-300">
-            {showCreate ? 'Annuler' : '+ Créer un booster'}
+            {showCreate ? t('duelBoard.cancel') : t('customBooster.create_toggle')}
           </button>
         )}
       </header>
@@ -285,7 +294,7 @@ function CustomBoosterManager({
         <form onSubmit={handleCreate} className="mb-3 flex gap-2">
           <input
             type="text"
-            placeholder="Nom du booster"
+            placeholder={t('customBooster.name_placeholder')}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             required
@@ -296,17 +305,13 @@ function CustomBoosterManager({
             disabled={creating}
             className="rounded-md bg-accent-500 px-3 py-2 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
           >
-            Créer
+            {t('merchantPanel.create')}
           </button>
         </form>
       )}
 
-      {loading && <p className="text-xs text-neutral-500">Chargement...</p>}
-      {!loading && boosters.length === 0 && (
-        <p className="text-xs text-neutral-500">
-          Aucun booster custom pour l'instant — créez-en un ici, ou depuis "Lier à un booster" sur une carte.
-        </p>
-      )}
+      {loading && <p className="text-xs text-neutral-500">{t('common.loading')}</p>}
+      {!loading && boosters.length === 0 && <p className="text-xs text-neutral-500">{t('customBooster.empty')}</p>}
 
       {/* Plafonné à ~10 boosters visibles, le reste défile (demande utilisateur). */}
       <div className="max-h-[30rem] space-y-2 overflow-y-auto pr-1">
@@ -356,6 +361,7 @@ function CustomBoosterRow({
   onDeleted: () => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
@@ -365,7 +371,7 @@ function CustomBoosterRow({
       await api.deleteCustomBooster(token, booster.set_code);
       onDeleted();
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     } finally {
       setDeleting(false);
       setConfirmingDelete(false);
@@ -381,17 +387,17 @@ function CustomBoosterRow({
         <div className="flex shrink-0 items-center gap-1">
           {confirmingDelete ? (
             <>
-              <span className="text-neutral-400">Supprimer ?</span>
+              <span className="text-neutral-400">{t('customBooster.confirm_delete_question')}</span>
               <button type="button" onClick={() => void handleDelete()} disabled={deleting} className="text-red-400 hover:text-red-300 disabled:opacity-50">
-                Confirmer
+                {t('customBooster.confirm')}
               </button>
               <button type="button" onClick={() => setConfirmingDelete(false)} className="text-neutral-400 hover:text-neutral-300">
-                Annuler
+                {t('duelBoard.cancel')}
               </button>
             </>
           ) : (
             <button type="button" onClick={() => setConfirmingDelete(true)} className="text-red-400 hover:text-red-300">
-              Supprimer
+              {t('merchantPanel.delete')}
             </button>
           )}
         </div>
@@ -423,6 +429,7 @@ function CustomBoosterDetailOverlay({
   onError: (message: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [cardsInBooster, setCardsInBooster] = useState<ApiCard[] | null>(null);
   const [loadingContents, setLoadingContents] = useState(true);
   const [search, setSearch] = useState('');
@@ -439,7 +446,7 @@ function CustomBoosterDetailOverlay({
     api
       .listCards(token, { set_code: booster.set_code, limit: 300 })
       .then(({ cards: fetched }) => setCardsInBooster(fetched))
-      .catch((err) => onError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+      .catch((err) => onError(translateApiError(err, t)))
       .finally(() => setLoadingContents(false));
   }, [token, booster.set_code, onError]);
 
@@ -479,7 +486,7 @@ function CustomBoosterDetailOverlay({
       await api.linkCardToCustomBooster(token, booster.set_code, cardId, rarity);
       loadContents();
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     } finally {
       setAddingId(null);
     }
@@ -491,7 +498,7 @@ function CustomBoosterDetailOverlay({
       await api.unlinkCardFromCustomBooster(token, booster.set_code, cardId);
       loadContents();
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     } finally {
       setRemovingId(null);
     }
@@ -503,7 +510,7 @@ function CustomBoosterDetailOverlay({
       await api.deleteCustomBooster(token, booster.set_code);
       onDeleted();
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
       setDeleting(false);
     }
   };
@@ -512,7 +519,7 @@ function CustomBoosterDetailOverlay({
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Booster custom</p>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('customBoosterDetail.eyebrow')}</p>
           <h2 className="font-display text-xl text-accent-400">
             {booster.set_name} <span className="text-sm text-neutral-500">({booster.set_code})</span>
           </h2>
@@ -521,21 +528,21 @@ function CustomBoosterDetailOverlay({
           {isGm &&
             (confirmingDelete ? (
               <>
-                <span className="text-sm text-neutral-400">Supprimer ce booster ?</span>
+                <span className="text-sm text-neutral-400">{t('customBoosterDetail.confirm_delete_question')}</span>
                 <button
                   type="button"
                   onClick={() => void handleDelete()}
                   disabled={deleting}
                   className="rounded-md border border-red-700 px-3 py-2 text-sm text-red-400 transition hover:bg-red-900/40 disabled:opacity-50"
                 >
-                  Confirmer
+                  {t('customBooster.confirm')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setConfirmingDelete(false)}
                   className="rounded-md border border-arena-600 px-3 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
                 >
-                  Annuler
+                  {t('duelBoard.cancel')}
                 </button>
               </>
             ) : (
@@ -544,7 +551,7 @@ function CustomBoosterDetailOverlay({
                 onClick={() => setConfirmingDelete(true)}
                 className="rounded-md border border-red-800 px-3 py-2 text-sm text-red-400 transition hover:bg-red-900/30"
               >
-                Supprimer le booster
+                {t('customBoosterDetail.delete_booster')}
               </button>
             ))}
           <button
@@ -552,7 +559,7 @@ function CustomBoosterDetailOverlay({
             onClick={onClose}
             className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Fermer
+            {t('characterSheet.close')}
           </button>
         </div>
       </header>
@@ -560,14 +567,14 @@ function CustomBoosterDetailOverlay({
       <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
         <main className="min-w-0 flex-1 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-4">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
-            Contenu du booster {cardsInBooster && `(${cardsInBooster.length})`}
+            {t('customBoosterDetail.contents_title')} {cardsInBooster && `(${cardsInBooster.length})`}
           </h3>
-          {loadingContents && <p className="text-sm text-neutral-500">Chargement...</p>}
+          {loadingContents && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
           {!loadingContents && cardsInBooster && cardsInBooster.length === 0 && (
-            <p className="text-sm text-neutral-500">Aucune carte dans ce booster pour l'instant — ajoutez-en depuis la recherche à droite.</p>
+            <p className="text-sm text-neutral-500">{t('customBoosterDetail.empty_contents')}</p>
           )}
           {!loadingContents && officialInBooster.length > 0 && (
-            <BoosterCardGrid title={`Officielles (${officialInBooster.length})`} cards={officialInBooster} booster={booster}>
+            <BoosterCardGrid title={t('customBoosterDetail.official_count', { count: officialInBooster.length })} cards={officialInBooster} booster={booster}>
               {(c) =>
                 isGm && (
                   <button
@@ -576,14 +583,14 @@ function CustomBoosterDetailOverlay({
                     disabled={removingId === c.id}
                     className="absolute inset-x-0 bottom-0 bg-red-950/90 py-0.5 text-center text-[10px] text-red-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
                   >
-                    Retirer
+                    {t('customBoosterDetail.remove')}
                   </button>
                 )
               }
             </BoosterCardGrid>
           )}
           {!loadingContents && customInBooster.length > 0 && (
-            <BoosterCardGrid title={`Custom (${customInBooster.length})`} cards={customInBooster} booster={booster}>
+            <BoosterCardGrid title={t('customBoosterDetail.custom_count', { count: customInBooster.length })} cards={customInBooster} booster={booster}>
               {(c) =>
                 isGm && (
                   <button
@@ -592,7 +599,7 @@ function CustomBoosterDetailOverlay({
                     disabled={removingId === c.id}
                     className="absolute inset-x-0 bottom-0 bg-red-950/90 py-0.5 text-center text-[10px] text-red-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
                   >
-                    Retirer
+                    {t('customBoosterDetail.remove')}
                   </button>
                 )
               }
@@ -602,11 +609,11 @@ function CustomBoosterDetailOverlay({
 
         {isGm && (
           <aside className="flex w-96 shrink-0 flex-col overflow-hidden rounded-lg border border-arena-700 bg-arena-900 p-4">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Ajouter des cartes</h3>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('customBoosterDetail.add_cards_title')}</h3>
             <div className="mb-2 flex shrink-0 items-center gap-2 text-xs">
               <input
                 type="text"
-                placeholder="Rechercher (officielle ou custom)..."
+                placeholder={t('customBoosterDetail.search_placeholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-800 px-2 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
@@ -620,11 +627,11 @@ function CustomBoosterDetailOverlay({
               </select>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              {!search.trim() && <p className="text-xs text-neutral-500">Tapez un nom de carte pour chercher dans le catalogue complet.</p>}
-              {searching && <p className="text-xs text-neutral-500">Recherche...</p>}
-              {!searching && search.trim() && addableResults.length === 0 && <p className="text-xs text-neutral-500">Aucune carte trouvée.</p>}
+              {!search.trim() && <p className="text-xs text-neutral-500">{t('customBoosterDetail.search_hint')}</p>}
+              {searching && <p className="text-xs text-neutral-500">{t('customBoosterDetail.searching')}</p>}
+              {!searching && search.trim() && addableResults.length === 0 && <p className="text-xs text-neutral-500">{t('grantCards.no_cards_found')}</p>}
               {!searching && officialResults.length > 0 && (
-                <BoosterCardGrid title={`Officielles (${officialResults.length})`} cards={officialResults} compact>
+                <BoosterCardGrid title={t('customBoosterDetail.official_count', { count: officialResults.length })} cards={officialResults} compact>
                   {(c) => (
                     <button
                       type="button"
@@ -632,13 +639,13 @@ function CustomBoosterDetailOverlay({
                       disabled={addingId === c.id}
                       className="absolute inset-x-0 bottom-0 bg-emerald-950/90 py-0.5 text-center text-[10px] text-emerald-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
                     >
-                      {addingId === c.id ? '...' : '+ Ajouter'}
+                      {addingId === c.id ? '...' : t('customBoosterDetail.add_short')}
                     </button>
                   )}
                 </BoosterCardGrid>
               )}
               {!searching && customResults.length > 0 && (
-                <BoosterCardGrid title={`Custom (${customResults.length})`} cards={customResults} compact>
+                <BoosterCardGrid title={t('customBoosterDetail.custom_count', { count: customResults.length })} cards={customResults} compact>
                   {(c) => (
                     <button
                       type="button"
@@ -646,7 +653,7 @@ function CustomBoosterDetailOverlay({
                       disabled={addingId === c.id}
                       className="absolute inset-x-0 bottom-0 bg-emerald-950/90 py-0.5 text-center text-[10px] text-emerald-300 opacity-0 transition group-hover:opacity-100 disabled:opacity-50"
                     >
-                      {addingId === c.id ? '...' : '+ Ajouter'}
+                      {addingId === c.id ? '...' : t('customBoosterDetail.add_short')}
                     </button>
                   )}
                 </BoosterCardGrid>
@@ -701,17 +708,17 @@ function BoosterCardGrid({
   );
 }
 
-function cardSubtitle(card: ApiCustomCard): string {
+function cardSubtitle(card: ApiCustomCard, t: TFunction): string {
   if (card.frame_type === 'spell' || card.frame_type === 'trap') {
     return `${card.race ?? ''} ${card.type}`.trim();
   }
   const parts: string[] = [card.type];
   if (card.frame_type === 'link') {
-    parts.push(`Link ${card.level_rank ?? '?'}`, `ATK ${card.atk ?? '?'}`);
+    parts.push(t('customCards.link_rating', { n: card.level_rank ?? '?' }), `ATK ${card.atk ?? '?'}`);
   } else {
-    parts.push(`Niv./Rang ${card.level_rank ?? '?'}`, `ATK ${card.atk ?? '?'} / DEF ${card.def ?? '?'}`);
+    parts.push(t('cardPreview.level_rank', { level: card.level_rank ?? '?' }), `ATK ${card.atk ?? '?'} / DEF ${card.def ?? '?'}`);
   }
-  if (card.pendulum_scale !== null) parts.push(`Échelle ${card.pendulum_scale}`);
+  if (card.pendulum_scale !== null) parts.push(t('cardPreview.pendulum_scale', { scale: card.pendulum_scale }));
   return parts.join(' · ');
 }
 
@@ -745,6 +752,7 @@ function CustomCardDetailOverlay({
   onError: (message: string) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(initialCardId);
   const [showBoosterLink, setShowBoosterLink] = useState(false);
   const [showImageEdit, setShowImageEdit] = useState(false);
@@ -757,7 +765,7 @@ function CustomCardDetailOverlay({
       const { card: updated } = await api.unlinkCustomCardFromBooster(token, selected.id, setCode);
       onUpdated(updated);
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     }
   };
 
@@ -771,21 +779,21 @@ function CustomCardDetailOverlay({
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Cartes custom</p>
-          <h2 className="font-display text-xl text-accent-400">Toutes les cartes custom</h2>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('customCards.title')}</p>
+          <h2 className="font-display text-xl text-accent-400">{t('customCardDetail.title')}</h2>
         </div>
         <button
           type="button"
           onClick={onClose}
           className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
         >
-          Fermer
+          {t('characterSheet.close')}
         </button>
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
         <aside className="w-72 shrink-0 space-y-1 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3">
-          {cards.length === 0 && <p className="text-xs text-neutral-500">Aucune carte custom dans ce salon.</p>}
+          {cards.length === 0 && <p className="text-xs text-neutral-500">{t('customCards.empty')}</p>}
           {cards.map((card) => (
             <button
               key={card.id}
@@ -802,9 +810,7 @@ function CustomCardDetailOverlay({
         </aside>
 
         {!selected ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-neutral-500">
-            Sélectionnez une carte à gauche pour l'afficher en détail.
-          </div>
+          <div className="flex flex-1 items-center justify-center text-sm text-neutral-500">{t('customCardDetail.select_prompt')}</div>
         ) : (
           <>
             <main className="min-w-0 flex-1 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-4 text-sm">
@@ -813,12 +819,12 @@ function CustomCardDetailOverlay({
               )}
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <h3 className="font-display text-lg text-accent-400">{selected.name}</h3>
-                <span className="rounded bg-arena-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">custom</span>
+                <span className="rounded bg-arena-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">{t('customCardDetail.custom_badge')}</span>
                 {selected.created_in_this_session === false && (
-                  <span className="text-[10px] text-neutral-500">réutilisée d'une autre partie</span>
+                  <span className="text-[10px] text-neutral-500">{t('customCardDetail.reused_note')}</span>
                 )}
               </div>
-              <p className="mb-2 text-neutral-400">{cardSubtitle(selected)}</p>
+              <p className="mb-2 text-neutral-400">{cardSubtitle(selected, t)}</p>
               <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{selected.description}</p>
               {selected.card_sets.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1">
@@ -837,20 +843,20 @@ function CustomCardDetailOverlay({
             </main>
 
             <aside className="w-80 shrink-0 space-y-3 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3 text-xs">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Actions</h3>
-              {!isGm && <p className="text-neutral-500">Réservé au MJ.</p>}
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('customCardDetail.actions_title')}</h3>
+              {!isGm && <p className="text-neutral-500">{t('customCardDetail.gm_only')}</p>}
               {isGm && (
                 <>
                   <div>
                     <button type="button" onClick={() => setShowImageEdit((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
-                      {showImageEdit ? 'Fermer' : "Changer l'image"}
+                      {showImageEdit ? t('characterSheet.close') : t('customCardDetail.change_image')}
                     </button>
                     {showImageEdit && <ImageEditForm token={token} card={selected} onUpdated={onUpdated} onError={onError} />}
                   </div>
 
                   <div>
                     <button type="button" onClick={() => setShowBoosterLink((v) => !v)} className="text-accent-400 underline hover:text-accent-300">
-                      {showBoosterLink ? 'Fermer' : 'Lier à un booster'}
+                      {showBoosterLink ? t('characterSheet.close') : t('customCardDetail.link_to_booster')}
                     </button>
                     {showBoosterLink && (
                       <BoosterLinkForm
@@ -876,7 +882,7 @@ function CustomCardDetailOverlay({
                     }}
                     className="text-red-400 hover:text-red-300"
                   >
-                    Supprimer la carte
+                    {t('customCardDetail.delete_card')}
                   </button>
                 </>
               )}
@@ -900,6 +906,7 @@ function ImageEditForm({
   onUpdated: (card: ApiCustomCard) => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [imageUrl, setImageUrl] = useState(card.card_images[0]?.image_url ?? '');
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -912,7 +919,7 @@ function ImageEditForm({
       const { url } = await api.uploadCardImage(token, file);
       setImageUrl(url);
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : "Échec de l'envoi de l'image");
+      onError(err instanceof ApiError ? translateApiError(err, t) : t('imageEditForm.upload_failed'));
     } finally {
       setUploading(false);
     }
@@ -925,7 +932,7 @@ function ImageEditForm({
       const { card: updated } = await api.updateCustomCardImage(token, card.id, imageUrl);
       onUpdated(updated);
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -934,17 +941,17 @@ function ImageEditForm({
   return (
     <form onSubmit={handleSubmit} className="mt-2 flex flex-wrap items-center gap-2 border-t border-arena-700 pt-2">
       <label className="flex items-center gap-2 text-neutral-400">
-        Nouvelle image
+        {t('imageEditForm.new_image_label')}
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => void handleFileChange(e)} className="text-neutral-300" />
       </label>
-      {uploading && <span className="text-neutral-500">envoi...</span>}
+      {uploading && <span className="text-neutral-500">{t('imageEditForm.uploading')}</span>}
       {imageUrl && <img src={imageUrl} alt="" className="h-10 w-auto rounded" />}
       <button
         type="submit"
         disabled={submitting || uploading || !imageUrl}
         className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
       >
-        Enregistrer
+        {t('imageEditForm.save')}
       </button>
     </form>
   );
@@ -963,6 +970,7 @@ function BoosterLinkForm({
   onLinked: (card: ApiCustomCard) => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const linkedCodes = new Set(card.card_sets.map((s) => s.set_code));
   const linkableExisting = boosters.filter((s) => !linkedCodes.has(s.set_code));
 
@@ -983,7 +991,7 @@ function BoosterLinkForm({
       });
       onLinked(updated);
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -998,14 +1006,14 @@ function BoosterLinkForm({
           disabled={linkableExisting.length === 0}
           className={`rounded px-2 py-1 ${mode === 'existing' ? 'bg-accent-500 text-arena-950' : 'border border-arena-600 text-neutral-300'} disabled:opacity-40`}
         >
-          Booster existant
+          {t('boosterLinkForm.existing_booster')}
         </button>
         <button
           type="button"
           onClick={() => setMode('new')}
           className={`rounded px-2 py-1 ${mode === 'new' ? 'bg-accent-500 text-arena-950' : 'border border-arena-600 text-neutral-300'}`}
         >
-          Nouveau booster
+          {t('boosterLinkForm.new_booster')}
         </button>
       </div>
 
@@ -1024,7 +1032,7 @@ function BoosterLinkForm({
       ) : (
         <input
           type="text"
-          placeholder="Nom du nouveau booster"
+          placeholder={t('boosterLinkForm.new_booster_name_placeholder')}
           value={newSetName}
           onChange={(e) => setNewSetName(e.target.value)}
           required
@@ -1049,7 +1057,7 @@ function BoosterLinkForm({
         disabled={submitting || (mode === 'existing' && !setCode)}
         className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
       >
-        Lier
+        {t('boosterLinkForm.link')}
       </button>
     </form>
   );
@@ -1066,6 +1074,7 @@ function CreateCustomCardForm({
   onCreated: (card: ApiCustomCard) => void;
   onError: (message: string) => void;
 }) {
+  const { t } = useTranslation();
   const [category, setCategory] = useState<CustomCardCategory>('monster');
   const [name, setName] = useState('');
   const [effectText, setEffectText] = useState('');
@@ -1105,7 +1114,7 @@ function CreateCustomCardForm({
       const { url } = await api.uploadCardImage(token, file);
       setImageUrl(url);
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : "Échec de l'envoi de l'image");
+      onError(err instanceof ApiError ? translateApiError(err, t) : t('imageEditForm.upload_failed'));
     } finally {
       setUploading(false);
     }
@@ -1122,7 +1131,7 @@ function CreateCustomCardForm({
       setLuaScript(text);
       setLuaFileName(file.name);
     } catch {
-      onError('Impossible de lire ce fichier');
+      onError(t('createCustomCard.lua_read_error'));
     } finally {
       event.target.value = ''; // permet de resélectionner le même fichier après une modif manuelle
     }
@@ -1162,7 +1171,7 @@ function CreateCustomCardForm({
       const { card: created } = await api.createCustomCard(token, sessionId, card, luaScript);
       onCreated(created);
     } catch (err) {
-      onError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      onError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -1180,7 +1189,7 @@ function CreateCustomCardForm({
             onClick={() => setCategory(cat)}
             className={`rounded px-2 py-1 ${category === cat ? 'bg-accent-500 text-arena-950' : 'border border-arena-600 text-neutral-300'}`}
           >
-            {cat === 'monster' ? 'Monstre' : cat === 'spell' ? 'Magie' : 'Piège'}
+            {cat === 'monster' ? t('cardFilters.category.monster') : cat === 'spell' ? t('cardFilters.category.spell') : t('cardFilters.category.trap')}
           </button>
         ))}
       </div>
@@ -1188,7 +1197,7 @@ function CreateCustomCardForm({
       <div className="flex flex-wrap gap-2">
         <input
           type="text"
-          placeholder="Nom de la carte"
+          placeholder={t('createCustomCard.name_placeholder')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -1196,7 +1205,7 @@ function CreateCustomCardForm({
         />
         <input
           type="text"
-          placeholder="Archétype (optionnel)"
+          placeholder={t('createCustomCard.archetype_placeholder')}
           value={archetype}
           onChange={(e) => setArchetype(e.target.value)}
           className={`min-w-0 flex-1 ${inputClass}`}
@@ -1205,10 +1214,10 @@ function CreateCustomCardForm({
 
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-2 text-neutral-400">
-          Image
+          {t('createCustomCard.image_label')}
           <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => void handleImageChange(e)} className="text-neutral-300" />
         </label>
-        {uploading && <span className="text-neutral-500">envoi...</span>}
+        {uploading && <span className="text-neutral-500">{t('imageEditForm.uploading')}</span>}
         {imageUrl && <img src={imageUrl} alt="" className="h-10 w-auto rounded" />}
       </div>
 
@@ -1218,7 +1227,7 @@ function CreateCustomCardForm({
             <select value={monsterKind} onChange={(e) => setMonsterKind(e.target.value as MonsterKind)} className={inputClass}>
               {MONSTER_KINDS.map((k) => (
                 <option key={k.value} value={k.value}>
-                  {k.label}
+                  {t(k.label)}
                 </option>
               ))}
             </select>
@@ -1231,7 +1240,7 @@ function CreateCustomCardForm({
             </select>
             <input
               type="text"
-              placeholder="Type (ex. Dragon)"
+              placeholder={t('createCustomCard.type_placeholder')}
               value={race}
               onChange={(e) => setRace(e.target.value)}
               required
@@ -1251,7 +1260,7 @@ function CreateCustomCardForm({
                   <input type="number" min={0} value={def} onChange={(e) => setDef(Number(e.target.value))} className={`w-20 ${inputClass}`} />
                 </label>
                 <label className="flex items-center gap-1 text-neutral-400">
-                  Niveau/Rang
+                  {t('createCustomCard.level_rank_label')}
                   <input
                     type="number"
                     min={0}
@@ -1265,7 +1274,7 @@ function CreateCustomCardForm({
             )}
             {isLink && (
               <label className="flex items-center gap-1 text-neutral-400">
-                Link Rating
+                {t('createCustomCard.link_rating_label')}
                 <input
                   type="number"
                   min={1}
@@ -1280,7 +1289,7 @@ function CreateCustomCardForm({
 
           {isLink && (
             <div>
-              <p className="mb-1 text-neutral-400">Flèches Link</p>
+              <p className="mb-1 text-neutral-400">{t('createCustomCard.link_arrows_label')}</p>
               <div className="grid w-32 grid-cols-3 gap-1 text-center">
                 {LINK_ARROWS.map((arrow) => (
                   <button
@@ -1302,11 +1311,11 @@ function CreateCustomCardForm({
             <div className="flex flex-wrap items-center gap-2">
               <label className="flex items-center gap-1 text-neutral-400">
                 <input type="checkbox" checked={isPendulum} onChange={(e) => setIsPendulum(e.target.checked)} />
-                Pendule
+                {t('createCustomCard.pendulum_label')}
               </label>
               {isPendulum && (
                 <label className="flex items-center gap-1 text-neutral-400">
-                  Échelle
+                  {t('createCustomCard.pendulum_scale_label')}
                   <input
                     type="number"
                     min={0}
@@ -1324,9 +1333,9 @@ function CreateCustomCardForm({
 
       {category === 'spell' && (
         <select value={spellType} onChange={(e) => setSpellType(e.target.value as SpellType)} className={inputClass}>
-          {SPELL_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
+          {SPELL_TYPES.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {t(opt.label)}
             </option>
           ))}
         </select>
@@ -1334,16 +1343,16 @@ function CreateCustomCardForm({
 
       {category === 'trap' && (
         <select value={trapType} onChange={(e) => setTrapType(e.target.value as TrapType)} className={inputClass}>
-          {TRAP_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
+          {TRAP_TYPES.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {t(opt.label)}
             </option>
           ))}
         </select>
       )}
 
       <textarea
-        placeholder="Texte d'effet"
+        placeholder={t('createCustomCard.effect_text_placeholder')}
         value={effectText}
         onChange={(e) => setEffectText(e.target.value)}
         required
@@ -1354,13 +1363,13 @@ function CreateCustomCardForm({
       <div className="space-y-1 rounded border border-arena-700 p-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <label className="flex items-center gap-2 text-neutral-400">
-            Script Lua (.lua)
+            {t('createCustomCard.lua_script_label')}
             <input type="file" accept=".lua,text/x-lua,text/plain" onChange={(e) => void handleLuaFileChange(e)} className="text-neutral-300" />
           </label>
-          {luaFileName && <span className="text-neutral-500">{luaFileName} chargé</span>}
+          {luaFileName && <span className="text-neutral-500">{t('createCustomCard.lua_file_loaded', { name: luaFileName })}</span>}
         </div>
         <textarea
-          placeholder="function s.initial_effect(c) ... end — obligatoire, voir scrapi-book / CardScripts pour la syntaxe Project Ignis"
+          placeholder={t('createCustomCard.lua_placeholder')}
           value={luaScript}
           onChange={(e) => {
             setLuaScript(e.target.value);
@@ -1372,8 +1381,7 @@ function CreateCustomCardForm({
           className={`w-full font-mono ${inputClass}`}
         />
         <p className="text-[10px] leading-snug text-neutral-500">
-          Obligatoire — sans lui la carte ne peut pas tourner dans un vrai duel (pas de repli "vanille"). Importez un fichier .lua ci-dessus ou collez le
-          script directement ; il doit définir <code>initial_effect</code> (convention Project Ignis).
+          {t('createCustomCard.lua_help_before')} <code>initial_effect</code> {t('createCustomCard.lua_help_after')}
         </p>
       </div>
 
@@ -1382,7 +1390,7 @@ function CreateCustomCardForm({
         disabled={submitting || uploading}
         className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
       >
-        Créer la carte
+        {t('createCustomCard.create_card_button')}
       </button>
     </form>
   );

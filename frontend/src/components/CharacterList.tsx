@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   api,
-  ApiError,
   type ApiCharacter,
   type ApiCollectionEntry,
   type ApiDeck,
   type ApiOpenedCard,
   type ApiSealedBooster,
 } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 import { STAT_NAMES, STAT_SHORT_LABELS } from '../lib/pointBuy';
 import { DeckManager } from './DeckManager';
 import { BoosterOpeningOverlay } from './BoosterOpeningOverlay';
@@ -45,7 +45,7 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
   const ownCharacter = characters.find((c) => !c.is_npc && c.user_id === currentUserId) ?? null;
 
   if (characters.length === 0) {
-    return <p className="text-sm text-neutral-500">Aucun personnage dans ce salon pour l'instant.</p>;
+    return <p className="text-sm text-neutral-500">{t('characterList.empty')}</p>;
   }
 
   const grantCardsCharacter = characters.find((c) => c.id === grantCardsFor) ?? null;
@@ -70,12 +70,12 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
             <header className="mb-2 flex items-center justify-between">
               <h3 className="font-semibold text-accent-400">
                 {character.name}
-                {character.is_npc && <span className="ml-2 text-xs uppercase text-neutral-500">NPC</span>}
+                {character.is_npc && <span className="ml-2 text-xs uppercase text-neutral-500">{t('characterSheet.npc_badge')}</span>}
               </h3>
               <div className="flex items-center gap-2 text-xs text-neutral-500">
-                <span>niv. {character.level}</span>
+                <span>{t('characterList.level_label', { level: character.level })}</span>
                 <button type="button" onClick={() => setSheetFor(character.id)} className="text-accent-400 underline hover:text-accent-300">
-                  Voir la fiche
+                  {t('characterList.view_sheet')}
                 </button>
                 {canManage && (
                   <button
@@ -83,7 +83,7 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
                     onClick={() => onDelete(character.id)}
                     className="text-red-400 transition hover:text-red-300"
                   >
-                    Supprimer
+                    {t('characterList.delete')}
                   </button>
                 )}
               </div>
@@ -97,7 +97,7 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
               ))}
             </div>
             <p className="mt-2 text-xs text-neutral-500">
-              rerolls de Chance : {character.remaining_luck_rerolls} · argent :{' '}
+              {t('characterList.rerolls_money', { count: character.remaining_luck_rerolls })}{' '}
               <span className="font-semibold text-accent-400">
                 {character.money} {currencyName}
               </span>
@@ -111,7 +111,7 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
                   onClick={() => setGrantCardsFor(character.id)}
                   className="mt-2 text-xs text-accent-400 underline hover:text-accent-300"
                 >
-                  + Ajouter des cartes (MJ)
+                  {t('characterList.add_cards_gm')}
                 </button>
               </>
             )}
@@ -162,6 +162,7 @@ export function MoneyEditor({
   currencyName: string;
   onCharacterUpdate: (characterId: string, patch: { money?: number }) => void;
 }) {
+  const { t } = useTranslation();
   const [creditAmount, setCreditAmount] = useState('');
   const [exactAmount, setExactAmount] = useState(String(character.money));
   const [submitting, setSubmitting] = useState(false);
@@ -180,7 +181,7 @@ export function MoneyEditor({
       const { character: updated } = await api.updateCharacterMoney(token, character.id, newAmount);
       onCharacterUpdate(character.id, { money: updated.money });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -204,14 +205,14 @@ export function MoneyEditor({
 
   return (
     <div className="mt-2 rounded-md border border-arena-600 bg-arena-800/60 p-2 text-xs">
-      <p className="mb-1.5 font-semibold uppercase tracking-wide text-neutral-400">Argent (MJ)</p>
+      <p className="mb-1.5 font-semibold uppercase tracking-wide text-neutral-400">{t('characterList.money_gm_title')}</p>
       <div className="flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1 text-neutral-400">
-          Créditer
+          {t('characterList.credit_label')}
           <input
             type="number"
             min={1}
-            placeholder="montant"
+            placeholder={t('characterList.amount_placeholder')}
             value={creditAmount}
             onChange={(e) => setCreditAmount(e.target.value)}
             className="w-20 rounded border border-arena-600 bg-arena-900 px-1.5 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
@@ -223,17 +224,17 @@ export function MoneyEditor({
           disabled={submitting || !creditAmount}
           className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
         >
-          + Ajouter
+          {t('characterList.add_button')}
         </button>
         <span className="text-neutral-600">|</span>
         <label className="flex items-center gap-1 text-neutral-400">
-          Fixer le total
+          {t('characterList.set_exact_label')}
           <input
             type="number"
             min={0}
             value={exactAmount}
             onChange={(e) => setExactAmount(e.target.value)}
-            title={`Nouveau total exact en ${currencyName}`}
+            title={t('characterList.set_exact_tooltip', { currency: currencyName })}
             className="w-20 rounded border border-arena-600 bg-arena-900 px-1.5 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
           />
         </label>
@@ -246,7 +247,7 @@ export function MoneyEditor({
             disabled={submitting}
             className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
           >
-            Valider
+            {t('duelBoard.validate')}
           </button>
         )}
       </div>
@@ -267,6 +268,7 @@ function CharacterEconomy({
     patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[]; decks?: ApiDeck[] },
   ) => void;
 }) {
+  const { t } = useTranslation();
   const [showCollection, setShowCollection] = useState(false);
   const [collection, setCollection] = useState<ApiCollectionEntry[] | null>(null);
   const [loadingCollection, setLoadingCollection] = useState(false);
@@ -286,7 +288,7 @@ function CharacterEconomy({
       const { collection: fetched } = await api.getCharacterCollection(token, character.id);
       setCollection(fetched);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setLoadingCollection(false);
     }
@@ -313,7 +315,7 @@ function CharacterEconomy({
       setOpening({ setCode, setName, cardSetId, cards: opened_cards });
       if (showCollection) await fetchCollection();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setOpeningKey(null);
     }
@@ -327,11 +329,11 @@ function CharacterEconomy({
           onClick={() => void toggleCollection()}
           className="text-accent-400 underline hover:text-accent-300"
         >
-          {showCollection ? 'Masquer la collection' : 'Voir la collection'}
+          {showCollection ? t('characterList.hide_collection') : t('characterList.show_collection')}
         </button>
         {character.sealed_boosters.length > 0 && (
           <span className="flex flex-wrap items-center gap-2 text-neutral-500">
-            boosters scellés :
+            {t('characterList.sealed_boosters_label')}
             {character.sealed_boosters.map((b) => (
               <span key={keyFor(b)} className="flex items-center gap-1">
                 {b.set_name} ×{b.quantity}
@@ -341,7 +343,7 @@ function CharacterEconomy({
                   disabled={openingKey === keyFor(b)}
                   className="text-accent-400 underline hover:text-accent-300 disabled:opacity-50"
                 >
-                  {openingKey === keyFor(b) ? 'ouverture...' : 'ouvrir'}
+                  {openingKey === keyFor(b) ? t('characterSheet.opening') : t('characterSheet.open')}
                 </button>
               </span>
             ))}
@@ -370,9 +372,9 @@ function CharacterEconomy({
 
       {showCollection && (
         <div className="mt-2">
-          {loadingCollection && <p className="text-neutral-500">Chargement...</p>}
+          {loadingCollection && <p className="text-neutral-500">{t('common.loading')}</p>}
           {!loadingCollection && collection && collection.length === 0 && (
-            <p className="text-neutral-500">Aucune carte dans la collection.</p>
+            <p className="text-neutral-500">{t('collectionBrowser.empty_collection')}</p>
           )}
           {!loadingCollection && collection && collection.length > 0 && (
             <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">

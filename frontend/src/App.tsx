@@ -3,7 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { socket } from './lib/socket';
 import { useAuth } from './hooks/useAuth';
 import { useLanguage } from './hooks/useLanguage';
-import { api, ApiError, type ApiCharacter, type ApiSession } from './lib/api';
+import { api, type ApiCharacter, type ApiSession } from './lib/api';
+import { translateApiError } from './lib/translateApiError';
 import { AuthPanel } from './components/AuthPanel';
 import { SessionPanel } from './components/SessionPanel';
 import { CharacterSheetForm } from './components/CharacterSheetForm';
@@ -55,6 +56,7 @@ function LanguageToggle() {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const auth = useAuth();
 
   const [session, setSession] = useState<ApiSession | null>(null);
@@ -79,7 +81,7 @@ export default function App() {
     api
       .listCharacters(auth.token, session.id)
       .then(({ characters: fetched }) => setCharacters(fetched))
-      .catch((err) => setCharactersError(err instanceof ApiError ? err.message : 'Une erreur est survenue'));
+      .catch((err) => setCharactersError(translateApiError(err, t)));
   }, [auth.token, session]);
 
   useEffect(() => {
@@ -149,7 +151,7 @@ export default function App() {
       await api.deleteCharacter(auth.token, characterId);
       setCharacters((prev) => prev.filter((c) => c.id !== characterId));
     } catch (err) {
-      setCharactersError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setCharactersError(translateApiError(err, t));
     }
   };
 
@@ -177,7 +179,7 @@ export default function App() {
       const { characters: rested } = await api.longRestSession(auth.token, session.id);
       setCharacters(rested);
     } catch (err) {
-      setCharactersError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setCharactersError(translateApiError(err, t));
     } finally {
       setLongResting(false);
     }
@@ -198,21 +200,21 @@ export default function App() {
                 ⚔️
               </span>
               <p className="flex-1 text-neutral-200">
-                Le MJ vous convoque à un duel : <span className="font-semibold text-accent-400">{invite.duelName}</span> (
-                {invite.characterName})
+                {t('app.duel_invite_prefix')} <span className="font-semibold text-accent-400">{invite.duelName}</span>{' '}
+                {t('app.duel_invite_character', { character: invite.characterName })}
               </p>
               <button
                 type="button"
                 onClick={() => openDuelInvite(invite.duelId)}
                 className="shrink-0 rounded-md bg-accent-500 px-2.5 py-1 text-xs font-semibold text-arena-950 transition hover:bg-accent-400"
               >
-                Voir le duel
+                {t('app.view_duel')}
               </button>
               <button
                 type="button"
                 onClick={() => dismissDuelInvite(invite.duelId)}
                 className="shrink-0 text-neutral-400 hover:text-neutral-200"
-                aria-label="Ignorer"
+                aria-label={t('app.dismiss')}
               >
                 ✕
               </button>
@@ -222,34 +224,38 @@ export default function App() {
       )}
 
       <header className="text-center">
-        <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Plateforme JDR</p>
+        <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('app.eyebrow')}</p>
         <h1 className="mt-2 text-4xl font-bold text-accent-400">Yu-Gi-Oh! D&amp;D</h1>
-        <p className="mt-3 text-sm text-neutral-400">
-          Fiches de personnage, duels et boutiques pour vos parties JDR Yu-Gi-Oh!
-        </p>
+        <p className="mt-3 text-sm text-neutral-400">{t('app.subtitle')}</p>
       </header>
 
       <div className="grid gap-4 sm:grid-cols-2">
         {auth.loading ? (
-          <p className="text-center text-sm text-neutral-500">Vérification de la session...</p>
+          <p className="text-center text-sm text-neutral-500">{t('app.checking_session')}</p>
         ) : auth.user && auth.token ? (
           <>
             <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
               <header className="mb-3 flex items-center gap-2">
                 <StatusDot status="ok" />
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Compte</h2>
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('app.account_title')}</h2>
               </header>
               <div className="space-y-1 font-mono text-sm text-neutral-300">
-                <p>utilisateur : {auth.user.username}</p>
-                <p>email : {auth.user.email}</p>
-                <p>rôle : {auth.user.role}</p>
+                <p>
+                  {t('app.username_label')} {auth.user.username}
+                </p>
+                <p>
+                  {t('app.email_label')} {auth.user.email}
+                </p>
+                <p>
+                  {t('app.role_label')} {auth.user.role}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={auth.logout}
                 className="mt-3 rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-200 transition hover:border-red-400 hover:text-red-400"
               >
-                Se déconnecter
+                {t('app.logout')}
               </button>
             </section>
             <SessionPanel token={auth.token} session={session} onSessionChange={setSession} />
@@ -278,16 +284,16 @@ export default function App() {
           />
           <div>
             <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Personnages du salon</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('app.session_characters_title')}</h2>
               {session.is_gm && characters.length > 0 && (
                 <button
                   type="button"
                   onClick={() => void handleLongRest()}
                   disabled={longResting}
-                  title="Recharge les rerolls de Chance de tous les personnages du salon à leur maximum"
+                  title={t('app.long_rest_tooltip')}
                   className="shrink-0 rounded-md border border-accent-500 px-2.5 py-1 text-xs text-accent-400 transition hover:bg-accent-500 hover:text-arena-950 disabled:opacity-50"
                 >
-                  {longResting ? 'Repos en cours...' : '🌙 Long repos'}
+                  {longResting ? t('app.long_rest_in_progress') : t('app.long_rest_button')}
                 </button>
               )}
             </div>

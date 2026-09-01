@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
 import cardBackImage from '../assets/card-back.jpg';
 import type { ApiOpenedCard, ApiSealedBooster } from '../lib/api';
 
@@ -36,9 +37,10 @@ function cardImageSrc(card: ApiOpenedCard): string | null {
 }
 
 function CardBack() {
+  const { t } = useTranslation();
   return (
     <div className="h-full w-full overflow-hidden rounded-lg">
-      <img src={cardBackImage} alt="Dos de carte" className="h-full w-full object-cover" />
+      <img src={cardBackImage} alt={t('duelBoard.card_back_alt')} className="h-full w-full object-cover" />
     </div>
   );
 }
@@ -131,6 +133,7 @@ function ActiveSlot({
 }
 
 export function BoosterOpeningOverlay({ setName, cards, onClose, onNext, otherSets, onOpenOther }: BoosterOpeningOverlayProps) {
+  const { t } = useTranslation();
   const [revealedCount, setRevealedCount] = useState(0);
   const [activePhase, setActivePhase] = useState<ActivePhase>('idle');
   const [squashed, setSquashed] = useState(false);
@@ -208,7 +211,7 @@ export function BoosterOpeningOverlay({ setName, cards, onClose, onNext, otherSe
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col items-center justify-center overflow-y-auto bg-black/92 p-6 backdrop-blur-sm">
       <div className="mb-8 text-center">
-        <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Ouverture de booster</p>
+        <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('boosterOpening.eyebrow')}</p>
         <h2 className="mt-1 font-display text-2xl text-accent-400">{setName}</h2>
       </div>
 
@@ -233,7 +236,7 @@ export function BoosterOpeningOverlay({ setName, cards, onClose, onNext, otherSe
             }}
             className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Tout révéler
+            {t('boosterOpening.reveal_all')}
           </button>
         )}
         {allDone && onNext && (
@@ -242,7 +245,7 @@ export function BoosterOpeningOverlay({ setName, cards, onClose, onNext, otherSe
             onClick={onNext}
             className="rounded-md bg-accent-500 px-6 py-2 text-sm font-semibold text-arena-950 transition hover:bg-accent-400"
           >
-            Suivant
+            {t('boosterOpening.next')}
           </button>
         )}
         {allDone && (
@@ -255,14 +258,14 @@ export function BoosterOpeningOverlay({ setName, cards, onClose, onNext, otherSe
                 : 'rounded-md bg-accent-500 px-6 py-2 text-sm font-semibold text-arena-950 transition hover:bg-accent-400'
             }
           >
-            Fermer
+            {t('characterSheet.close')}
           </button>
         )}
       </div>
 
       {allDone && otherSets && otherSets.length > 0 && (
         <div className="mt-6 flex flex-col items-center gap-2">
-          <p className="text-[11px] uppercase tracking-wide text-neutral-500">Ouvrir un autre booster scellé</p>
+          <p className="text-[11px] uppercase tracking-wide text-neutral-500">{t('boosterOpening.open_another')}</p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             {otherSets.map((s, index) => (
               // Clé sur card_set_id, pas set_code seul (voir CLAUDE.md — deux
