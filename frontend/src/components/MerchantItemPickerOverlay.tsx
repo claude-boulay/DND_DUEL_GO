@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { api, ApiError, type ApiCard, type ApiCardSet, type ApiMerchant, type ApiMerchantItemType } from '../lib/api';
+import { api, type ApiCard, type ApiCardSet, type ApiMerchant, type ApiMerchantItemType } from '../lib/api';
 import { translateAttribute, translateRace } from '../lib/cardLabels';
+import { translateApiError } from '../lib/translateApiError';
 import {
   EMPTY_FILTERS,
   MERCHANT_CARD_SORT_OPTIONS,
@@ -71,7 +72,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
           setCardResults(cards);
           setCardTotal(total);
         })
-        .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+        .catch((err) => setError(translateApiError(err, t)))
         .finally(() => setLoadingCards(false));
     }, 300);
     return () => clearTimeout(handle);
@@ -88,7 +89,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
         setCardTotal(total);
         setCardPage(nextPage);
       })
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+      .catch((err) => setError(translateApiError(err, t)))
       .finally(() => setLoadingMoreCards(false));
   };
 
@@ -102,7 +103,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
         // stocké dans un marchand comme n'importe quel set officiel.
         .listCardSets(token, { search: setSearch, include_custom: true })
         .then(({ sets }) => setSetResults(sets))
-        .catch((err) => setError(err instanceof ApiError ? err.message : 'Une erreur est survenue'))
+        .catch((err) => setError(translateApiError(err, t)))
         .finally(() => setLoadingSets(false));
     }, 300);
     return () => clearTimeout(handle);
@@ -170,7 +171,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
       onAdded(updated);
       onClose();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -180,8 +181,8 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">Marchand — {merchant.name}</p>
-          <h2 className="font-display text-xl text-accent-400">Ajouter un article</h2>
+          <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('merchantPicker.eyebrow', { name: merchant.name })}</p>
+          <h2 className="font-display text-xl text-accent-400">{t('merchantPicker.title')}</h2>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 rounded-md border border-arena-600 p-0.5">
@@ -193,7 +194,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
               }}
               className={`rounded px-3 py-1.5 text-sm ${itemType === 'card' ? 'bg-accent-500 text-arena-950' : 'text-neutral-300'}`}
             >
-              Carte
+              {t('merchantPicker.type_card')}
             </button>
             <button
               type="button"
@@ -203,7 +204,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
               }}
               className={`rounded px-3 py-1.5 text-sm ${itemType === 'booster' ? 'bg-accent-500 text-arena-950' : 'text-neutral-300'}`}
             >
-              Booster
+              {t('merchantPicker.type_booster')}
             </button>
           </div>
           <button
@@ -211,7 +212,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
             onClick={onClose}
             className="rounded-md border border-arena-600 px-4 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
           >
-            Fermer
+            {t('characterSheet.close')}
           </button>
         </div>
       </header>
@@ -228,7 +229,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
 
           <div className="mt-auto space-y-2 border-t border-arena-700 pt-3 text-sm">
             <label className="flex items-center justify-between gap-2 text-neutral-300">
-              Prix
+              {t('merchantPicker.price')}
               <input
                 type="number"
                 min={0}
@@ -238,11 +239,11 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
               />
             </label>
             <label className="flex items-center justify-between gap-2 text-neutral-300">
-              Stock
+              {t('merchantPicker.stock')}
               <input
                 type="number"
                 min={0}
-                placeholder="illimité"
+                placeholder={t('merchantPicker.stock_placeholder')}
                 value={stock}
                 onChange={(e) => setStock(e.target.value)}
                 className="w-24 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
@@ -254,7 +255,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
               disabled={submitting || (itemType === 'card' ? !selectedCard : !selectedSet)}
               className="w-full rounded-md bg-accent-500 py-2 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
             >
-              Ajouter au marchand
+              {t('merchantPicker.submit')}
             </button>
           </div>
         </aside>
@@ -265,7 +266,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
               <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
                 <input
                   type="text"
-                  placeholder="Rechercher une carte par nom"
+                  placeholder={t('merchantPicker.search_card_placeholder')}
                   value={cardSearch}
                   onChange={(e) => setCardSearch(e.target.value)}
                   className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -284,7 +285,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                 <button
                   type="button"
                   onClick={() => setCardSortDir((d) => (d === 1 ? -1 : 1))}
-                  title={cardSortDir === 1 ? 'Ordre croissant — cliquer pour inverser' : 'Ordre décroissant — cliquer pour inverser'}
+                  title={cardSortDir === 1 ? t('collectionBrowser.sort_asc_tooltip') : t('collectionBrowser.sort_desc_tooltip')}
                   className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
                 >
                   {cardSortDir === 1 ? '↑' : '↓'}
@@ -294,7 +295,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                   onClick={() => setShowCardFilterModal(true)}
                   className="flex items-center gap-1 rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
                 >
-                  Filtrer
+                  {t('collectionBrowser.filter_button')}
                   {activeFilterCount(cardFilters) > 0 && (
                     <span className="rounded-full bg-accent-500 px-1.5 text-[10px] font-semibold text-arena-950">
                       {activeFilterCount(cardFilters)}
@@ -307,7 +308,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                     onClick={() => setCardFilters(EMPTY_FILTERS)}
                     className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-red-400 hover:text-red-400"
                   >
-                    Reset
+                    {t('deckEditor.reset')}
                   </button>
                 )}
               </div>
@@ -315,16 +316,16 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
               {!loadingCards && (
                 <p className="mb-2 shrink-0 text-xs text-neutral-500">
                   {cardTotal === 0
-                    ? 'Aucune carte ne correspond au catalogue filtré.'
-                    : `${cardResults.length} / ${cardTotal} carte${cardTotal > 1 ? 's' : ''} chargée${cardResults.length > 1 ? 's' : ''}${
-                        activeFilterCount(cardFilters) > 0 ? ' (filtre appliqué au catalogue complet)' : ''
+                    ? t('deckEditor.no_cards_match_catalog')
+                    : `${cardResults.length} / ${cardTotal} ${t('merchantPicker.card_word', { count: cardTotal })} ${t('merchantPicker.loaded_word', { count: cardResults.length })}${
+                        activeFilterCount(cardFilters) > 0 ? t('merchantPicker.filter_applied_note') : ''
                       }`}
                 </p>
               )}
 
               <div className="min-h-0 flex-1 overflow-y-auto">
-                {loadingCards && <p className="text-sm text-neutral-500">Chargement...</p>}
-                {!loadingCards && visibleCards.length === 0 && <p className="text-sm text-neutral-500">Aucune carte trouvée.</p>}
+                {loadingCards && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
+                {!loadingCards && visibleCards.length === 0 && <p className="text-sm text-neutral-500">{t('merchantPicker.no_card_found')}</p>}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
                   {visibleCards.map((card) => (
                     <button
@@ -347,7 +348,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                     disabled={loadingMoreCards}
                     className="mt-3 w-full rounded-md border border-arena-600 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400 disabled:opacity-50"
                   >
-                    {loadingMoreCards ? 'Chargement...' : `Charger plus de cartes (${cardTotal - cardResults.length} restantes)`}
+                    {loadingMoreCards ? t('common.loading') : t('deckEditor.load_more_cards', { count: cardTotal - cardResults.length })}
                   </button>
                 )}
               </div>
@@ -357,7 +358,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
               <div className="mb-3 flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
                 <input
                   type="text"
-                  placeholder="Rechercher un booster par nom"
+                  placeholder={t('merchantPicker.search_booster_placeholder')}
                   value={setSearch}
                   onChange={(e) => setSetSearch(e.target.value)}
                   className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
@@ -367,13 +368,13 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                   onChange={(e) => setBoosterSortKey(e.target.value as BoosterSortKey)}
                   className="rounded border border-arena-600 bg-arena-800 px-1.5 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
                 >
-                  <option value="release_date">Date de sortie</option>
-                  <option value="name">Nom (A → Z)</option>
+                  <option value="release_date">{t('merchantPicker.sort_release_date')}</option>
+                  <option value="name">{t('merchantPicker.sort_name')}</option>
                 </select>
                 <button
                   type="button"
                   onClick={() => setBoosterSortDir((d) => (d === 1 ? -1 : 1))}
-                  title={boosterSortDir === 1 ? 'Ordre croissant — cliquer pour inverser' : 'Ordre décroissant — cliquer pour inverser'}
+                  title={boosterSortDir === 1 ? t('collectionBrowser.sort_asc_tooltip') : t('collectionBrowser.sort_desc_tooltip')}
                   className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
                 >
                   {boosterSortDir === 1 ? '↑' : '↓'}
@@ -382,7 +383,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
 
               <div className="mb-3 flex shrink-0 flex-wrap items-center gap-2 text-xs text-neutral-400">
                 <label className="flex items-center gap-1.5">
-                  Depuis le
+                  {t('merchantPicker.date_from')}
                   <input
                     type="date"
                     value={dateFrom}
@@ -391,7 +392,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                   />
                 </label>
                 <label className="flex items-center gap-1.5">
-                  Jusqu'au
+                  {t('merchantPicker.date_before')}
                   <input
                     type="date"
                     value={dateBefore}
@@ -408,14 +409,14 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
                     }}
                     className="rounded border border-arena-600 px-2 py-1 text-neutral-300 transition hover:border-red-400 hover:text-red-400"
                   >
-                    Reset dates
+                    {t('merchantPicker.reset_dates')}
                   </button>
                 )}
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto">
-                {loadingSets && <p className="text-sm text-neutral-500">Chargement...</p>}
-                {!loadingSets && visibleSets.length === 0 && <p className="text-sm text-neutral-500">Aucun booster trouvé.</p>}
+                {loadingSets && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
+                {!loadingSets && visibleSets.length === 0 && <p className="text-sm text-neutral-500">{t('merchantPicker.no_booster_found')}</p>}
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
                   {visibleSets.map((set) => (
                     <BoosterTile key={set.id} set={set} selected={selectedSet?.id === set.id} onClick={() => setSelectedSet(set)} />
@@ -442,7 +443,7 @@ export function MerchantItemPickerOverlay({ token, merchant, onAdded, onClose }:
 
 function CardSelectionPreview({ card }: { card: ApiCard | null }) {
   const { t } = useTranslation();
-  if (!card) return <p className="text-sm text-neutral-500">Cliquez sur une carte pour la sélectionner.</p>;
+  if (!card) return <p className="text-sm text-neutral-500">{t('merchantPicker.click_to_select_card')}</p>;
   const image = card.card_images[0];
   return (
     <div className="text-sm">
@@ -464,7 +465,8 @@ function CardSelectionPreview({ card }: { card: ApiCard | null }) {
 }
 
 function BoosterSelectionPreview({ set }: { set: ApiCardSet | null }) {
-  if (!set) return <p className="text-sm text-neutral-500">Cliquez sur un booster pour le sélectionner.</p>;
+  const { t } = useTranslation();
+  if (!set) return <p className="text-sm text-neutral-500">{t('merchantPicker.click_to_select_booster')}</p>;
   return (
     <div className="text-sm">
       <div className="relative mb-3 flex aspect-[3/4] flex-col justify-between overflow-hidden rounded-lg border-2 border-accent-500 bg-gradient-to-br from-arena-800 via-arena-900 to-black p-4">
@@ -474,19 +476,17 @@ function BoosterSelectionPreview({ set }: { set: ApiCardSet | null }) {
           <div>
             <p className="font-display text-xl leading-tight text-neutral-100">{set.set_name}</p>
             <div className="text-xs text-neutral-300">
-              <p title="Décompte brut YGOPRODeck (toutes raretés/variantes confondues) — peut différer du nombre de cartes réellement distinctes une fois importées.">
-                {set.num_of_cards} entrées (YGOPRODeck)
-              </p>
-              <p>{set.tcg_date ?? 'date inconnue'}</p>
+              <p title={t('merchantPicker.entries_tooltip')}>{t('merchantPicker.entries_ygoprodeck', { count: set.num_of_cards })}</p>
+              <p>{set.tcg_date ?? t('merchantPicker.unknown_date')}</p>
             </div>
           </div>
         </div>
       </div>
       {set.is_custom ? (
-        <span className="inline-block rounded bg-accent-900 px-2 py-1 text-xs text-accent-300">Booster custom</span>
+        <span className="inline-block rounded bg-accent-900 px-2 py-1 text-xs text-accent-300">{t('merchantPicker.custom_booster')}</span>
       ) : (
         <span className={`inline-block rounded px-2 py-1 text-xs ${set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'}`}>
-          {set.imported ? 'Cartes déjà importées' : 'Cartes importées à la volée à la première ouverture'}
+          {set.imported ? t('merchantPicker.cards_already_imported') : t('merchantPicker.cards_imported_on_open')}
         </span>
       )}
     </div>
@@ -494,6 +494,7 @@ function BoosterSelectionPreview({ set }: { set: ApiCardSet | null }) {
 }
 
 function BoosterTile({ set, selected, onClick }: { set: ApiCardSet; selected: boolean; onClick: () => void }) {
+  const { t } = useTranslation();
   return (
     <button
       type="button"
@@ -515,16 +516,14 @@ function BoosterTile({ set, selected, onClick }: { set: ApiCardSet; selected: bo
           <p className="mt-1 font-display text-sm leading-tight text-neutral-100">{set.set_name}</p>
         </div>
         <div className="text-[10px] text-neutral-300">
-          <p title="Décompte brut YGOPRODeck (toutes raretés/variantes confondues) — peut différer du nombre de cartes réellement distinctes.">
-            {set.num_of_cards} entrées
-          </p>
-          <p>{set.tcg_date ?? 'date inconnue'}</p>
+          <p title={t('merchantPicker.entries_tooltip')}>{t('merchantPicker.entries', { count: set.num_of_cards })}</p>
+          <p>{set.tcg_date ?? t('merchantPicker.unknown_date')}</p>
           <span
             className={`mt-1 inline-block rounded px-1.5 py-0.5 ${
               set.is_custom ? 'bg-accent-900 text-accent-300' : set.imported ? 'bg-emerald-900 text-emerald-300' : 'bg-arena-700 text-neutral-400'
             }`}
           >
-            {set.is_custom ? 'Custom' : set.imported ? 'Importé' : 'À importer'}
+            {set.is_custom ? t('merchantPicker.custom_badge') : set.imported ? t('merchantPicker.imported_badge') : t('merchantPicker.to_import_badge')}
           </span>
         </div>
       </div>
