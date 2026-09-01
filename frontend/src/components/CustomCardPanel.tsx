@@ -18,6 +18,7 @@ import {
   type TrapType,
 } from '../lib/api';
 import { translateApiError } from '../lib/translateApiError';
+import { displayCardName, displayCardDescription } from '../lib/cardTranslation';
 
 // `label` : clé de traduction i18next, réutilise le même catalogue que
 // cardFilters.ts (`cardFilters.monsterKind/spellType/trapType.*`) — texte
@@ -752,7 +753,7 @@ function CustomCardDetailOverlay({
   onError: (message: string) => void;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(initialCardId);
   const [showBoosterLink, setShowBoosterLink] = useState(false);
   const [showImageEdit, setShowImageEdit] = useState(false);
@@ -815,17 +816,21 @@ function CustomCardDetailOverlay({
           <>
             <main className="min-w-0 flex-1 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-4 text-sm">
               {selected.card_images[0] && (
-                <img src={selected.card_images[0].image_url} alt={selected.name} className="mb-3 w-full max-w-xs rounded-lg shadow-lg" />
+                <img
+                  src={selected.card_images[0].image_url}
+                  alt={displayCardName(selected, i18n.language)}
+                  className="mb-3 w-full max-w-xs rounded-lg shadow-lg"
+                />
               )}
               <div className="mb-1 flex flex-wrap items-center gap-2">
-                <h3 className="font-display text-lg text-accent-400">{selected.name}</h3>
+                <h3 className="font-display text-lg text-accent-400">{displayCardName(selected, i18n.language)}</h3>
                 <span className="rounded bg-arena-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-400">{t('customCardDetail.custom_badge')}</span>
                 {selected.created_in_this_session === false && (
                   <span className="text-[10px] text-neutral-500">{t('customCardDetail.reused_note')}</span>
                 )}
               </div>
               <p className="mb-2 text-neutral-400">{cardSubtitle(selected, t)}</p>
-              <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{selected.description}</p>
+              <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{displayCardDescription(selected, i18n.language)}</p>
               {selected.card_sets.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1">
                   {selected.card_sets.map((s) => (
@@ -1078,6 +1083,10 @@ function CreateCustomCardForm({
   const [category, setCategory] = useState<CustomCardCategory>('monster');
   const [name, setName] = useState('');
   const [effectText, setEffectText] = useState('');
+  // Second langue, optionnelle (voir CLAUDE.md §3.4/§5) : aucune traduction
+  // automatique possible pour du contenu inventé par le MJ.
+  const [nameFr, setNameFr] = useState('');
+  const [effectTextFr, setEffectTextFr] = useState('');
   const [archetype, setArchetype] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -1145,7 +1154,14 @@ function CreateCustomCardForm({
     event.preventDefault();
     setSubmitting(true);
     try {
-      const common = { name, effect_text: effectText, image_url: imageUrl || undefined, archetype: archetype || undefined };
+      const common = {
+        name,
+        effect_text: effectText,
+        image_url: imageUrl || undefined,
+        archetype: archetype || undefined,
+        name_fr: nameFr || undefined,
+        effect_text_fr: effectTextFr || undefined,
+      };
       let card: CustomCardInput;
       if (category === 'monster') {
         card = {
@@ -1209,6 +1225,26 @@ function CreateCustomCardForm({
           value={archetype}
           onChange={(e) => setArchetype(e.target.value)}
           className={`min-w-0 flex-1 ${inputClass}`}
+        />
+      </div>
+
+      <div className="rounded border border-arena-700 p-2">
+        <p className="mb-1.5 text-[10px] uppercase tracking-wide text-neutral-500">{t('createCustomCard.translation_section_label')}</p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="text"
+            placeholder={t('createCustomCard.name_fr_placeholder')}
+            value={nameFr}
+            onChange={(e) => setNameFr(e.target.value)}
+            className={`min-w-0 flex-1 ${inputClass}`}
+          />
+        </div>
+        <textarea
+          placeholder={t('createCustomCard.effect_text_fr_placeholder')}
+          value={effectTextFr}
+          onChange={(e) => setEffectTextFr(e.target.value)}
+          rows={2}
+          className={`mt-2 w-full ${inputClass}`}
         />
       </div>
 

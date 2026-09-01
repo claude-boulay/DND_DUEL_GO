@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type ApiUser } from '../lib/api';
+import i18n from '../lib/i18n';
+
+/** Langue actuelle (voir useLanguage.ts) — lue directement sur le singleton i18next plutôt que via le hook, pour ne pas coupler useAuth à un re-render sur changement de langue. */
+function currentEmailLang(): 'fr' | 'en' {
+  return i18n.language === 'en' ? 'en' : 'fr';
+}
 
 const TOKEN_KEY = 'ygodnd_token';
 
@@ -45,7 +51,7 @@ export function useAuth() {
   // vérification vient de partir — AuthPanel bascule alors vers l'écran de
   // saisie du code au lieu de se connecter directement.
   const register = useCallback(async (username: string, email: string, password: string): Promise<{ pending: boolean }> => {
-    const result = await api.register(username, email, password);
+    const result = await api.register(username, email, password, currentEmailLang());
     if (result.pending) return { pending: true };
     applySession(result.token, result.user);
     return { pending: false };
@@ -60,7 +66,7 @@ export function useAuth() {
   );
 
   const forgotPassword = useCallback(async (email: string) => {
-    await api.forgotPassword(email);
+    await api.forgotPassword(email, currentEmailLang());
   }, []);
 
   const resetPassword = useCallback(

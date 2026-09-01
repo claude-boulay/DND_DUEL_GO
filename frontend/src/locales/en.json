@@ -677,7 +677,10 @@
     "lua_placeholder": "function s.initial_effect(c) ... end — required, see scrapi-book / CardScripts for Project Ignis syntax",
     "lua_help_before": "Required — without it the card can't run in a real duel (no \"vanilla\" fallback). Upload a .lua file above or paste the script directly; it must define",
     "lua_help_after": "(Project Ignis convention).",
-    "create_card_button": "Create card"
+    "create_card_button": "Create card",
+    "translation_section_label": "French translation (optional)",
+    "name_fr_placeholder": "Name in French",
+    "effect_text_fr_placeholder": "Effect text in French"
   },
   "imageEditForm": {
     "upload_failed": "Image upload failed",

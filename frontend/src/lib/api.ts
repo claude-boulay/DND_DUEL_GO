@@ -124,6 +124,14 @@ export interface ApiCardImage {
   image_url_cropped: string;
 }
 
+export interface ApiCardTranslations {
+  // Officielle : peuplée au fil des imports/réimports (voir CardImportPanel.tsx
+  // "Réimporter" — aucun backfill de masse). Custom : saisie par le MJ
+  // créateur. Absente tant qu'aucune traduction n'existe pour cette carte —
+  // voir lib/cardTranslation.ts pour l'affichage (repli sur name/description).
+  fr?: { name: string; description: string };
+}
+
 export interface ApiCard {
   id: string;
   ygoprodeck_id: number | null;
@@ -146,6 +154,7 @@ export interface ApiCard {
   card_sets: ApiCardSetRef[];
   card_images: ApiCardImage[];
   is_custom: boolean;
+  translations: ApiCardTranslations;
 }
 
 export type CustomCardCategory = 'monster' | 'spell' | 'trap';
@@ -169,6 +178,12 @@ interface CustomCardCommonInput {
   effect_text: string;
   image_url?: string;
   archetype?: string;
+  // Second langue, optionnelle, saisie par le MJ (voir CLAUDE.md §3.4/§5 —
+  // aucune traduction automatique possible pour du contenu inventé). Les
+  // deux doivent être fournis ensemble pour que le backend enregistre la
+  // traduction (voir customCard.routes.ts buildTranslations).
+  name_fr?: string;
+  effect_text_fr?: string;
 }
 
 export interface CustomCardMonsterInput extends CustomCardCommonInput {
@@ -217,6 +232,7 @@ export interface ApiCustomCard {
   owner_id: string | null;
   created_in_session_id: string | null;
   created_in_this_session?: boolean;
+  translations: ApiCardTranslations;
 }
 
 export type ApiMerchantItemType = 'card' | 'booster';
@@ -620,10 +636,10 @@ export const api = {
    * le compte n'existe pas encore) ou `pending: false` avec token+user
    * (SMTP non configuré — comportement historique, création immédiate).
    */
-  register: (username: string, email: string, password: string) =>
+  register: (username: string, email: string, password: string, lang?: 'fr' | 'en') =>
     request<{ pending: true; message: string } | { pending: false; token: string; user: ApiUser }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, email, password }),
+      body: JSON.stringify({ username, email, password, lang }),
     }),
 
   verifyRegistration: (email: string, code: string) =>
@@ -641,8 +657,8 @@ export const api = {
   me: (token: string) => request<{ user: ApiUser }>('/auth/me', {}, token),
 
   /** Toujours { message } même si l'email n'existe pas (anti-énumération de comptes) — voir auth.routes.ts. */
-  forgotPassword: (email: string) =>
-    request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  forgotPassword: (email: string, lang?: 'fr' | 'en') =>
+    request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email, lang }) }),
 
   resetPassword: (email: string, code: string, newPassword: string) =>
     request<{ token: string; user: ApiUser }>('/auth/reset-password', {

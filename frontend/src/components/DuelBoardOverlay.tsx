@@ -5,6 +5,7 @@ import type { TFunction } from 'i18next';
 import cardBackImage from '../assets/card-back.jpg';
 import { socket } from '../lib/socket';
 import { translateDuelPhase } from '../lib/cardLabels';
+import { displayCardName, displayCardDescription } from '../lib/cardTranslation';
 import { translateApiError } from '../lib/translateApiError';
 import {
   api,
@@ -168,7 +169,7 @@ interface ZoneInteraction {
 
 /** Panneau plein écran : duel réel piloté par le moteur ocgcore (EDOPro), voir CLAUDE.md §7. */
 export function DuelBoardOverlay({ token, session, duel, characters, currentUserId, onUpdated, onClose }: DuelBoardOverlayProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [field, setField] = useState<ApiDuelField | null>(null);
   // Retour visuel demandé par les joueurs (playtest) : une brève animation
   // quand une zone Monstre/Magie-Piège vient d'accueillir une carte
@@ -610,15 +611,21 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
           <div className="rounded-lg border border-arena-700 bg-arena-900 p-3">
             {previewCard ? (
               <>
-                <img src={previewCard.card_images[0]?.image_url} alt={previewCard.name} className="mb-2 w-full rounded" />
-                <h3 className="font-display text-sm text-accent-400">{previewCard.name}</h3>
+                <img
+                  src={previewCard.card_images[0]?.image_url}
+                  alt={displayCardName(previewCard, i18n.language)}
+                  className="mb-2 w-full rounded"
+                />
+                <h3 className="font-display text-sm text-accent-400">{displayCardName(previewCard, i18n.language)}</h3>
                 {(previewCard.atk !== null || previewCard.def !== null) && (
                   <p className="text-xs text-neutral-400">
                     ATK {previewCard.atk ?? '?'} / DEF {previewCard.def ?? '?'}
                     {previewCard.level_rank !== null && ` · ${t('cardPreview.level_rank', { level: previewCard.level_rank })}`}
                   </p>
                 )}
-                <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-300">{previewCard.description}</p>
+                <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-300">
+                  {displayCardDescription(previewCard, i18n.language)}
+                </p>
               </>
             ) : (
               <p className="text-xs text-neutral-500">{t('duelBoard.click_card_for_preview')}</p>

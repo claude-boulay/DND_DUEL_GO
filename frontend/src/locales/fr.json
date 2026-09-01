@@ -677,7 +677,10 @@
     "lua_placeholder": "function s.initial_effect(c) ... end — obligatoire, voir scrapi-book / CardScripts pour la syntaxe Project Ignis",
     "lua_help_before": "Obligatoire — sans lui la carte ne peut pas tourner dans un vrai duel (pas de repli \"vanille\"). Importez un fichier .lua ci-dessus ou collez le script directement ; il doit définir",
     "lua_help_after": "(convention Project Ignis).",
-    "create_card_button": "Créer la carte"
+    "create_card_button": "Créer la carte",
+    "translation_section_label": "Traduction française (optionnelle)",
+    "name_fr_placeholder": "Nom en français",
+    "effect_text_fr_placeholder": "Texte d'effet en français"
   },
   "imageEditForm": {
     "upload_failed": "Échec de l'envoi de l'image",

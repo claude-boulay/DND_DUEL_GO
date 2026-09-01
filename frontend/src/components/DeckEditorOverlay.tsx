@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { translateAttribute, translateRace } from '../lib/cardLabels';
+import { displayCardName, displayCardDescription } from '../lib/cardTranslation';
 import {
   api,
   type ApiCard,
@@ -403,15 +404,16 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
 }
 
 function CardPreview({ card }: { card: ApiCard | null }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   if (!card) {
     return <p className="text-sm text-neutral-500">{t('cardPreview.empty')}</p>;
   }
   const image = card.card_images[0];
+  const displayName = displayCardName(card, i18n.language);
   return (
     <div className="text-sm">
-      {image && <img src={image.image_url} alt={card.name} className="mb-3 w-full rounded-lg shadow-lg" />}
-      <h3 className="mb-1 font-display text-lg text-accent-400">{card.name}</h3>
+      {image && <img src={image.image_url} alt={displayName} className="mb-3 w-full rounded-lg shadow-lg" />}
+      <h3 className="mb-1 font-display text-lg text-accent-400">{displayName}</h3>
       <p className="mb-2 text-neutral-400">
         {/* card.type reste en anglais brut pour l'instant (combinatoire trop
             large pour ce lot — voir le plan d'internationalisation) ; race et
@@ -428,7 +430,7 @@ function CardPreview({ card }: { card: ApiCard | null }) {
         </p>
       )}
       {card.pendulum_scale !== null && <p className="mb-2 text-neutral-300">{t('cardPreview.pendulum_scale', { scale: card.pendulum_scale })}</p>}
-      <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{card.description}</p>
+      <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{displayCardDescription(card, i18n.language)}</p>
     </div>
   );
 }

@@ -30,10 +30,16 @@ function generateSixDigitCode(): string {
 const REGISTRATION_CODE_TTL_MS = 15 * 60 * 1000;
 const MAX_REGISTRATION_ATTEMPTS = 5;
 
+// Langue de l'email envoyé (vérification d'inscription / réinitialisation) —
+// le frontend envoie sa langue actuelle (useLanguage.ts) ; absent (ancien
+// client, appel direct de l'API) retombe sur le français, voir email.ts.
+const langSchema = z.enum(['fr', 'en']).optional();
+
 const registerSchema = z.object({
   username: z.string().trim().min(3).max(32),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8, 'Le mot de passe doit faire au moins 8 caractères'),
+  lang: langSchema,
 });
 
 /**
@@ -46,7 +52,7 @@ const registerSchema = z.object({
 authRouter.post(
   '/register',
   asyncHandler(async (req, res) => {
-    const { username, email, password } = registerSchema.parse(req.body);
+    const { username, email, password, lang } = registerSchema.parse(req.body);
 
     const existing = await User.findOne({ $or: [{ email }, { username }] });
     if (existing) {
@@ -88,7 +94,7 @@ authRouter.post(
       code_hash,
       expires_at: new Date(Date.now() + REGISTRATION_CODE_TTL_MS),
     });
-    await sendRegistrationVerificationEmail(email, code);
+    await sendRegistrationVerificationEmail(email, code, lang);
 
     res.json({ pending: true, message: `Un code de vérification vient d'être envoyé à ${email}.` });
   }),
@@ -181,12 +187,12 @@ authRouter.get(
 const RESET_CODE_TTL_MS = 15 * 60 * 1000;
 const MAX_RESET_ATTEMPTS = 5;
 
-const forgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email() });
+const forgotPasswordSchema = z.object({ email: z.string().trim().toLowerCase().email(), lang: langSchema });
 
 authRouter.post(
   '/forgot-password',
   asyncHandler(async (req, res) => {
-    const { email } = forgotPasswordSchema.parse(req.body);
+    const { email, lang } = forgotPasswordSchema.parse(req.body);
     const user = await User.findOne({ email });
 
     // Réponse IDENTIQUE que l'email existe ou non, dans tous les cas — sinon
@@ -200,7 +206,7 @@ authRouter.post(
       const code = generateSixDigitCode();
       const code_hash = await bcrypt.hash(code, 10);
       await PasswordReset.create({ user_id: user._id, code_hash, expires_at: new Date(Date.now() + RESET_CODE_TTL_MS) });
-      await sendPasswordResetEmail(user.email, code);
+      await sendPasswordResetEmail(user.email, code, lang);
     }
 
     res.json({ message: "Si un compte existe avec cet email, un code de réinitialisation vient d'être envoyé." });

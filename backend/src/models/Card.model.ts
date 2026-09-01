@@ -15,6 +15,23 @@ export interface CardImageRef {
   image_url_cropped: string;
 }
 
+export interface CardTranslationEntry {
+  name: string;
+  description: string;
+}
+
+export interface CardTranslations {
+  // Officielle : peuplée en rappelant YGOPRODeck avec `&language=fr` (voir
+  // ygoprodeck.ts/cardImport.ts), au fil des imports/réimports — jamais de
+  // backfill de masse des sets déjà importés (précédent déjà établi dans ce
+  // projet, voir CLAUDE.md). Custom : saisie à la main par le MJ créateur
+  // (aucune traduction automatique possible pour du contenu inventé), voir
+  // customCard.routes.ts. Absente tant qu'aucune traduction n'existe —
+  // l'affichage retombe alors sur `name`/`description` (toujours l'anglais
+  // officiel, ou la langue de saisie du MJ pour une carte custom).
+  fr?: CardTranslationEntry;
+}
+
 export interface CardAttrs {
   // Absent pour les cartes custom (pas d'id YGOPRODeck) : index sparse unique.
   ygoprodeck_id: number | null;
@@ -60,6 +77,7 @@ export interface CardAttrs {
   // commande CUSTOMSCRIPT). Sans script réel fourni par un humain, aucune
   // automatisation fiable de l'effet n'est possible — voir CLAUDE.md §3.4.
   lua_script: string | null;
+  translations: CardTranslations;
 }
 
 export type CardDocument = HydratedDocument<CardAttrs>;
@@ -84,6 +102,13 @@ const cardImageRefSchema = new Schema<CardImageRef>(
   },
   { _id: false },
 );
+
+const cardTranslationEntrySchema = new Schema<CardTranslationEntry>(
+  { name: { type: String, required: true }, description: { type: String, required: true } },
+  { _id: false },
+);
+
+const cardTranslationsSchema = new Schema<CardTranslations>({ fr: { type: cardTranslationEntrySchema, default: undefined } }, { _id: false });
 
 const cardSchema = new Schema<CardAttrs>(
   {
@@ -114,6 +139,7 @@ const cardSchema = new Schema<CardAttrs>(
     // alloué percuterait les autres sur l'unicité d'un `null` partagé).
     engine_code: { type: Number, unique: true, sparse: true },
     lua_script: { type: String, default: null },
+    translations: { type: cardTranslationsSchema, default: {} },
   },
   { timestamps: true },
 );

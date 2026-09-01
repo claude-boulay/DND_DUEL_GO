@@ -64,6 +64,12 @@ const commonFieldsSchema = {
   effect_text: z.string().trim().min(1).max(4000),
   image_url: z.string().trim().max(500).optional(),
   archetype: z.string().trim().max(64).optional(),
+  // Second langue, optionnelle, saisie par le MJ (aucune traduction
+  // automatique possible pour du contenu inventé — voir CLAUDE.md, plan
+  // d'internationalisation §5). Absent = pas encore traduite, l'affichage
+  // retombe alors sur name/effect_text.
+  name_fr: z.string().trim().min(1).max(64).optional(),
+  effect_text_fr: z.string().trim().min(1).max(4000).optional(),
 };
 
 const monsterSchema = z.object({

@@ -31,5 +31,6 @@ export function toCardDto(card: CardDocument) {
     card_sets: card.card_sets,
     card_images: card.card_images,
     is_custom: card.is_custom,
+    translations: card.translations,
   };
 }

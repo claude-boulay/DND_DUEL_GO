@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { Types } from 'mongoose';
-import { Card, type CardDocument } from '../models/Card.model';
+import { Card, type CardDocument, type CardTranslations } from '../models/Card.model';
 import { CardSet, type CardSetDocument } from '../models/CardSet.model';
 import { Merchant } from '../models/Merchant.model';
 import { Character } from '../models/Character.model';
@@ -38,6 +38,7 @@ function toCustomCardDto(card: CardDocument, viewedFromSessionId?: string) {
     // Le MJ doit pouvoir relire/corriger son script (voir CLAUDE.md §3.4 :
     // aucune carte custom automatisée sans un vrai script Lua fourni).
     lua_script: card.lua_script,
+    translations: card.translations,
     owner_id: card.owner_id ? card.owner_id.toString() : null,
     created_in_session_id: card.created_in_session_id ? card.created_in_session_id.toString() : null,
     created_in_this_session: viewedFromSessionId
@@ -51,6 +52,14 @@ async function loadCustomCardOrThrow(cardId: string): Promise<CardDocument> {
   const card = await Card.findOne({ _id: cardId, is_custom: true });
   if (!card) throw new AppError(404, 'Carte introuvable', 'not_found');
   return card;
+}
+
+/** Ne renseigne `translations.fr` que si le MJ a fourni les DEUX champs (nom + texte) — jamais une entrée à moitié remplie. */
+function buildTranslations(input: { name_fr?: string; effect_text_fr?: string }): CardTranslations {
+  if (input.name_fr && input.effect_text_fr) {
+    return { fr: { name: input.name_fr, description: input.effect_text_fr } };
+  }
+  return {};
 }
 
 function assertOwner(card: CardDocument, userId: string): void {
@@ -122,6 +131,7 @@ customCardRouter.post(
       created_in_session_id: session._id,
       engine_code: engineCode,
       lua_script: body.lua_script,
+      translations: buildTranslations(body.card),
     });
 
     res.status(201).json({ card: toCustomCardDto(card, session._id.toString()) });
@@ -172,6 +182,7 @@ customCardRouter.patch(
       ? [{ image_id: 0, image_url: imageUrl, image_url_small: imageUrl, image_url_cropped: imageUrl }]
       : [];
     card.lua_script = body.lua_script;
+    card.translations = buildTranslations(body.card);
     // Pas de réallocation d'engine_code : le passcode synthétique reste
     // stable pour cette carte même si son contenu change.
 

@@ -11,6 +11,7 @@ import {
   type ApiSealedBooster,
 } from '../lib/api';
 import { translateApiError } from '../lib/translateApiError';
+import { displayCardName } from '../lib/cardTranslation';
 import { MerchantItemPickerOverlay } from './MerchantItemPickerOverlay';
 
 interface MerchantShopOverlayProps {
@@ -565,7 +566,7 @@ function BoosterContentsOverlay({
   setName: string;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [cards, setCards] = useState<ApiCard[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -649,9 +650,9 @@ function BoosterContentsOverlay({
                           centré (HoverZoomImage) affiche la carte en grand au
                           milieu de l'écran au survol, une petite miniature
                           serait floue une fois agrandie. */}
-                      <HoverZoomImage src={card.card_images[0].image_url} alt={card.name} className="w-full cursor-zoom-in rounded" />
-                      <p className="mt-1 truncate text-[10px] text-neutral-400" title={card.name}>
-                        {card.name}
+                      <HoverZoomImage src={card.card_images[0].image_url} alt={displayCardName(card, i18n.language)} className="w-full cursor-zoom-in rounded" />
+                      <p className="mt-1 truncate text-[10px] text-neutral-400" title={displayCardName(card, i18n.language)}>
+                        {displayCardName(card, i18n.language)}
                       </p>
                     </div>
                   ) : null,

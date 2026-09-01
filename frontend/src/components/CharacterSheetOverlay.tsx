@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { api, type ApiCharacter, type ApiCollectionEntry, type ApiOpenedCard, type ApiSealedBooster } from '../lib/api';
 import { STAT_LABELS, STAT_NAMES, abilityModifier, effectiveStat } from '../lib/pointBuy';
 import { translateAttribute, translateRace } from '../lib/cardLabels';
+import { displayCardName, displayCardDescription } from '../lib/cardTranslation';
 import { translateApiError } from '../lib/translateApiError';
 import {
   EMPTY_FILTERS,
@@ -601,7 +602,7 @@ function BoostersPanel({
  * deck — ici on parcourt, on ne construit pas.
  */
 function CollectionTab({ token, character }: { token: string; character: ApiCharacter }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [collection, setCollection] = useState<ApiCollectionEntry[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -654,9 +655,9 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
         {previewCard ? (
           <div className="text-sm">
             {previewCard.card_images[0] && (
-              <img src={previewCard.card_images[0].image_url} alt={previewCard.name} className="mb-3 w-full rounded-lg shadow-lg" />
+              <img src={previewCard.card_images[0].image_url} alt={displayCardName(previewCard, i18n.language)} className="mb-3 w-full rounded-lg shadow-lg" />
             )}
-            <h3 className="mb-1 font-display text-lg text-accent-400">{previewCard.name}</h3>
+            <h3 className="mb-1 font-display text-lg text-accent-400">{displayCardName(previewCard, i18n.language)}</h3>
             <p className="mb-2 text-neutral-400">
               {previewCard.type}
               {previewCard.race ? ` · ${translateRace(previewCard.race, t)}` : ''}
@@ -670,7 +671,7 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
               </p>
             )}
             {previewCard.pendulum_scale !== null && <p className="mb-2 text-neutral-300">{t('cardPreview.pendulum_scale', { scale: previewCard.pendulum_scale })}</p>}
-            <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{previewCard.description}</p>
+            <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{displayCardDescription(previewCard, i18n.language)}</p>
           </div>
         ) : (
           <p className="text-sm text-neutral-500">{t('cardPreview.empty')}</p>

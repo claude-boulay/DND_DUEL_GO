@@ -77,7 +77,7 @@ export async function syncCardSets(): Promise<{ syncedCount: number; collidedSet
  * jamais laisser les deux chemins diverger sur des champs comme
  * pendulum_scale/link_arrows (voir le commentaire historique ci-dessous).
  */
-function buildCardUpdateFields(card: YgoCard) {
+function buildCardUpdateFields(card: YgoCard, frCard?: YgoCard) {
   return {
     name: card.name,
     type: card.type,
@@ -118,6 +118,11 @@ function buildCardUpdateFields(card: YgoCard) {
     // moteur de duel (ocgcore) — aucune allocation nécessaire ici,
     // contrairement aux cartes custom (voir engineCardCode.ts).
     engine_code: card.id,
+    // N'écrase `translations.fr` que si le second appel FR a réellement
+    // trouvé cette carte (voir fetchCardsBySet/fetchCardsByIds ci-dessus) —
+    // absent du `$set` sinon, pour ne jamais effacer une traduction déjà
+    // stockée par un import précédent en cas d'échec réseau ponctuel.
+    ...(frCard ? { translations: { fr: { name: frCard.name, description: frCard.desc } } } : {}),
   };
 }
 
@@ -136,8 +141,19 @@ export async function importCardsForSet(cardSetId: string): Promise<{ setName: s
 
   const cards = await fetchCardsBySet(cardSet.set_name);
 
+  // Second appel optionnel, en français — jamais bloquant : une erreur
+  // réseau ici ne doit pas faire échouer l'import lui-même, juste le priver
+  // de traduction pour cette fois (voir buildCardUpdateFields ci-dessus).
+  let frById = new Map<number, YgoCard>();
+  try {
+    const frCards = await fetchCardsBySet(cardSet.set_name, 'fr');
+    frById = new Map(frCards.map((c) => [c.id, c]));
+  } catch (err) {
+    console.warn('[cardImport] Récupération FR impossible, import poursuivi sans traduction :', err);
+  }
+
   for (const card of cards) {
-    await Card.updateOne({ ygoprodeck_id: card.id }, { $set: buildCardUpdateFields(card) }, { upsert: true });
+    await Card.updateOne({ ygoprodeck_id: card.id }, { $set: buildCardUpdateFields(card, frById.get(card.id)) }, { upsert: true });
   }
 
   // Ne marque "importé" que si on a réellement rapatrié des cartes : sinon
@@ -170,8 +186,19 @@ export async function importCardsByIds(ids: number[]): Promise<{ foundIds: Set<n
   const missingIds = uniqueIds.filter((id) => !alreadyIds.has(id));
 
   const fetched = missingIds.length > 0 ? await fetchCardsByIds(missingIds) : [];
+
+  let frById = new Map<number, YgoCard>();
+  if (fetched.length > 0) {
+    try {
+      const frCards = await fetchCardsByIds(fetched.map((c) => c.id), 'fr');
+      frById = new Map(frCards.map((c) => [c.id, c]));
+    } catch (err) {
+      console.warn('[cardImport] Récupération FR impossible, import poursuivi sans traduction :', err);
+    }
+  }
+
   for (const card of fetched) {
-    await Card.updateOne({ ygoprodeck_id: card.id }, { $set: buildCardUpdateFields(card) }, { upsert: true });
+    await Card.updateOne({ ygoprodeck_id: card.id }, { $set: buildCardUpdateFields(card, frById.get(card.id)) }, { upsert: true });
   }
 
   const foundIds = new Set([...alreadyIds, ...fetched.map((c) => c.id)]);

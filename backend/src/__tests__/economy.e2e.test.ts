@@ -913,8 +913,12 @@ describe('Ouverture de booster : import à la volée d’un set jamais importé,
     });
 
     it("n'importe qu'une seule fois : une seconde ouverture du même set n'appelle plus YGOPRODeck", async () => {
+      // 2, pas 1 : importCardsForSet rappelle fetchCardsBySet une seconde
+      // fois avec `language: 'fr'` (voir cardImport.ts, plan
+      // d'internationalisation §4) — un appel anglais + un appel français
+      // pour le MÊME import, toujours un seul import réel.
       const callsBefore = vi.mocked(fetchCardsBySet).mock.calls.filter(([name]) => name === autoSetName).length;
-      expect(callsBefore).toBe(1);
+      expect(callsBefore).toBe(2);
 
       const res = await request(app)
         .post(`/api/characters/${autoCharacterId}/open-booster`)
@@ -924,7 +928,7 @@ describe('Ouverture de booster : import à la volée d’un set jamais importé,
       expect(res.body.opened_cards).toHaveLength(9);
 
       const callsAfter = vi.mocked(fetchCardsBySet).mock.calls.filter(([name]) => name === autoSetName).length;
-      expect(callsAfter).toBe(1); // toujours 1 : pas de ré-import, le set était déjà marqué importé
+      expect(callsAfter).toBe(2); // toujours 2 : pas de ré-import, le set était déjà marqué importé
     });
   });
 });

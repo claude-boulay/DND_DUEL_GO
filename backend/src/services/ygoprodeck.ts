@@ -66,8 +66,16 @@ export async function fetchCardSets(): Promise<YgoCardSet[]> {
   return (await res.json()) as YgoCardSet[];
 }
 
-export async function fetchCardsBySet(setName: string): Promise<YgoCard[]> {
-  const url = `${env.YGOPRODECK_API_URL}/cardinfo.php?cardset=${encodeURIComponent(setName)}`;
+/**
+ * `language` (ex. 'fr') fait répondre YGOPRODeck avec `name`/`desc` traduits
+ * — confirmé en direct (`cardinfo.php?id=89631139&language=fr` →
+ * "Dragon Blanc aux Yeux Bleus") ; les champs FONCTIONNELS
+ * (`type`/`frameType`/`race`/`attribute`) restent en anglais quelle que soit
+ * la langue demandée, jamais affectés. Voir cardImport.ts pour l'usage
+ * (second appel optionnel, jamais bloquant si absent/en échec).
+ */
+export async function fetchCardsBySet(setName: string, language?: string): Promise<YgoCard[]> {
+  const url = `${env.YGOPRODECK_API_URL}/cardinfo.php?cardset=${encodeURIComponent(setName)}${language ? `&language=${encodeURIComponent(language)}` : ''}`;
   const res = await throttledFetch(url);
   if (res.status === 400) {
     // YGOPRODeck répond 400 (pas 200 avec liste vide) quand aucune carte ne correspond.
@@ -89,11 +97,11 @@ const ID_BATCH_SIZE = 50;
  * virgules et omet silencieusement (pas d'erreur, juste absent de `data`)
  * tout id inconnu, plutôt que de faire échouer tout le lot.
  */
-export async function fetchCardsByIds(ids: number[]): Promise<YgoCard[]> {
+export async function fetchCardsByIds(ids: number[], language?: string): Promise<YgoCard[]> {
   const results: YgoCard[] = [];
   for (let i = 0; i < ids.length; i += ID_BATCH_SIZE) {
     const batch = ids.slice(i, i + ID_BATCH_SIZE);
-    const url = `${env.YGOPRODECK_API_URL}/cardinfo.php?id=${batch.join(',')}`;
+    const url = `${env.YGOPRODECK_API_URL}/cardinfo.php?id=${batch.join(',')}${language ? `&language=${encodeURIComponent(language)}` : ''}`;
     const res = await throttledFetch(url);
     if (res.status === 400) continue; // aucun id du lot n'a matché
     if (!res.ok) throw new Error(`YGOPRODeck cardinfo.php a répondu ${res.status}`);
