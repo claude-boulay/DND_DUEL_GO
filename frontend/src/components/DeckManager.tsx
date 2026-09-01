@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { api, ApiError, type ApiCharacter, type ApiDeck } from '../lib/api';
+import { useTranslation } from 'react-i18next';
+import { api, type ApiCharacter, type ApiDeck } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 import { DeckEditorOverlay } from './DeckEditorOverlay';
 
 interface DeckManagerProps {
@@ -9,6 +11,7 @@ interface DeckManagerProps {
 }
 
 export function DeckManager({ token, character, onCharacterUpdate }: DeckManagerProps) {
+  const { t } = useTranslation();
   const [newDeckName, setNewDeckName] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +28,7 @@ export function DeckManager({ token, character, onCharacterUpdate }: DeckManager
       setNewDeckName('');
       setOpenDeckId(updated.decks[updated.decks.length - 1]?.id ?? null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setCreating(false);
     }
@@ -38,20 +41,20 @@ export function DeckManager({ token, character, onCharacterUpdate }: DeckManager
       onCharacterUpdate(character.id, { decks: updated.decks });
       if (openDeckId === deckId) setOpenDeckId(null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     }
   };
 
   return (
     <div className="mt-2 border-t border-arena-700 pt-2 text-xs">
       <div className="mb-1.5 flex items-center justify-between">
-        <span className="text-neutral-400">Decks</span>
+        <span className="text-neutral-400">{t('deckManager.title')}</span>
       </div>
 
       <form onSubmit={handleCreate} className="mb-2 flex gap-1.5">
         <input
           type="text"
-          placeholder="Nom du nouveau deck"
+          placeholder={t('deckManager.placeholder_new_deck')}
           value={newDeckName}
           onChange={(e) => setNewDeckName(e.target.value)}
           className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-neutral-100 outline-none focus:border-accent-500"
@@ -61,29 +64,29 @@ export function DeckManager({ token, character, onCharacterUpdate }: DeckManager
           disabled={creating}
           className="rounded bg-accent-500 px-2 py-1 font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
         >
-          Créer
+          {t('deckManager.create')}
         </button>
       </form>
 
       {error && <p className="mb-2 text-red-400">{error}</p>}
 
-      {character.decks.length === 0 && <p className="text-neutral-500">Aucun deck pour l'instant.</p>}
+      {character.decks.length === 0 && <p className="text-neutral-500">{t('deckManager.empty')}</p>}
 
       <div className="space-y-1.5">
         {character.decks.map((deck) => (
           <div key={deck.id} className="flex items-center gap-2 rounded border border-arena-700 bg-arena-900 p-2">
             <span className="flex-1 truncate text-neutral-200">
-              {deck.name} <span className="text-neutral-500">({deck.cards.length} cartes)</span>
+              {deck.name} <span className="text-neutral-500">({t('deckManager.card_count', { count: deck.cards.length })})</span>
             </span>
             <button type="button" onClick={() => setOpenDeckId(deck.id)} className="shrink-0 text-accent-400 underline hover:text-accent-300">
-              Ouvrir
+              {t('deckManager.open')}
             </button>
             <button
               type="button"
               onClick={() => void handleDeleteDeck(deck.id)}
               className="shrink-0 text-red-400 hover:text-red-300"
             >
-              Supprimer
+              {t('deckManager.delete')}
             </button>
           </div>
         ))}

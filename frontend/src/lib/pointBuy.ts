@@ -15,21 +15,26 @@ export interface CharacterStats {
 
 export const STAT_NAMES: StatName[] = ['history', 'perception', 'intelligence', 'charisma', 'luck'];
 
+// Clés de traduction i18next (voir locales/{fr,en}.json, namespace
+// `stats.*`) — PAS du texte affichable directement, les composants
+// appellent `t(STAT_LABELS[stat])` au rendu (même convention que
+// cardFilters.ts). STAT_NAMES (les clés `StatName`, ex. "history"), elles,
+// restent anglaises : donnée fonctionnelle (stockée en base), jamais traduite.
 export const STAT_LABELS: Record<StatName, string> = {
-  history: 'Histoire',
-  perception: 'Perception',
-  intelligence: 'Intelligence',
-  charisma: 'Charisme',
-  luck: 'Chance',
+  history: 'stats.full.history',
+  perception: 'stats.full.perception',
+  intelligence: 'stats.full.intelligence',
+  charisma: 'stats.full.charisma',
+  luck: 'stats.full.luck',
 };
 
-/** Libellés courts pour les affichages compacts (grille de fiche personnage). */
+/** Libellés courts pour les affichages compacts (grille de fiche personnage) — mêmes clés i18next que ci-dessus. */
 export const STAT_SHORT_LABELS: Record<StatName, string> = {
-  history: 'HIS',
-  perception: 'PER',
-  intelligence: 'INT',
-  charisma: 'CHA',
-  luck: 'LUC',
+  history: 'stats.short.history',
+  perception: 'stats.short.perception',
+  intelligence: 'stats.short.intelligence',
+  charisma: 'stats.short.charisma',
+  luck: 'stats.short.luck',
 };
 
 export const STAT_MIN = 8;

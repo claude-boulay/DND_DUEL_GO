@@ -95,6 +95,64 @@
       "apply": "Appliquer"
     }
   },
+  "stats": {
+    "full": {
+      "history": "Histoire",
+      "perception": "Perception",
+      "intelligence": "Intelligence",
+      "charisma": "Charisme",
+      "luck": "Chance"
+    },
+    "short": {
+      "history": "HIS",
+      "perception": "PER",
+      "intelligence": "INT",
+      "charisma": "CHA",
+      "luck": "LUC"
+    }
+  },
+  "characterForm": {
+    "title_npc": "Nouveau PNJ",
+    "title_player": "Nouveau personnage",
+    "already_has_character": "Vous avez déjà un personnage dans ce salon — un seul personnage joueur par compte et par partie.",
+    "placeholder_name_npc": "Nom du PNJ",
+    "placeholder_name_player": "Nom du personnage",
+    "point_buy": "Point-buy",
+    "points_used": "{{spent}} / {{budget}} points utilisés",
+    "cost": "coût {{cost}}",
+    "placeholder_backstory": "Historique",
+    "placeholder_personality": "Personnalité",
+    "placeholder_visual_description": "Description visuelle",
+    "creating": "Création...",
+    "submit": "Créer le personnage"
+  },
+  "dice": {
+    "title": "Dés",
+    "coin_label": "Pièce (Pile/Face)",
+    "coin_heads": "Pile",
+    "coin_tails": "Face",
+    "no_character": "Sans personnage",
+    "rerolls_count_one": "{{count}} reroll",
+    "rerolls_count_other": "{{count}} rerolls",
+    "classic_roll": "Jet classique",
+    "choose_character_for_stat": "Choisissez un personnage pour lier une stat au jet",
+    "modifier_preview": "modificateur {{modifier}}",
+    "roll": "Lancer",
+    "reroll_luck": "Relancer (Chance)",
+    "no_rolls_yet": "Aucun lancer pour l'instant.",
+    "view_full_history": "Voir l'historique complet ({{count}})",
+    "reroll_was": "(reroll, était {{previous}})",
+    "full_history_title": "Historique complet des lancers ({{count}})"
+  },
+  "deckManager": {
+    "title": "Decks",
+    "placeholder_new_deck": "Nom du nouveau deck",
+    "create": "Créer",
+    "empty": "Aucun deck pour l'instant.",
+    "card_count": "{{count}} cartes",
+    "open": "Ouvrir",
+    "delete": "Supprimer"
+  },
   "cardLabels": {
     "attribute": {
       "dark": "Ténèbres",

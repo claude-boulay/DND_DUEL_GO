@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { socket } from '../lib/socket';
 import type { ActionLogEntry } from '../types/socket';
 import type { ApiCharacter, ApiSession } from '../lib/api';
@@ -19,16 +21,17 @@ function formatModifier(modifier: number): string {
   return modifier >= 0 ? `+${modifier}` : String(modifier);
 }
 
-function formatDieLabel(sides: number): string {
-  return sides === 2 ? 'Pièce (Pile/Face)' : `d${sides}`;
+function formatDieLabel(sides: number, t: TFunction): string {
+  return sides === 2 ? t('dice.coin_label') : `d${sides}`;
 }
 
-function formatRollResult(sides: number, result: number): string {
-  if (sides === 2) return result === 1 ? 'Pile' : 'Face';
+function formatRollResult(sides: number, result: number, t: TFunction): string {
+  if (sides === 2) return result === 1 ? t('dice.coin_heads') : t('dice.coin_tails');
   return String(result);
 }
 
 export function DicePanel({ token, session, characters, currentUserId, onCharacterRerollsChange }: DicePanelProps) {
+  const { t } = useTranslation();
   const [joined, setJoined] = useState(false);
   const [log, setLog] = useState<ActionLogEntry[]>([]);
   const [sides, setSides] = useState(20);
@@ -119,7 +122,7 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
           className={`inline-block h-2.5 w-2.5 rounded-full ${joined ? 'bg-emerald-400' : 'bg-amber-400'}`}
           aria-hidden
         />
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Dés</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('dice.title')}</h2>
       </header>
 
       <div className="mb-3 flex flex-wrap gap-2">
@@ -135,7 +138,7 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
           >
             {DICE_SIDES.map((n) => (
               <option key={n} value={n}>
-                {formatDieLabel(n)}
+                {formatDieLabel(n, t)}
               </option>
             ))}
           </select>
@@ -149,10 +152,10 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
           }}
           className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
         >
-          <option value="">Sans personnage</option>
+          <option value="">{t('dice.no_character')}</option>
           {rollableCharacters.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.name} ({c.remaining_luck_rerolls} reroll{c.remaining_luck_rerolls === 1 ? '' : 's'})
+              {c.name} ({t('dice.rerolls_count', { count: c.remaining_luck_rerolls })})
             </option>
           ))}
         </select>
@@ -161,18 +164,18 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
           value={stat}
           onChange={(e) => setStat(e.target.value as StatName | '')}
           disabled={!characterId}
-          title={!characterId ? 'Choisissez un personnage pour lier une stat au jet' : undefined}
+          title={!characterId ? t('dice.choose_character_for_stat') : undefined}
           className="rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500 disabled:opacity-40"
         >
-          <option value="">Jet classique</option>
+          <option value="">{t('dice.classic_roll')}</option>
           {STAT_NAMES.map((s) => (
             <option key={s} value={s}>
-              {STAT_LABELS[s]}
+              {t(STAT_LABELS[s])}
             </option>
           ))}
         </select>
         {previewModifier !== null && (
-          <span className="self-center text-xs text-neutral-500">modificateur {formatModifier(previewModifier)}</span>
+          <span className="self-center text-xs text-neutral-500">{t('dice.modifier_preview', { modifier: formatModifier(previewModifier) })}</span>
         )}
 
         <button
@@ -181,7 +184,7 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
           disabled={!joined}
           className="rounded-md bg-accent-500 px-4 py-1.5 text-sm font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
         >
-          Lancer
+          {t('dice.roll')}
         </button>
 
         {canRerollLast && (
@@ -190,7 +193,7 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
             onClick={rerollLast}
             className="rounded-md border border-accent-500 px-4 py-1.5 text-sm text-accent-400 transition hover:bg-accent-500 hover:text-arena-950"
           >
-            Relancer (Chance)
+            {t('dice.reroll_luck')}
           </button>
         )}
       </div>
@@ -201,13 +204,13 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
           l'historique complet a sa propre vue (voir DiceHistoryOverlay
           ci-dessous), pour ne pas noyer le bloc classique dans un long journal. */}
       <div className="space-y-1 font-mono text-xs text-neutral-300">
-        {log.length === 0 && <p className="text-neutral-500">Aucun lancer pour l'instant.</p>}
+        {log.length === 0 && <p className="text-neutral-500">{t('dice.no_rolls_yet')}</p>}
         {[...log].reverse().slice(0, 5).map((entry, index) => (
           <DiceLogRow key={`${entry.roll_id}-${entry.is_reroll ? 'r' : 'o'}-${index}`} entry={entry} />
         ))}
         {log.length > 5 && (
           <button type="button" onClick={() => setShowHistory(true)} className="pt-1 text-accent-400 underline hover:text-accent-300">
-            Voir l'historique complet ({log.length})
+            {t('dice.view_full_history', { count: log.length })}
           </button>
         )}
       </div>
@@ -218,32 +221,36 @@ export function DicePanel({ token, session, characters, currentUserId, onCharact
 }
 
 function DiceLogRow({ entry }: { entry: ActionLogEntry }) {
-  const statLabel = entry.stat && entry.stat in STAT_LABELS ? STAT_LABELS[entry.stat as StatName] : entry.stat;
+  const { t } = useTranslation();
+  const statLabel = entry.stat && entry.stat in STAT_LABELS ? t(STAT_LABELS[entry.stat as StatName]) : entry.stat;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-neutral-500">{new Date(entry.rolled_at).toLocaleTimeString()}</span>
       <span className="text-neutral-200">{entry.username}</span>
       {entry.character_name && <span className="text-accent-400">({entry.character_name})</span>}
       <span>
-        {formatDieLabel(entry.sides)}
+        {formatDieLabel(entry.sides, t)}
         {entry.modifier !== null && `${formatModifier(entry.modifier)}`} →{' '}
         <span className="font-bold text-neutral-100">
-          {formatRollResult(entry.sides, entry.result)}
+          {formatRollResult(entry.sides, entry.result, t)}
           {entry.total !== null && ` = ${entry.total}`}
         </span>
         {statLabel && <span className="text-neutral-500"> ({statLabel})</span>}
       </span>
-      {entry.is_reroll && <span className="text-neutral-500">(reroll, était {formatRollResult(entry.sides, entry.previous_result ?? 0)})</span>}
+      {entry.is_reroll && (
+        <span className="text-neutral-500">{t('dice.reroll_was', { previous: formatRollResult(entry.sides, entry.previous_result ?? 0, t) })}</span>
+      )}
     </div>
   );
 }
 
 function DiceHistoryOverlay({ log, onClose }: { log: ActionLogEntry[]; onClose: () => void }) {
+  const { t } = useTranslation();
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="flex h-full max-h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-arena-700 bg-arena-900 shadow-2xl">
         <header className="flex shrink-0 items-center justify-between border-b border-arena-700 p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">Historique complet des lancers ({log.length})</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('dice.full_history_title', { count: log.length })}</h2>
           <button type="button" onClick={onClose} className="text-neutral-400 hover:text-neutral-200">
             ✕
           </button>

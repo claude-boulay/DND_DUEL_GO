@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   api,
   ApiError,
@@ -29,6 +30,7 @@ interface CharacterListProps {
 }
 
 export function CharacterList({ token, characters, currentUserId, isGm, currencyName, onDelete, onCharacterUpdate }: CharacterListProps) {
+  const { t } = useTranslation();
   const [grantCardsFor, setGrantCardsFor] = useState<string | null>(null);
   // Fiche de personnage stylisée (demande utilisateur) : ouvrable depuis
   // n'importe quelle carte compacte ci-dessous, ou depuis le bouton flottant
@@ -89,7 +91,7 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
             <div className="grid grid-cols-5 gap-2 font-mono text-xs text-neutral-300">
               {STAT_NAMES.map((stat) => (
                 <div key={stat} className="text-center">
-                  <div className="text-neutral-500">{STAT_SHORT_LABELS[stat]}</div>
+                  <div className="text-neutral-500">{t(STAT_SHORT_LABELS[stat])}</div>
                   <div>{character.stats[stat]}</div>
                 </div>
               ))}

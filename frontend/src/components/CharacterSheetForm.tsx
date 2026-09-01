@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { api, ApiError, type ApiCharacter } from '../lib/api';
+import { useTranslation } from 'react-i18next';
+import { api, type ApiCharacter } from '../lib/api';
+import { translateApiError } from '../lib/translateApiError';
 import {
   POINT_BUY_BUDGET,
   STAT_LABELS,
@@ -36,6 +38,7 @@ const BASE_STATS: CharacterStats = {
  * formulaire : il est entièrement dérivé de qui le soumet.
  */
 export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter, onCreated }: CharacterSheetFormProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [backstory, setBackstory] = useState('');
   const [personality, setPersonality] = useState('');
@@ -82,7 +85,7 @@ export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter,
       onCreated(character);
       resetForm();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Une erreur est survenue');
+      setError(translateApiError(err, t));
     } finally {
       setSubmitting(false);
     }
@@ -91,10 +94,8 @@ export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter,
   if (!isGm && hasPlayerCharacter) {
     return (
       <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
-        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-200">Nouveau personnage</h2>
-        <p className="text-xs text-neutral-500">
-          Vous avez déjà un personnage dans ce salon — un seul personnage joueur par compte et par partie.
-        </p>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-200">{t('characterForm.title_player')}</h2>
+        <p className="text-xs text-neutral-500">{t('characterForm.already_has_character')}</p>
       </section>
     );
   }
@@ -102,13 +103,13 @@ export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter,
   return (
     <section className="rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-lg">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-neutral-200">
-        {isGm ? 'Nouveau PNJ' : 'Nouveau personnage'}
+        {isGm ? t('characterForm.title_npc') : t('characterForm.title_player')}
       </h2>
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <input
           type="text"
-          placeholder={isGm ? 'Nom du PNJ' : 'Nom du personnage'}
+          placeholder={isGm ? t('characterForm.placeholder_name_npc') : t('characterForm.placeholder_name_player')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
@@ -117,15 +118,15 @@ export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter,
 
         <div className="rounded-md border border-arena-700 p-3">
           <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-wider text-neutral-400">
-            <span>Point-buy</span>
+            <span>{t('characterForm.point_buy')}</span>
             <span className={remaining === 0 ? 'text-emerald-400' : 'text-accent-400'}>
-              {spent} / {POINT_BUY_BUDGET} points utilisés
+              {t('characterForm.points_used', { spent, budget: POINT_BUY_BUDGET })}
             </span>
           </div>
           <div className="space-y-1.5">
             {STAT_NAMES.map((stat) => (
               <div key={stat} className="flex items-center gap-2 text-sm text-neutral-200">
-                <span className="w-24 shrink-0">{STAT_LABELS[stat]}</span>
+                <span className="w-24 shrink-0">{t(STAT_LABELS[stat])}</span>
                 <button
                   type="button"
                   onClick={() => adjust(stat, -1)}
@@ -145,28 +146,28 @@ export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter,
                 >
                   +
                 </button>
-                <span className="ml-auto font-mono text-xs text-neutral-500">coût {stats[stat] - STAT_MIN}</span>
+                <span className="ml-auto font-mono text-xs text-neutral-500">{t('characterForm.cost', { cost: stats[stat] - STAT_MIN })}</span>
               </div>
             ))}
           </div>
         </div>
 
         <textarea
-          placeholder="Historique"
+          placeholder={t('characterForm.placeholder_backstory')}
           value={backstory}
           onChange={(e) => setBackstory(e.target.value)}
           rows={2}
           className="w-full resize-none rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
         />
         <textarea
-          placeholder="Personnalité"
+          placeholder={t('characterForm.placeholder_personality')}
           value={personality}
           onChange={(e) => setPersonality(e.target.value)}
           rows={2}
           className="w-full resize-none rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
         />
         <textarea
-          placeholder="Description visuelle"
+          placeholder={t('characterForm.placeholder_visual_description')}
           value={visualDescription}
           onChange={(e) => setVisualDescription(e.target.value)}
           rows={2}
@@ -180,7 +181,7 @@ export function CharacterSheetForm({ token, sessionId, isGm, hasPlayerCharacter,
           disabled={submitting || remaining !== 0 || !name.trim()}
           className="w-full rounded-md bg-accent-500 py-2 text-sm font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
         >
-          {submitting ? 'Création...' : 'Créer le personnage'}
+          {submitting ? t('characterForm.creating') : t('characterForm.submit')}
         </button>
       </form>
     </section>

@@ -95,6 +95,64 @@
       "apply": "Apply"
     }
   },
+  "stats": {
+    "full": {
+      "history": "History",
+      "perception": "Perception",
+      "intelligence": "Intelligence",
+      "charisma": "Charisma",
+      "luck": "Luck"
+    },
+    "short": {
+      "history": "HIS",
+      "perception": "PER",
+      "intelligence": "INT",
+      "charisma": "CHA",
+      "luck": "LUC"
+    }
+  },
+  "characterForm": {
+    "title_npc": "New NPC",
+    "title_player": "New character",
+    "already_has_character": "You already have a character in this session — only one player character per account and per game.",
+    "placeholder_name_npc": "NPC name",
+    "placeholder_name_player": "Character name",
+    "point_buy": "Point-buy",
+    "points_used": "{{spent}} / {{budget}} points used",
+    "cost": "cost {{cost}}",
+    "placeholder_backstory": "Backstory",
+    "placeholder_personality": "Personality",
+    "placeholder_visual_description": "Visual description",
+    "creating": "Creating...",
+    "submit": "Create character"
+  },
+  "dice": {
+    "title": "Dice",
+    "coin_label": "Coin (Heads/Tails)",
+    "coin_heads": "Heads",
+    "coin_tails": "Tails",
+    "no_character": "No character",
+    "rerolls_count_one": "{{count}} reroll",
+    "rerolls_count_other": "{{count}} rerolls",
+    "classic_roll": "Classic roll",
+    "choose_character_for_stat": "Choose a character to link a stat to the roll",
+    "modifier_preview": "modifier {{modifier}}",
+    "roll": "Roll",
+    "reroll_luck": "Reroll (Luck)",
+    "no_rolls_yet": "No rolls yet.",
+    "view_full_history": "View full history ({{count}})",
+    "reroll_was": "(reroll, was {{previous}})",
+    "full_history_title": "Full roll history ({{count}})"
+  },
+  "deckManager": {
+    "title": "Decks",
+    "placeholder_new_deck": "New deck name",
+    "create": "Create",
+    "empty": "No decks yet.",
+    "card_count": "{{count}} cards",
+    "open": "Open",
+    "delete": "Delete"
+  },
   "cardLabels": {
     "attribute": {
       "dark": "DARK",
