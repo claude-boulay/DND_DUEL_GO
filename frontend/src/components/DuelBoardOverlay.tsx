@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import cardBackImage from '../assets/card-back.jpg';
 import { socket } from '../lib/socket';
-import { translateDuelPhase } from '../lib/cardLabels';
+import { translateDuelPhase, translateRace, translateAttribute } from '../lib/cardLabels';
 import { displayCardName, displayCardDescription } from '../lib/cardTranslation';
 import { translateApiError } from '../lib/translateApiError';
 import {
@@ -617,11 +617,22 @@ export function DuelBoardOverlay({ token, session, duel, characters, currentUser
                   className="mb-2 w-full rounded"
                 />
                 <h3 className="font-display text-sm text-accent-400">{displayCardName(previewCard, i18n.language)}</h3>
-                {(previewCard.atk !== null || previewCard.def !== null) && (
+                <p className="text-xs text-neutral-400">
+                  {/* card.type reste en anglais brut (voir DeckEditorOverlay.CardPreview,
+                      même convention) ; race et attribut, eux, sont traduits. */}
+                  {previewCard.type}
+                  {previewCard.race ? ` · ${translateRace(previewCard.race, t)}` : ''}
+                  {previewCard.attribute ? ` · ${translateAttribute(previewCard.attribute, t)}` : ''}
+                </p>
+                {(previewCard.atk !== null || previewCard.def !== null || previewCard.level_rank !== null) && (
                   <p className="text-xs text-neutral-400">
-                    ATK {previewCard.atk ?? '?'} / DEF {previewCard.def ?? '?'}
+                    {previewCard.atk !== null && `ATK ${previewCard.atk}`}
+                    {previewCard.def !== null && ` / DEF ${previewCard.def}`}
                     {previewCard.level_rank !== null && ` · ${t('cardPreview.level_rank', { level: previewCard.level_rank })}`}
                   </p>
+                )}
+                {previewCard.pendulum_scale !== null && (
+                  <p className="text-xs text-neutral-400">{t('cardPreview.pendulum_scale', { scale: previewCard.pendulum_scale })}</p>
                 )}
                 <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-neutral-300">
                   {displayCardDescription(previewCard, i18n.language)}
