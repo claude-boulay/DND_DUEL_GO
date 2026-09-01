@@ -11,6 +11,7 @@ import {
   type ApiDeckDetail,
 } from '../lib/api';
 import {
+  DECK_SORT_OPTIONS,
   EMPTY_FILTERS,
   SORT_OPTIONS,
   activeFilterCount,
@@ -60,6 +61,10 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>('type');
   const [sortDir, setSortDir] = useState<1 | -1>(1);
+  // Tri de l'affichage DANS le deck (Main/Extra) — indépendant du tri de la
+  // colonne de recherche à droite ci-dessus (demande utilisateur distincte).
+  const [deckSortKey, setDeckSortKey] = useState<SortKey>('type');
+  const [deckSortDir, setDeckSortDir] = useState<1 | -1>(1);
 
   const loadDeck = () => {
     setLoadingDeck(true);
@@ -183,6 +188,13 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
     }
   };
 
+  const sortDeckEntries = (entries: ApiDeckCardEntry[]) =>
+    [...entries].sort((a, b) =>
+      compareEntries({ card: a.card, releaseDate: null, acquiredOrder: null }, { card: b.card, releaseDate: null, acquiredOrder: null }, deckSortKey, deckSortDir),
+    );
+  const sortedMain = useMemo(() => (deck ? sortDeckEntries(deck.main) : []), [deck, deckSortKey, deckSortDir]);
+  const sortedExtra = useMemo(() => (deck ? sortDeckEntries(deck.extra) : []), [deck, deckSortKey, deckSortDir]);
+
   const handleDrop = (event: DragEvent<HTMLElement>) => {
     event.preventDefault();
     setIsDragOver(false);
@@ -248,16 +260,38 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
           {loadingDeck && !deck && <p className="text-sm text-neutral-500">Chargement...</p>}
           {deck && (
             <>
+              <div className="mb-3 flex items-center gap-1.5 text-xs">
+                <span className="text-neutral-500">Trier le deck :</span>
+                <select
+                  value={deckSortKey}
+                  onChange={(e) => setDeckSortKey(e.target.value as SortKey)}
+                  className="rounded border border-arena-600 bg-arena-800 px-1.5 py-1 text-neutral-100 outline-none focus:border-accent-500"
+                >
+                  {DECK_SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setDeckSortDir((d) => (d === 1 ? -1 : 1))}
+                  title={deckSortDir === 1 ? 'Ordre croissant — cliquer pour inverser' : 'Ordre décroissant — cliquer pour inverser'}
+                  className="rounded border border-arena-600 px-2 py-1 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+                >
+                  {deckSortDir === 1 ? '↑' : '↓'}
+                </button>
+              </div>
               <DeckZone
                 title="Main Deck"
-                entries={deck.main}
+                entries={sortedMain}
                 onCardClick={setPreviewCard}
                 onCardDoubleClick={(id) => void removeCard(id)}
                 busyCardId={busyCardId}
               />
               <DeckZone
                 title="Extra Deck"
-                entries={deck.extra}
+                entries={sortedExtra}
                 onCardClick={setPreviewCard}
                 onCardDoubleClick={(id) => void removeCard(id)}
                 busyCardId={busyCardId}
@@ -409,6 +443,11 @@ function DeckZone({
   busyCardId: string | null;
 }) {
   const count = entries.reduce((sum, e) => sum + e.quantity, 0);
+  // Demande utilisateur : chaque exemplaire affiché côte à côte comme une
+  // vraie carte séparée, plus juste une seule vignette avec un badge "×N".
+  const copies = entries.flatMap((entry) =>
+    Array.from({ length: entry.quantity }, (_, i) => ({ entry, copyIndex: i })),
+  );
   return (
     <div className="mb-5">
       <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-neutral-300">
@@ -418,10 +457,10 @@ function DeckZone({
         <p className="text-xs text-neutral-600">Vide — glissez ou double-cliquez une carte à droite.</p>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2">
-          {entries.map((entry) => (
+          {copies.map(({ entry, copyIndex }) => (
             <button
               type="button"
-              key={entry.card.id}
+              key={`${entry.card.id}-${copyIndex}`}
               onClick={() => onCardClick(entry.card)}
               onDoubleClick={() => onCardDoubleClick(entry.card.id)}
               disabled={busyCardId === entry.card.id}
@@ -431,9 +470,6 @@ function DeckZone({
               {entry.card.card_images[0] && (
                 <img src={entry.card.card_images[0].image_url_small} alt={entry.card.name} className="w-full rounded" />
               )}
-              <span className="absolute bottom-0.5 right-0.5 rounded bg-arena-950/90 px-1 text-[10px] text-accent-400">
-                ×{entry.quantity}
-              </span>
             </button>
           ))}
         </div>

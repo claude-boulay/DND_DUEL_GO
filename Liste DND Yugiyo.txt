@@ -1,1 +1,15 @@
 Liste DND A faire Yugiyo:
+-trie et filtre (atk min -atk max) des carte par attacks (collection,deck)
+-trie et filtres des cartes par niveau (collection,deck)
+-filtre pour capacités (flip,syntoniseur,union,toon,gémeau,esprit)
+- affichage des cartes en multiple exemplaire dans le deck cote à cote et pas juste un x3 ou x2
+- bouton pour ouvrir tout les packs d'un coup.
+- Pouvoir trier l'affichage des cartes dans le deck 
+-après création de deck le rendre visible directement pour le mj via socket
+-afficher l'image des cartes face recto pour la main
+-!Grosse feature pouvoir choisir le language français, englais et que le language sur les cartes change de manière adéquate.
+- Rajouter des animations selon le type de cartes jouer et  pour les invoquations,destruction,sacrifice... et pour la pioche et quand c'est à nous de faire une action faire clignoter a droite 
+- BUG avec doom Virus Dragon ne check pas les cartes piocher dans les 3 prochains tour
+- Bug sur les conditions crush card virus le choix du sacrife bloque je ne peux rien choisir (le monstre que je voulais sacrifier est face verso ce qui est autorisé par les règle (on était en tag duel moi vs 2 joueurs)
+- Position de la zone carte terrain a séparer mettre 1er rangé à droite et espacer des zone monstres
+- affichage de 5 zone monstres en haut cinq zone magie en bas pas plus et zone de terrain en haut séparer des zone monstres. Inversée le visuel pour le terrain de son adversaire (vision dépendant de la perspective)

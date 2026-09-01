@@ -58,4 +58,27 @@ describe('buildCardCatalogQuery', () => {
   it('ignore les tableaux vides comme absents', () => {
     expect(buildCardCatalogQuery({ categories: [], monsterKinds: [], attributes: [], races: [] })).toEqual({});
   });
+
+  it('ATK : borne min et/ou max sur le champ atk', () => {
+    expect(buildCardCatalogQuery({ atkMin: 1000 })).toEqual({ atk: { $gte: 1000 } });
+    expect(buildCardCatalogQuery({ atkMax: 2000 })).toEqual({ atk: { $lte: 2000 } });
+    expect(buildCardCatalogQuery({ atkMin: 1000, atkMax: 2000 })).toEqual({ atk: { $gte: 1000, $lte: 2000 } });
+  });
+
+  it('niveau/rang : borne min et/ou max sur le champ level_rank', () => {
+    expect(buildCardCatalogQuery({ levelMin: 5 })).toEqual({ level_rank: { $gte: 5 } });
+    expect(buildCardCatalogQuery({ levelMax: 8 })).toEqual({ level_rank: { $lte: 8 } });
+    expect(buildCardCatalogQuery({ levelMin: 5, levelMax: 8 })).toEqual({ level_rank: { $gte: 5, $lte: 8 } });
+  });
+
+  it('capacités : OR de regex sur `type` par capacité sélectionnée', () => {
+    expect(buildCardCatalogQuery({ abilities: ['tuner'] })).toEqual({ $or: [{ type: { $regex: 'Tuner' } }] });
+    expect(buildCardCatalogQuery({ abilities: ['flip', 'gemini'] })).toEqual({
+      $or: [{ type: { $regex: 'Flip' } }, { type: { $regex: 'Gemini' } }],
+    });
+  });
+
+  it('capacité inconnue : ignorée silencieusement plutôt que de produire un $or vide', () => {
+    expect(buildCardCatalogQuery({ abilities: ['nope'] })).toEqual({});
+  });
 });

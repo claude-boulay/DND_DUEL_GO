@@ -52,6 +52,20 @@ export const CATEGORY_OPTIONS: { value: CardCategory; label: string }[] = [
   { value: 'trap', label: 'Piège' },
 ];
 
+// Capacités de monstre repérées par sous-chaîne dans `card.type` (convention
+// YGOPRODeck déjà stockée telle quelle, ex. "Flip Effect Monster", "Tuner
+// Monster", "Union Effect Monster", "Toon Monster", "Gemini Monster",
+// "Spirit Monster") — pas de champ dédié en base, ces types composés le
+// portent déjà nativement.
+export const ABILITY_OPTIONS: { value: string; label: string; needle: string }[] = [
+  { value: 'flip', label: 'Flip', needle: 'Flip' },
+  { value: 'tuner', label: 'Syntoniseur', needle: 'Tuner' },
+  { value: 'union', label: 'Union', needle: 'Union' },
+  { value: 'toon', label: 'Toon', needle: 'Toon' },
+  { value: 'gemini', label: 'Gémeau', needle: 'Gemini' },
+  { value: 'spirit', label: 'Esprit', needle: 'Spirit' },
+];
+
 export interface CollectionFilters {
   categories: CardCategory[];
   monsterKinds: string[];
@@ -60,6 +74,12 @@ export interface CollectionFilters {
   trapTypes: string[];
   attributes: string[];
   races: string[];
+  abilities: string[];
+  // null = pas de borne. Une seule borne peut être posée (l'autre reste null).
+  atkMin: number | null;
+  atkMax: number | null;
+  levelMin: number | null;
+  levelMax: number | null;
 }
 
 export const EMPTY_FILTERS: CollectionFilters = {
@@ -70,6 +90,11 @@ export const EMPTY_FILTERS: CollectionFilters = {
   trapTypes: [],
   attributes: [],
   races: [],
+  abilities: [],
+  atkMin: null,
+  atkMax: null,
+  levelMin: null,
+  levelMax: null,
 };
 
 /**
@@ -79,16 +104,30 @@ export const EMPTY_FILTERS: CollectionFilters = {
  * regroupe races (monstre), spellTypes et trapTypes : même champ `race` en
  * base, quelle que soit la section de la modale d'où vient la sélection.
  */
-export function filtersToQueryParams(
-  filters: CollectionFilters,
-): { category?: string; monster_kind?: string; pendulum?: boolean; attribute?: string; race?: string } {
-  const params: { category?: string; monster_kind?: string; pendulum?: boolean; attribute?: string; race?: string } = {};
+export function filtersToQueryParams(filters: CollectionFilters): {
+  category?: string;
+  monster_kind?: string;
+  pendulum?: boolean;
+  attribute?: string;
+  race?: string;
+  ability?: string;
+  atk_min?: number;
+  atk_max?: number;
+  level_min?: number;
+  level_max?: number;
+} {
+  const params: ReturnType<typeof filtersToQueryParams> = {};
   if (filters.categories.length > 0) params.category = filters.categories.join(',');
   if (filters.monsterKinds.length > 0) params.monster_kind = filters.monsterKinds.join(',');
   if (filters.pendulumOnly) params.pendulum = true;
   if (filters.attributes.length > 0) params.attribute = filters.attributes.join(',');
   const races = [...filters.races, ...filters.spellTypes, ...filters.trapTypes];
   if (races.length > 0) params.race = races.join(',');
+  if (filters.abilities.length > 0) params.ability = filters.abilities.join(',');
+  if (filters.atkMin !== null) params.atk_min = filters.atkMin;
+  if (filters.atkMax !== null) params.atk_max = filters.atkMax;
+  if (filters.levelMin !== null) params.level_min = filters.levelMin;
+  if (filters.levelMax !== null) params.level_max = filters.levelMax;
   return params;
 }
 
@@ -100,7 +139,12 @@ export function isFiltersEmpty(filters: CollectionFilters): boolean {
     filters.spellTypes.length === 0 &&
     filters.trapTypes.length === 0 &&
     filters.attributes.length === 0 &&
-    filters.races.length === 0
+    filters.races.length === 0 &&
+    filters.abilities.length === 0 &&
+    filters.atkMin === null &&
+    filters.atkMax === null &&
+    filters.levelMin === null &&
+    filters.levelMax === null
   );
 }
 
@@ -112,7 +156,10 @@ export function activeFilterCount(filters: CollectionFilters): number {
     filters.spellTypes.length +
     filters.trapTypes.length +
     filters.attributes.length +
-    filters.races.length
+    filters.races.length +
+    filters.abilities.length +
+    (filters.atkMin !== null || filters.atkMax !== null ? 1 : 0) +
+    (filters.levelMin !== null || filters.levelMax !== null ? 1 : 0)
   );
 }
 
@@ -135,10 +182,20 @@ export function matchesFilters(card: ApiCard, filters: CollectionFilters): boole
   if (filters.races.length > 0 && (!card.race || !filters.races.includes(card.race))) return false;
   if (filters.spellTypes.length > 0 && (!card.race || !filters.spellTypes.includes(card.race))) return false;
   if (filters.trapTypes.length > 0 && (!card.race || !filters.trapTypes.includes(card.race))) return false;
+  // ATK/Niveau : un sort/piège n'a ni l'un ni l'autre (null) — exclu dès
+  // qu'une borne est active, cohérent avec attributs/races ci-dessus.
+  if (filters.atkMin !== null && (card.atk === null || card.atk < filters.atkMin)) return false;
+  if (filters.atkMax !== null && (card.atk === null || card.atk > filters.atkMax)) return false;
+  if (filters.levelMin !== null && (card.level_rank === null || card.level_rank < filters.levelMin)) return false;
+  if (filters.levelMax !== null && (card.level_rank === null || card.level_rank > filters.levelMax)) return false;
+  if (filters.abilities.length > 0) {
+    const needles = filters.abilities.map((a) => ABILITY_OPTIONS.find((o) => o.value === a)?.needle).filter((n): n is string => Boolean(n));
+    if (!needles.some((needle) => card.type.includes(needle))) return false;
+  }
   return true;
 }
 
-export type SortKey = 'type' | 'name' | 'release_date' | 'acquired_order';
+export type SortKey = 'type' | 'name' | 'release_date' | 'acquired_order' | 'atk' | 'level';
 
 // Options complètes (collection d'un personnage : deckbuilder). Le
 // sélecteur du marchand (catalogue global, rien "acquis") n'en propose
@@ -147,11 +204,23 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'type', label: 'Type (monstre → magie → piège)' },
   { value: 'release_date', label: 'Date de sortie' },
   { value: 'acquired_order', label: "Ordre d'acquisition" },
+  { value: 'atk', label: 'ATK' },
+  { value: 'level', label: 'Niveau/Rang' },
 ];
 
 export const MERCHANT_CARD_SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: 'type', label: 'Type (monstre → magie → piège)' },
   { value: 'name', label: 'Nom (A → Z)' },
+];
+
+// Tri de l'affichage DANS le deck (Main/Extra) — pas de date de sortie ni
+// d'ordre d'acquisition disponibles pour une entrée de deck (ApiDeckCardEntry
+// ne porte que card+quantity), donc uniquement les clés qui ont un sens ici.
+export const DECK_SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'type', label: 'Type (monstre → magie → piège)' },
+  { value: 'name', label: 'Nom (A → Z)' },
+  { value: 'atk', label: 'ATK' },
+  { value: 'level', label: 'Niveau/Rang' },
 ];
 
 const CATEGORY_ORDER: Record<CardCategory, number> = { monster: 0, spell: 1, trap: 2 };
@@ -177,6 +246,21 @@ export function compareEntries(a: SortableEntry, b: SortableEntry, sortKey: Sort
     else if (!da) return 1;
     else if (!db) return -1;
     else cmp = da.localeCompare(db);
+  } else if (sortKey === 'atk') {
+    // Magies/pièges (ATK null) toujours en fin de liste, quel que soit le sens du tri.
+    const va = a.card.atk;
+    const vb = b.card.atk;
+    if (va === null && vb === null) cmp = a.card.name.localeCompare(b.card.name);
+    else if (va === null) return 1;
+    else if (vb === null) return -1;
+    else cmp = va - vb;
+  } else if (sortKey === 'level') {
+    const va = a.card.level_rank;
+    const vb = b.card.level_rank;
+    if (va === null && vb === null) cmp = a.card.name.localeCompare(b.card.name);
+    else if (va === null) return 1;
+    else if (vb === null) return -1;
+    else cmp = va - vb;
   } else {
     cmp = (a.acquiredOrder ?? Number.MAX_SAFE_INTEGER) - (b.acquiredOrder ?? Number.MAX_SAFE_INTEGER);
   }

@@ -117,6 +117,11 @@ const listCardsSchema = z.object({
   pendulum: z.enum(['true', 'false']).optional(),
   attribute: csvParam,
   race: csvParam,
+  ability: csvParam,
+  atk_min: z.coerce.number().int().min(0).optional(),
+  atk_max: z.coerce.number().int().min(0).optional(),
+  level_min: z.coerce.number().int().min(0).optional(),
+  level_max: z.coerce.number().int().min(0).optional(),
   page: z.coerce.number().int().min(1).default(1),
   // Plafond relevé (voir CLAUDE.md) : un aperçu de contenu de booster (100
   // cartes plafond auparavant) coupait silencieusement le vrai contenu d'un
@@ -128,7 +133,24 @@ const listCardsSchema = z.object({
 cardRouter.get(
   '/',
   asyncHandler(async (req, res) => {
-    const { set_id, set_name, set_code, search, category, monster_kind, pendulum, attribute, race, page, limit } = listCardsSchema.parse(req.query);
+    const {
+      set_id,
+      set_name,
+      set_code,
+      search,
+      category,
+      monster_kind,
+      pendulum,
+      attribute,
+      race,
+      ability,
+      atk_min,
+      atk_max,
+      level_min,
+      level_max,
+      page,
+      limit,
+    } = listCardsSchema.parse(req.query);
 
     const filter: Record<string, unknown> = {};
     if (set_id || set_name || set_code) {
@@ -153,6 +175,11 @@ cardRouter.get(
         pendulumOnly: pendulum === 'true',
         attributes: attribute,
         races: race,
+        abilities: ability,
+        atkMin: atk_min,
+        atkMax: atk_max,
+        levelMin: level_min,
+        levelMax: level_max,
       }),
     );
 

@@ -14,7 +14,27 @@ export interface CardCatalogFilterParams {
   // (Normal/Continuous/Quick-Play/...) : même champ `race` en base,
   // conformément à la convention YGOPRODeck reprise par nos cartes custom.
   races?: string[];
+  atkMin?: number;
+  atkMax?: number;
+  levelMin?: number;
+  levelMax?: number;
+  // 'flip' | 'tuner' | 'union' | 'toon' | 'gemini' | 'spirit' — voir
+  // ABILITY_NEEDLES ci-dessous (miroir de ABILITY_OPTIONS côté front,
+  // frontend/src/lib/cardFilters.ts).
+  abilities?: string[];
 }
+
+// Capacité -> sous-chaîne à chercher dans `type` (ex. "Flip Effect Monster",
+// "Tuner Monster", "Union Effect Monster") — pas de champ dédié en base, ces
+// types composés YGOPRODeck la portent déjà nativement.
+const ABILITY_NEEDLES: Record<string, string> = {
+  flip: 'Flip',
+  tuner: 'Tuner',
+  union: 'Union',
+  toon: 'Toon',
+  gemini: 'Gemini',
+  spirit: 'Spirit',
+};
 
 export function buildCardCatalogQuery(params: CardCatalogFilterParams): Record<string, unknown> {
   const conditions: Record<string, unknown>[] = [];
@@ -44,6 +64,27 @@ export function buildCardCatalogQuery(params: CardCatalogFilterParams): Record<s
 
   if (params.races && params.races.length > 0) {
     conditions.push({ race: { $in: params.races } });
+  }
+
+  if (params.atkMin !== undefined || params.atkMax !== undefined) {
+    const range: Record<string, number> = {};
+    if (params.atkMin !== undefined) range.$gte = params.atkMin;
+    if (params.atkMax !== undefined) range.$lte = params.atkMax;
+    conditions.push({ atk: range });
+  }
+
+  if (params.levelMin !== undefined || params.levelMax !== undefined) {
+    const range: Record<string, number> = {};
+    if (params.levelMin !== undefined) range.$gte = params.levelMin;
+    if (params.levelMax !== undefined) range.$lte = params.levelMax;
+    conditions.push({ level_rank: range });
+  }
+
+  if (params.abilities && params.abilities.length > 0) {
+    const needles = params.abilities.map((a) => ABILITY_NEEDLES[a]).filter((n): n is string => Boolean(n));
+    if (needles.length > 0) {
+      conditions.push({ $or: needles.map((needle) => ({ type: { $regex: needle } })) });
+    }
   }
 
   if (conditions.length === 0) return {};

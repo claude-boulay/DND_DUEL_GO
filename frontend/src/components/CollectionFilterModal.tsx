@@ -1,4 +1,5 @@
 import {
+  ABILITY_OPTIONS,
   ATTRIBUTE_OPTIONS,
   CATEGORY_OPTIONS,
   EMPTY_FILTERS,
@@ -78,6 +79,64 @@ export function CollectionFilterModal({ filters, onChange, onClose, availableRac
           ))}
           <FilterChip label="Pendule uniquement" active={filters.pendulumOnly} onClick={() => set({ pendulumOnly: !filters.pendulumOnly })} />
         </FilterSection>
+
+        <FilterSection title="Capacité (monstre)">
+          {ABILITY_OPTIONS.map((opt) => (
+            <FilterChip
+              key={opt.value}
+              label={opt.label}
+              active={filters.abilities.includes(opt.value)}
+              onClick={() => set({ abilities: toggleInArray(filters.abilities, opt.value) })}
+            />
+          ))}
+        </FilterSection>
+
+        <div className="mb-4 flex gap-4">
+          <div className="flex-1">
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">ATK</h4>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                placeholder="min"
+                value={filters.atkMin ?? ''}
+                onChange={(e) => set({ atkMin: e.target.value === '' ? null : Number(e.target.value) })}
+                className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
+              />
+              <span className="text-neutral-500">–</span>
+              <input
+                type="number"
+                min={0}
+                placeholder="max"
+                value={filters.atkMax ?? ''}
+                onChange={(e) => set({ atkMax: e.target.value === '' ? null : Number(e.target.value) })}
+                className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
+              />
+            </div>
+          </div>
+          <div className="flex-1">
+            <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">Niveau / Rang</h4>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number"
+                min={0}
+                placeholder="min"
+                value={filters.levelMin ?? ''}
+                onChange={(e) => set({ levelMin: e.target.value === '' ? null : Number(e.target.value) })}
+                className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
+              />
+              <span className="text-neutral-500">–</span>
+              <input
+                type="number"
+                min={0}
+                placeholder="max"
+                value={filters.levelMax ?? ''}
+                onChange={(e) => set({ levelMax: e.target.value === '' ? null : Number(e.target.value) })}
+                className="w-full min-w-0 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
+              />
+            </div>
+          </div>
+        </div>
 
         <FilterSection title="Type de magie">
           {SPELL_RACE_OPTIONS.map((opt) => (

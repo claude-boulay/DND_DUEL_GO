@@ -742,6 +742,11 @@ export const api = {
       pendulum?: boolean;
       attribute?: string; // "DARK,LIGHT,..."
       race?: string; // races monstres ET sous-types magie/piège, comma-séparés
+      ability?: string; // "flip,tuner,..." — voir ABILITY_OPTIONS (cardFilters.ts)
+      atk_min?: number;
+      atk_max?: number;
+      level_min?: number;
+      level_max?: number;
       page?: number;
       limit?: number;
     },
