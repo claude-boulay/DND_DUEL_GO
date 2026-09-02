@@ -327,7 +327,10 @@
     "opening": "opening...",
     "open": "open",
     "open_capped_tooltip": "Capped at 20 boosters per opening",
-    "open_all": "open all (×{{count}})"
+    "open_all": "open all (×{{count}})",
+    "gm_notes_title": "GM notes (private)",
+    "gm_notes_hint": "Visible only to you — never to the player, even on their own character.",
+    "gm_notes_placeholder": "Private notes about this character/NPC..."
   },
   "dice": {
     "title": "Dice",
@@ -354,7 +357,17 @@
     "empty": "No decks yet.",
     "card_count": "{{count}} cards",
     "open": "Open",
-    "delete": "Delete"
+    "delete": "Delete",
+    "import_ydk_button": "Import a .ydk",
+    "import_ydk_title": "Import a .ydk deck (NPC)",
+    "import_ydk_name_placeholder": "Imported deck name",
+    "import_ydk_file_label": ".ydk file",
+    "import_ydk_or_paste": "or paste its content here",
+    "import_ydk_paste_placeholder": "#main\n12345678\n...\n#extra\n...\n!side",
+    "import_ydk_submit": "Import",
+    "import_ydk_cancel": "Cancel",
+    "import_ydk_summary": "{{main}} Main Deck card(s), {{extra}} Extra Deck card(s) imported.",
+    "import_ydk_not_found": "{{count}} passcode(s) not found: {{codes}}"
   },
   "cardLabels": {
     "attribute": {
@@ -618,7 +631,18 @@
     "session_characters_title": "Session characters",
     "long_rest_tooltip": "Refills every character's Luck rerolls in this session to their maximum",
     "long_rest_in_progress": "Resting...",
-    "long_rest_button": "🌙 Long rest"
+    "long_rest_button": "🌙 Long rest",
+    "gm_notebook_button": "📓 GM notebook"
+  },
+  "gmNotebook": {
+    "eyebrow": "GM only",
+    "title": "GM notebook",
+    "tab_history": "Story",
+    "tab_location": "Location",
+    "placeholder_history": "Story arc, ongoing quests, upcoming events...",
+    "placeholder_location": "Visited or upcoming locations, maps, local NPCs...",
+    "save": "Save",
+    "unsaved_changes": "Unsaved changes"
   },
   "boosterOpening": {
     "eyebrow": "Booster opening",

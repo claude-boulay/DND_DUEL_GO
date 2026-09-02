@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { socket } from './lib/socket';
 import { useAuth } from './hooks/useAuth';
 import { useLanguage } from './hooks/useLanguage';
-import { api, type ApiCharacter, type ApiSession } from './lib/api';
+import { api, type ApiCharacter, type ApiGmNotebook, type ApiSession } from './lib/api';
 import { translateApiError } from './lib/translateApiError';
 import { AuthPanel } from './components/AuthPanel';
 import { SessionPanel } from './components/SessionPanel';
@@ -14,6 +14,7 @@ import { CardImportPanel } from './components/CardImportPanel';
 import { MerchantPanel } from './components/MerchantPanel';
 import { DuelPanel } from './components/DuelPanel';
 import { CustomCardPanel } from './components/CustomCardPanel';
+import { GmNotebookOverlay } from './components/GmNotebookOverlay';
 
 /** Une convocation à un duel reçue en temps réel (voir types/socket.ts duel_invite), pas encore vue/traitée par ce spectateur. */
 interface DuelInvite {
@@ -185,9 +186,38 @@ export default function App() {
     }
   };
 
+  // Carnet du MJ (demande utilisateur) : même emplacement flottant que le
+  // bouton "🧙 fiche" du joueur (CharacterList.tsx) — jamais de collision
+  // possible, le MJ ne possède jamais de personnage joueur (voir la règle
+  // "un seul personnage joueur par utilisateur", CLAUDE.md).
+  const [gmNotebookOpen, setGmNotebookOpen] = useState(false);
+  const handleGmNotebookUpdate = (notebook: ApiGmNotebook) => {
+    setSession((prev) => (prev ? { ...prev, gm_notebook: notebook } : prev));
+  };
+
   return (
     <main className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-8 px-6 py-16">
       <LanguageToggle />
+
+      {session?.is_gm && (
+        <button
+          type="button"
+          onClick={() => setGmNotebookOpen(true)}
+          className="fixed right-4 top-4 z-40 flex items-center gap-2 rounded-full border border-accent-500 bg-arena-900/95 px-4 py-2 text-sm font-semibold text-accent-400 shadow-xl backdrop-blur transition hover:bg-accent-500 hover:text-arena-950"
+        >
+          {t('app.gm_notebook_button')}
+        </button>
+      )}
+
+      {gmNotebookOpen && auth.token && session?.gm_notebook && (
+        <GmNotebookOverlay
+          token={auth.token}
+          sessionCode={session.code}
+          notebook={session.gm_notebook}
+          onNotebookUpdate={handleGmNotebookUpdate}
+          onClose={() => setGmNotebookOpen(false)}
+        />
+      )}
 
       {duelInvites.length > 0 && (
         <div className="pointer-events-none fixed inset-x-0 top-4 z-50 flex flex-col items-center gap-2 px-4">

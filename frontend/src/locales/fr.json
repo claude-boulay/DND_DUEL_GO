@@ -327,7 +327,10 @@
     "opening": "ouverture...",
     "open": "ouvrir",
     "open_capped_tooltip": "Plafonné à 20 boosters par ouverture",
-    "open_all": "tout ouvrir (×{{count}})"
+    "open_all": "tout ouvrir (×{{count}})",
+    "gm_notes_title": "Notes MJ (privées)",
+    "gm_notes_hint": "Visibles uniquement par vous — jamais par le joueur, même sur son propre personnage.",
+    "gm_notes_placeholder": "Notes privées sur ce personnage/PNJ..."
   },
   "dice": {
     "title": "Dés",
@@ -354,7 +357,17 @@
     "empty": "Aucun deck pour l'instant.",
     "card_count": "{{count}} cartes",
     "open": "Ouvrir",
-    "delete": "Supprimer"
+    "delete": "Supprimer",
+    "import_ydk_button": "Importer un .ydk",
+    "import_ydk_title": "Importer un deck .ydk (PNJ)",
+    "import_ydk_name_placeholder": "Nom du deck importé",
+    "import_ydk_file_label": "Fichier .ydk",
+    "import_ydk_or_paste": "ou collez son contenu ici",
+    "import_ydk_paste_placeholder": "#main\n12345678\n...\n#extra\n...\n!side",
+    "import_ydk_submit": "Importer",
+    "import_ydk_cancel": "Annuler",
+    "import_ydk_summary": "{{main}} carte(s) Main Deck, {{extra}} carte(s) Extra Deck importées.",
+    "import_ydk_not_found": "{{count}} passcode(s) introuvable(s) : {{codes}}"
   },
   "cardLabels": {
     "attribute": {
@@ -618,7 +631,18 @@
     "session_characters_title": "Personnages du salon",
     "long_rest_tooltip": "Recharge les rerolls de Chance de tous les personnages du salon à leur maximum",
     "long_rest_in_progress": "Repos en cours...",
-    "long_rest_button": "🌙 Long repos"
+    "long_rest_button": "🌙 Long repos",
+    "gm_notebook_button": "📓 Carnet du MJ"
+  },
+  "gmNotebook": {
+    "eyebrow": "Réservé au MJ",
+    "title": "Carnet du MJ",
+    "tab_history": "Histoire",
+    "tab_location": "Lieu",
+    "placeholder_history": "Trame narrative, quêtes en cours, événements à venir...",
+    "placeholder_location": "Lieux visités ou à venir, cartes, PNJ locaux...",
+    "save": "Enregistrer",
+    "unsaved_changes": "Modifications non enregistrées"
   },
   "boosterOpening": {
     "eyebrow": "Ouverture de booster",

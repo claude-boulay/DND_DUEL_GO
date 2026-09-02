@@ -48,6 +48,12 @@ export interface CharacterAttrs {
   // (backstory/personality/visual_description) : pensé pour être modifié
   // souvent, pas juste une fois au départ.
   notes: string;
+  // Bloc séparé, réservé au MJ (demande utilisateur) : jamais exposé au
+  // propriétaire du personnage, même pour SON PROPRE personnage joueur —
+  // voir toCharacterDto côté character.routes.ts, qui ne l'inclut dans la
+  // réponse que si le REQUÊTEUR est le MJ de la partie. `notes` ci-dessus
+  // reste le bloc partagé joueur+MJ, inchangé.
+  gm_notes: string;
   stats: CharacterStatsAttrs;
   remaining_luck_rerolls: number;
   inventory: string[];
@@ -99,6 +105,7 @@ const characterSchema = new Schema<CharacterAttrs>(
     personality: { type: String, default: '', maxlength: 2000 },
     visual_description: { type: String, default: '', maxlength: 2000 },
     notes: { type: String, default: '', maxlength: 5000 },
+    gm_notes: { type: String, default: '', maxlength: 5000 },
     stats: { type: statsSchema, required: true },
     // Compteur de charges restantes ; distinct du maximum recalculé par la formule
     // de CLAUDE.md §3.3. Décrémenté par le futur moteur de dés Socket.io.

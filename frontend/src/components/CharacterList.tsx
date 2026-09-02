@@ -16,7 +16,10 @@ import { GrantCardsOverlay } from './GrantCardsOverlay';
 import { CharacterSheetOverlay } from './CharacterSheetOverlay';
 
 type CharacterUpdatePatch = Partial<
-  Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'notes' | 'inventory'>
+  Pick<
+    ApiCharacter,
+    'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'notes' | 'gm_notes' | 'inventory'
+  >
 >;
 
 interface CharacterListProps {
@@ -116,7 +119,7 @@ export function CharacterList({ token, characters, currentUserId, isGm, currency
               </>
             )}
 
-            {canManage && <CharacterEconomy token={token} character={character} onCharacterUpdate={onCharacterUpdate} />}
+            {canManage && <CharacterEconomy token={token} character={character} isGm={isGm} onCharacterUpdate={onCharacterUpdate} />}
           </article>
         );
       })}
@@ -259,10 +262,12 @@ export function MoneyEditor({
 function CharacterEconomy({
   token,
   character,
+  isGm,
   onCharacterUpdate,
 }: {
   token: string;
   character: ApiCharacter;
+  isGm: boolean;
   onCharacterUpdate: (
     characterId: string,
     patch: { money?: number; collection?: string[]; sealed_boosters?: ApiSealedBooster[]; decks?: ApiDeck[] },
@@ -400,7 +405,7 @@ function CharacterEconomy({
         </div>
       )}
 
-      <DeckManager token={token} character={character} onCharacterUpdate={onCharacterUpdate} />
+      <DeckManager token={token} character={character} isGm={isGm} onCharacterUpdate={onCharacterUpdate} />
     </div>
   );
 }

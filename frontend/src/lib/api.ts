@@ -5,6 +5,12 @@ export interface ApiUser {
   role: 'admin' | 'user';
 }
 
+/** Carnet du MJ (Histoire/Lieu) — un par partie, jamais lié à un personnage précis. Absent pour un joueur — voir toSessionDto côté backend. */
+export interface ApiGmNotebook {
+  history: string;
+  location: string;
+}
+
 export interface ApiSession {
   id: string;
   code: string;
@@ -12,6 +18,8 @@ export interface ApiSession {
   custom_banlist: string[];
   player_count: number;
   is_gm: boolean;
+  // Jamais exposé à un joueur, même membre du même salon — voir ApiGmNotebook.
+  gm_notebook?: ApiGmNotebook;
 }
 
 export interface ApiCharacterStats {
@@ -69,6 +77,10 @@ export interface ApiCharacter {
   personality: string;
   visual_description: string;
   notes: string;
+  // Bloc séparé, réservé au MJ — jamais exposé au propriétaire du
+  // personnage, même pour SON PROPRE personnage joueur. Absent (pas juste
+  // vide) pour tout viewer non-MJ, voir toCharacterDto côté backend.
+  gm_notes?: string;
   stats: ApiCharacterStats;
   remaining_luck_rerolls: number;
   inventory: string[];
@@ -684,6 +696,14 @@ export const api = {
   deleteSession: (token: string, code: string) =>
     request<null>(`/sessions/${encodeURIComponent(code)}`, { method: 'DELETE' }, token),
 
+  /** GM-only — carnet du MJ (Histoire/Lieu), un par partie. */
+  updateGmNotebook: (token: string, code: string, input: Partial<ApiGmNotebook>) =>
+    request<{ session: ApiSession }>(
+      `/sessions/${encodeURIComponent(code)}/gm-notebook`,
+      { method: 'PATCH', body: JSON.stringify(input) },
+      token,
+    ),
+
   listCharacters: (token: string, sessionId: string) =>
     request<{ characters: ApiCharacter[] }>(`/characters/session/${encodeURIComponent(sessionId)}`, {}, token),
 
@@ -712,7 +732,16 @@ export const api = {
   updateCharacterProfile: (
     token: string,
     characterId: string,
-    input: Partial<{ name: string; backstory: string; personality: string; visual_description: string; notes: string; inventory: string[] }>,
+    input: Partial<{
+      name: string;
+      backstory: string;
+      personality: string;
+      visual_description: string;
+      notes: string;
+      // GM-only côté serveur (403 sinon) — voir ApiCharacter.gm_notes.
+      gm_notes: string;
+      inventory: string[];
+    }>,
   ) =>
     request<{ character: ApiCharacter }>(
       `/characters/${encodeURIComponent(characterId)}`,
@@ -961,6 +990,21 @@ export const api = {
     request<{ character: ApiCharacter }>(
       `/characters/${encodeURIComponent(characterId)}/decks/${encodeURIComponent(deckId)}/cards/${encodeURIComponent(cardId)}${buildQuery({ quantity })}`,
       { method: 'DELETE' },
+      token,
+    ),
+
+  /**
+   * GM-only, PNJ uniquement — import d'un deck complet depuis un fichier
+   * .ydk (ou son contenu collé, les deux marchent — voir DeckManager.tsx).
+   * Les codes inconnus localement mais possiblement officiels sont
+   * auto-importés depuis YGOPRODeck (même logique que l'import CSV de
+   * collection) ; les codes toujours introuvables ensuite sont listés dans
+   * `not_found` sans faire échouer le reste de l'import.
+   */
+  importYdkDeck: (token: string, characterId: string, name: string, content: string) =>
+    request<{ character: ApiCharacter; summary: { main_count: number; extra_count: number; not_found: number[] } }>(
+      `/characters/${encodeURIComponent(characterId)}/decks/import-ydk`,
+      { method: 'POST', body: JSON.stringify({ name, content }) },
       token,
     ),
 

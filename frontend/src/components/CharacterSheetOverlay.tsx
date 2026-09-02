@@ -22,7 +22,10 @@ import { BoosterOpeningOverlay } from './BoosterOpeningOverlay';
 import { MoneyEditor } from './CharacterList';
 
 type CharacterUpdatePatch = Partial<
-  Pick<ApiCharacter, 'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'notes' | 'inventory'>
+  Pick<
+    ApiCharacter,
+    'money' | 'collection' | 'sealed_boosters' | 'decks' | 'name' | 'backstory' | 'personality' | 'visual_description' | 'notes' | 'gm_notes' | 'inventory'
+  >
 >;
 
 interface CharacterSheetOverlayProps {
@@ -131,6 +134,7 @@ function FicheTab({
         <StatsPanel character={character} />
         <RpPanel token={token} character={character} canManage={canManage} onCharacterUpdate={onCharacterUpdate} />
         <NotesPanel token={token} character={character} canManage={canManage} onCharacterUpdate={onCharacterUpdate} />
+        {isGm && <GmNotesPanel token={token} character={character} onCharacterUpdate={onCharacterUpdate} />}
         <InventoryPanel token={token} character={character} canManage={canManage} onCharacterUpdate={onCharacterUpdate} />
       </div>
       <div className="space-y-4">
@@ -150,7 +154,7 @@ function FicheTab({
         {canManage && (
           <section className="rounded-xl border border-arena-700 bg-arena-900 p-4 shadow-lg">
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">{t('deckManager.title')}</h3>
-            <DeckManager token={token} character={character} onCharacterUpdate={onCharacterUpdate} />
+            <DeckManager token={token} character={character} isGm={isGm} onCharacterUpdate={onCharacterUpdate} />
           </section>
         )}
       </div>
@@ -367,6 +371,96 @@ function NotesPanel({
             placeholder={t('characterSheet.notes_placeholder')}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
+            rows={5}
+            className="w-full resize-none rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
+          />
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-md bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+            >
+              {t('characterSheet.save')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="rounded-md border border-arena-600 px-3 py-1.5 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+            >
+              {t('characterSheet.cancel')}
+            </button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Bloc SÉPARÉ du bloc "Notes" ci-dessus (demande utilisateur, tranchée via
+ * AskUserQuestion) : réservé au MJ, jamais exposé au propriétaire du
+ * personnage — même pour son propre personnage joueur. Ce composant n'est
+ * monté du tout que quand `isGm` (voir FicheTab), donc pas de garde
+ * `canManage` séparée ici : tout visiteur qui atteint ce composant est déjà
+ * le MJ, avec droit de lecture ET d'écriture.
+ */
+function GmNotesPanel({
+  token,
+  character,
+  onCharacterUpdate,
+}: {
+  token: string;
+  character: ApiCharacter;
+  onCharacterUpdate: (characterId: string, patch: CharacterUpdatePatch) => void;
+}) {
+  const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const [gmNotes, setGmNotes] = useState(character.gm_notes ?? '');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startEditing = () => {
+    setGmNotes(character.gm_notes ?? '');
+    setError(null);
+    setEditing(true);
+  };
+
+  const handleSave = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { character: updated } = await api.updateCharacterProfile(token, character.id, { gm_notes: gmNotes });
+      onCharacterUpdate(character.id, { gm_notes: updated.gm_notes });
+      setEditing(false);
+    } catch (err) {
+      setError(translateApiError(err, t));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-amber-700/60 bg-arena-900 p-4 shadow-lg">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-amber-400">{t('characterSheet.gm_notes_title')}</h3>
+        {!editing && (
+          <button type="button" onClick={startEditing} className="text-xs text-accent-400 underline hover:text-accent-300">
+            {t('characterSheet.edit')}
+          </button>
+        )}
+      </div>
+      <p className="mb-2 text-[11px] text-neutral-500">{t('characterSheet.gm_notes_hint')}</p>
+
+      {!editing ? (
+        <p className="whitespace-pre-wrap text-sm text-neutral-300">{character.gm_notes || '—'}</p>
+      ) : (
+        <form onSubmit={handleSave} className="space-y-2">
+          <textarea
+            placeholder={t('characterSheet.gm_notes_placeholder')}
+            value={gmNotes}
+            onChange={(e) => setGmNotes(e.target.value)}
             rows={5}
             className="w-full resize-none rounded-md border border-arena-600 bg-arena-800 px-3 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
           />

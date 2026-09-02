@@ -8,7 +8,12 @@ import { Counter } from '../models/Counter.model';
  * passcode officiel connu (8 chiffres, donc < 100 000 000), pour éviter
  * toute collision.
  */
-const CUSTOM_CODE_BASE = 500_000_000;
+// Exporté pour character.routes.ts (import .ydk) : un code >= ce seuil ne
+// peut jamais être une carte officielle, donc jamais résolu via YGOPRODeck —
+// inutile de tenter l'appel réseau pour un tel passcode absent de notre base
+// (il désigne soit une carte custom d'un AUTRE MJ, jamais accessible, soit
+// un passcode invalide).
+export const CUSTOM_CODE_BASE = 500_000_000;
 const COUNTER_ID = 'custom_card_engine_code';
 
 /** Alloue le prochain code moteur synthétique disponible (atomique, jamais réutilisé). */

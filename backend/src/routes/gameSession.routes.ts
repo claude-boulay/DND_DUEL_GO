@@ -15,13 +15,16 @@ export const gameSessionRouter = Router();
 gameSessionRouter.use(requireAuth);
 
 function toSessionDto(session: GameSessionDocument, userId: string) {
+  const isGm = isSessionGm(session, userId);
   return {
     id: session._id.toString(),
     code: session.code,
     currency_name: session.currency_name,
     custom_banlist: session.custom_banlist,
     player_count: session.players.length,
-    is_gm: isSessionGm(session, userId),
+    is_gm: isGm,
+    // Jamais exposé à un joueur, même membre du même salon — carnet privé du MJ.
+    gm_notebook: isGm ? session.gm_notebook : undefined,
   };
 }
 
@@ -91,6 +94,33 @@ gameSessionRouter.get(
     if (!isSessionMember(session, userId)) {
       throw new AppError(403, 'Accès refusé à ce salon', 'forbidden');
     }
+
+    res.json({ session: toSessionDto(session, userId) });
+  }),
+);
+
+const updateGmNotebookSchema = z.object({
+  history: z.string().max(20_000).optional(),
+  location: z.string().max(20_000).optional(),
+});
+
+/** Carnet du MJ (demande utilisateur) : GM-only, jamais accessible à un joueur — voir toSessionDto. */
+gameSessionRouter.patch(
+  '/:code/gm-notebook',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const code = codeParamSchema.parse(req.params.code);
+    const session = await GameSession.findOne({ code });
+    if (!session) throw new AppError(404, 'Salon introuvable', 'not_found');
+
+    const userId = req.user!.sub;
+    if (!isSessionGm(session, userId)) {
+      throw new AppError(403, 'Seul le MJ peut modifier le carnet du MJ', 'forbidden');
+    }
+
+    const updates = updateGmNotebookSchema.parse(req.body);
+    if (updates.history !== undefined) session.gm_notebook.history = updates.history;
+    if (updates.location !== undefined) session.gm_notebook.location = updates.location;
+    await session.save();
 
     res.json({ session: toSessionDto(session, userId) });
   }),

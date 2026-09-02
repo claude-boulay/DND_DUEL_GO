@@ -19,6 +19,7 @@ import { broadcastSessionResourceChanged } from '../utils/broadcast';
 import { toCardDto } from '../utils/cardDto';
 import { resolveCardSet } from '../utils/resolveCardSet';
 import { EXTRA_DECK_MAX, MAIN_DECK_MAX, MAIN_DECK_MIN, MAX_COPIES_PER_CARD, isExtraDeckFrameType } from '../utils/deckRules';
+import { CUSTOM_CODE_BASE } from '../utils/engineCardCode';
 
 export const characterRouter = Router();
 characterRouter.use(requireAuth);
@@ -31,7 +32,7 @@ const statsSchema = z.object({
   luck: z.number(),
 });
 
-function toCharacterDto(character: CharacterDocument) {
+function toCharacterDto(character: CharacterDocument, isGm: boolean) {
   return {
     id: character._id.toString(),
     user_id: character.user_id.toString(),
@@ -45,6 +46,10 @@ function toCharacterDto(character: CharacterDocument) {
     personality: character.personality,
     visual_description: character.visual_description,
     notes: character.notes,
+    // Jamais exposé au propriétaire du personnage, même le sien — voir
+    // Character.model.ts. `undefined` est retiré par JSON.stringify, donc
+    // absent du fil pour un joueur, quel que soit ce personnage.
+    gm_notes: isGm ? character.gm_notes : undefined,
     stats: character.stats,
     remaining_luck_rerolls: character.remaining_luck_rerolls,
     inventory: character.inventory,
@@ -140,7 +145,7 @@ characterRouter.post(
     });
 
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.status(201).json({ character: toCharacterDto(character) });
+    res.status(201).json({ character: toCharacterDto(character, isSessionGm(session, userId)) });
   }),
 );
 
@@ -156,8 +161,9 @@ characterRouter.get(
       throw new AppError(403, "Vous n'êtes pas membre de ce salon", 'forbidden');
     }
 
+    const isGm = isSessionGm(session, req.user!.sub);
     const characters = await Character.find({ game_session_id: session._id }).sort({ createdAt: 1 });
-    res.json({ characters: characters.map(toCharacterDto) });
+    res.json({ characters: characters.map((c) => toCharacterDto(c, isGm)) });
   }),
 );
 
@@ -192,7 +198,8 @@ characterRouter.post(
     );
 
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.json({ characters: characters.map(toCharacterDto) });
+    // GM-only route (voir le garde ci-dessus) : toujours vrai ici.
+    res.json({ characters: characters.map((c) => toCharacterDto(c, true)) });
   }),
 );
 
@@ -204,7 +211,7 @@ characterRouter.get(
     if (!isSessionMember(session, req.user!.sub)) {
       throw new AppError(403, "Vous n'êtes pas membre de ce salon", 'forbidden');
     }
-    res.json({ character: toCharacterDto(character) });
+    res.json({ character: toCharacterDto(character, isSessionGm(session, req.user!.sub)) });
   }),
 );
 
@@ -345,7 +352,7 @@ characterRouter.post(
     await character.save();
 
     res.json({
-      character: toCharacterDto(character),
+      character: toCharacterDto(character, isGm),
       opened_cards: openedCards.map((card) => {
         const rarity = rarityForSet(card, cardSet.set_name);
         return {
@@ -394,7 +401,8 @@ characterRouter.post(
     await character.save();
 
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.json({ character: toCharacterDto(character), added: { card: toCardDto(card), quantity } });
+    // GM-only route (voir le garde ci-dessus) : toujours vrai ici.
+    res.json({ character: toCharacterDto(character, true), added: { card: toCardDto(card), quantity } });
   }),
 );
 
@@ -493,8 +501,9 @@ characterRouter.post(
     if (totalCopiesAdded > 0) await character.save();
 
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
+    // GM-only route (voir le garde ci-dessus) : toujours vrai ici.
     res.json({
-      character: toCharacterDto(character),
+      character: toCharacterDto(character, true),
       summary: {
         total_copies_added: totalCopiesAdded,
         added,
@@ -522,7 +531,7 @@ characterRouter.post(
     // spectateur de la partie) sans attendre une action qui redéclenche un
     // fetch — même convention que les autres mutations de personnage.
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.status(201).json({ character: toCharacterDto(character) });
+    res.status(201).json({ character: toCharacterDto(character, isSessionGm(session, req.user!.sub)) });
   }),
 );
 
@@ -593,7 +602,7 @@ characterRouter.patch(
     await character.save();
 
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.json({ character: toCharacterDto(character) });
+    res.json({ character: toCharacterDto(character, isSessionGm(session, req.user!.sub)) });
   }),
 );
 
@@ -611,7 +620,7 @@ characterRouter.delete(
     await character.save();
 
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.json({ character: toCharacterDto(character) });
+    res.json({ character: toCharacterDto(character, isSessionGm(session, req.user!.sub)) });
   }),
 );
 
@@ -676,7 +685,7 @@ characterRouter.post(
     await character.save();
 
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.status(201).json({ character: toCharacterDto(character) });
+    res.status(201).json({ character: toCharacterDto(character, isSessionGm(session, req.user!.sub)) });
   }),
 );
 
@@ -704,7 +713,150 @@ characterRouter.delete(
 
     await character.save();
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.json({ character: toCharacterDto(character) });
+    res.json({ character: toCharacterDto(character, isSessionGm(session, req.user!.sub)) });
+  }),
+);
+
+const importYdkSchema = z.object({
+  name: z.string().trim().min(1).max(64),
+  // Contenu brut du fichier .ydk — que ce soit un vrai upload (lu en texte
+  // côté front, voir DeckManager.tsx) ou un copier-coller direct (demande
+  // utilisateur explicite : les deux doivent marcher).
+  content: z.string().trim().min(1).max(200_000),
+});
+
+interface ParsedYdk {
+  main: number[];
+  extra: number[];
+}
+
+/**
+ * Format standard EDOPro/YGOPro (voir lib/ydk.ts côté front, qui produit
+ * exactement ça à l'export) : un passcode par ligne sous `#main`/`#extra`,
+ * copies multiples répétées. `!side` marque la section side deck — ignorée
+ * en entier, cette app n'a pas cette notion (CLAUDE.md). Toute ligne
+ * commençant par `#` en dehors de `#main`/`#extra` est un commentaire
+ * (ex. `#created by ...`), ignorée ; toute ligne non numérique inattendue
+ * aussi, plutôt que de faire échouer tout l'import pour une seule ligne mal
+ * formée.
+ */
+function parseYdk(content: string): ParsedYdk {
+  const main: number[] = [];
+  const extra: number[] = [];
+  let section: 'main' | 'extra' | 'side' | null = null;
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line === '#main') {
+      section = 'main';
+      continue;
+    }
+    if (line === '#extra') {
+      section = 'extra';
+      continue;
+    }
+    if (line === '!side') {
+      section = 'side';
+      continue;
+    }
+    if (line.startsWith('#') || line.startsWith('!')) continue;
+    if (section === 'side' || section === null) continue;
+    if (!/^\d+$/.test(line)) continue;
+    const code = Number(line);
+    (section === 'main' ? main : extra).push(code);
+  }
+  return { main, extra };
+}
+
+/**
+ * Import d'un deck PNJ complet depuis un fichier .ydk (ou son contenu
+ * collé) — demande utilisateur : composer un deck adversaire à la main,
+ * carte par carte, était trop long pour un deck déjà prêt ailleurs
+ * (EDOPro/YGOPro, ou un export .ydk fait par ce même outil, voir
+ * lib/ydk.ts). Réservé au MJ ET à un PNJ (comme le contournement de la
+ * collection déjà en place pour l'ajout carte-par-carte, CLAUDE.md §3.6) —
+ * un deck JOUEUR reste construit depuis SA collection, jamais depuis un
+ * fichier arbitraire.
+ */
+characterRouter.post(
+  '/:id/decks/import-ydk',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const character = await loadCharacterOrThrow(req.params.id!);
+    const session = await loadSessionOrThrow(character.game_session_id.toString());
+    if (!isSessionGm(session, req.user!.sub)) {
+      throw new AppError(403, 'Seul le MJ peut importer un deck .ydk', 'forbidden');
+    }
+    if (!character.is_npc) {
+      throw new AppError(
+        400,
+        "L'import .ydk n'est disponible que pour un PNJ — un deck joueur reste construit depuis sa collection",
+        'invalid_input',
+      );
+    }
+
+    const { name, content } = importYdkSchema.parse(req.body);
+    const { main, extra } = parseYdk(content);
+    if (main.length === 0 && extra.length === 0) {
+      throw new AppError(
+        400,
+        'Aucune carte trouvée dans ce fichier .ydk (sections #main/#extra vides ou absentes)',
+        'invalid_input',
+      );
+    }
+
+    const allCodes = [...new Set([...main, ...extra])];
+    const known = await Card.find({ engine_code: { $in: allCodes } });
+    const cardByCode = new Map(known.map((c) => [c.engine_code!, c]));
+
+    // Second appel uniquement pour les codes qui POURRAIENT être une vraie
+    // carte officielle pas encore importée (< CUSTOM_CODE_BASE) — un code
+    // custom d'un autre MJ n'a de toute façon aucune existence côté
+    // YGOPRODeck, inutile de le tenter.
+    const maybeOfficial = allCodes.filter((code) => !cardByCode.has(code) && code < CUSTOM_CODE_BASE);
+    if (maybeOfficial.length > 0) {
+      const { foundIds } = await importCardsByIds(maybeOfficial);
+      if (foundIds.size > 0) {
+        const fetched = await Card.find({ ygoprodeck_id: { $in: [...foundIds] } });
+        for (const card of fetched) cardByCode.set(card.engine_code ?? card.ygoprodeck_id!, card);
+      }
+    }
+
+    const notFound = allCodes.filter((code) => !cardByCode.has(code));
+    const resolveSection = (codes: number[]) => codes.filter((code) => cardByCode.has(code)).map((code) => cardByCode.get(code)!._id.toString());
+    const resolvedMain = resolveSection(main);
+    const resolvedExtra = resolveSection(extra);
+
+    // Mêmes règles que l'ajout carte-par-carte (voir POST .../cards
+    // ci-dessus), appliquées ici au deck entier plutôt qu'incrémentalement —
+    // pas de vérification du minimum (MAIN_DECK_MIN) : un import partiel
+    // (cartes non trouvées) reste utile à créer, le MJ complète ensuite.
+    const copyCounts = new Map<string, number>();
+    for (const id of [...resolvedMain, ...resolvedExtra]) copyCounts.set(id, (copyCounts.get(id) ?? 0) + 1);
+    if ([...copyCounts.values()].some((count) => count > MAX_COPIES_PER_CARD)) {
+      throw new AppError(400, `Ce fichier contient plus de ${MAX_COPIES_PER_CARD} exemplaires d'une même carte`, 'copy_limit', {
+        max: MAX_COPIES_PER_CARD,
+      });
+    }
+    if (resolvedMain.length > MAIN_DECK_MAX) {
+      throw new AppError(400, `Le Main Deck est limité à ${MAIN_DECK_MAX} cartes`, 'main_deck_full', { max: MAIN_DECK_MAX });
+    }
+    if (resolvedExtra.length > EXTRA_DECK_MAX) {
+      throw new AppError(400, `L'Extra Deck est limité à ${EXTRA_DECK_MAX} cartes`, 'extra_deck_full', { max: EXTRA_DECK_MAX });
+    }
+
+    character.decks.push({ _id: new Types.ObjectId(), name, cards: [...resolvedMain, ...resolvedExtra] });
+    await character.save();
+
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
+    // GM-only route (voir le garde ci-dessus) : toujours vrai ici.
+    res.status(201).json({
+      character: toCharacterDto(character, true),
+      summary: {
+        main_count: resolvedMain.length,
+        extra_count: resolvedExtra.length,
+        not_found: notFound,
+      },
+    });
   }),
 );
 
@@ -714,6 +866,7 @@ const updateCharacterSchema = z.object({
   personality: z.string().max(2000).optional(),
   visual_description: z.string().max(2000).optional(),
   notes: z.string().max(5000).optional(),
+  gm_notes: z.string().max(5000).optional(),
   stats: statsSchema.optional(),
   level: z.number().int().min(1).optional(),
   experience: z.number().int().min(0).optional(),
@@ -744,6 +897,12 @@ characterRouter.patch(
     if ((updates.level !== undefined || updates.experience !== undefined || updates.money !== undefined) && !isGm) {
       throw new AppError(403, "Seul le MJ peut modifier le niveau, l'expérience ou l'argent", 'forbidden');
     }
+    // Même logique que ci-dessus : un joueur ne doit jamais pouvoir écrire
+    // (ni donc a fortiori lire, voir toCharacterDto) le bloc réservé au MJ,
+    // même sur SON PROPRE personnage.
+    if (updates.gm_notes !== undefined && !isGm) {
+      throw new AppError(403, 'Seul le MJ peut modifier les notes MJ', 'forbidden');
+    }
 
     if (updates.stats) validatePointBuy(updates.stats);
 
@@ -752,6 +911,7 @@ characterRouter.patch(
     if (updates.personality !== undefined) character.personality = updates.personality;
     if (updates.visual_description !== undefined) character.visual_description = updates.visual_description;
     if (updates.notes !== undefined) character.notes = updates.notes;
+    if (updates.gm_notes !== undefined) character.gm_notes = updates.gm_notes;
     if (updates.money !== undefined) character.money = updates.money;
     if (updates.inventory !== undefined) character.inventory = updates.inventory;
     if (updates.stats) character.stats = updates.stats;
@@ -769,7 +929,7 @@ characterRouter.patch(
     // personnage par ailleurs (achat, négociation marchand...) ou un
     // rechargement de page. Même convention que la création/suppression.
     broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
-    res.json({ character: toCharacterDto(character) });
+    res.json({ character: toCharacterDto(character, isGm) });
   }),
 );
 
