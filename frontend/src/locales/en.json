@@ -161,7 +161,9 @@
   "cardPreview": {
     "empty": "Click a card to preview it here.",
     "level_rank": "Level/Rank {{level}}",
-    "pendulum_scale": "Pendulum Scale {{scale}}"
+    "pendulum_scale": "Pendulum Scale {{scale}}",
+    "linked_cards_button": "🔗 Linked cards",
+    "linked_cards_active": "🔗 Linked cards (active)"
   },
   "collectionBrowser": {
     "search_placeholder": "Search the collection",
@@ -169,7 +171,12 @@
     "sort_desc_tooltip": "Descending order — click to reverse",
     "filter_button": "Filter",
     "empty_collection": "No cards in the collection.",
-    "empty_filtered": "No cards match the filters."
+    "empty_filtered": "No cards match the filters.",
+    "linked_cards_title": "Cards linked to \"{{name}}\"",
+    "linked_cards_back": "← Back",
+    "linked_cards_loading": "Searching for linked cards...",
+    "linked_cards_empty": "No other card of this archetype in the catalog.",
+    "not_owned_tooltip": "Not owned"
   },
   "duelPanel": {
     "title": "Duels",

@@ -70,6 +70,14 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
   const [deckSortKey, setDeckSortKey] = useState<SortKey>('type');
   const [deckSortDir, setDeckSortDir] = useState<1 | -1>(1);
 
+  // Cartes liées (demande utilisateur) : bascule le panneau de droite pour
+  // montrer tout le catalogue partageant l'archétype de la carte prévisualisée
+  // à gauche, plutôt que la recherche/collection habituelle — voir
+  // `linkedArchetype`. `null` = mode normal (recherche/collection).
+  const [linkedArchetype, setLinkedArchetype] = useState<string | null>(null);
+  const [linkedResults, setLinkedResults] = useState<ApiCard[]>([]);
+  const [loadingLinked, setLoadingLinked] = useState(false);
+
   const loadDeck = () => {
     setLoadingDeck(true);
     api
@@ -119,6 +127,40 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, character.id, character.is_npc, search, filters]);
+
+  useEffect(() => {
+    if (!linkedArchetype) {
+      setLinkedResults([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingLinked(true);
+    api
+      .listCards(token, { archetype: linkedArchetype, limit: 100 })
+      .then(({ cards }) => {
+        if (!cancelled) setLinkedResults(cards);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(translateApiError(err, t));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLinked(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, linkedArchetype]);
+
+  // Un joueur ne "possède" une carte que si elle figure dans sa collection ;
+  // un PNJ est dispensé de collection pour la construction de deck (CLAUDE.md
+  // §3.6) donc rien n'y est jamais grisé pour lui.
+  const ownedCardIds = useMemo(() => new Set(character.collection), [character.collection]);
+  const isOwned = (cardId: string) => character.is_npc || ownedCardIds.has(cardId);
+
+  const toggleLinked = (archetype: string | null) => {
+    setLinkedArchetype((prev) => (prev === archetype ? null : archetype));
+  };
 
   const loadMoreNpcCards = () => {
     const nextPage = npcPage + 1;
@@ -247,7 +289,7 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
 
       <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
         <aside className="w-64 shrink-0 overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-4">
-          <CardPreview card={previewCard} />
+          <CardPreview card={previewCard} linkedActive={linkedArchetype !== null && linkedArchetype === previewCard?.archetype} onToggleLinked={toggleLinked} />
         </aside>
 
         <main
@@ -306,92 +348,132 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
         </main>
 
         <aside className="flex w-80 shrink-0 flex-col overflow-hidden rounded-lg border border-arena-700 bg-arena-900 p-3">
-          <input
-            type="text"
-            placeholder={character.is_npc ? t('deckEditor.search_placeholder_npc') : t('collectionBrowser.search_placeholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="mb-2 shrink-0 rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
-          />
+          {linkedArchetype !== null ? (
+            <>
+              <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLinkedArchetype(null)}
+                  className="text-xs text-accent-400 underline hover:text-accent-300"
+                >
+                  {t('collectionBrowser.linked_cards_back')}
+                </button>
+              </div>
+              <p className="mb-2 shrink-0 truncate text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                {t('collectionBrowser.linked_cards_title', { name: linkedArchetype })}
+              </p>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {loadingLinked && <p className="text-sm text-neutral-500">{t('collectionBrowser.linked_cards_loading')}</p>}
+                {!loadingLinked && linkedResults.length === 0 && (
+                  <p className="text-sm text-neutral-500">{t('collectionBrowser.linked_cards_empty')}</p>
+                )}
+                <div className="grid grid-cols-3 gap-2">
+                  {linkedResults.map((card) => {
+                    const owned = isOwned(card.id);
+                    return (
+                      <LinkedCard
+                        key={card.id}
+                        card={card}
+                        owned={owned}
+                        busy={busyCardId === card.id}
+                        onClick={() => setPreviewCard(card)}
+                        onDoubleClick={owned ? () => void addCard(card.id) : undefined}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <input
+                type="text"
+                placeholder={character.is_npc ? t('deckEditor.search_placeholder_npc') : t('collectionBrowser.search_placeholder')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="mb-2 shrink-0 rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-sm text-neutral-100 outline-none focus:border-accent-500"
+              />
 
-          <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
-            <select
-              value={sortKey}
-              onChange={(e) => setSortKey(e.target.value as SortKey)}
-              className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-800 px-1.5 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {t(opt.label)}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => setSortDir((d) => (d === 1 ? -1 : 1))}
-              title={sortDir === 1 ? t('collectionBrowser.sort_asc_tooltip') : t('collectionBrowser.sort_desc_tooltip')}
-              className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
-            >
-              {sortDir === 1 ? '↑' : '↓'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowFilterModal(true)}
-              className="flex items-center gap-1 rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
-            >
-              {t('collectionBrowser.filter_button')}
-              {activeFilterCount(filters) > 0 && (
-                <span className="rounded-full bg-accent-500 px-1.5 text-[10px] font-semibold text-arena-950">
-                  {activeFilterCount(filters)}
-                </span>
+              <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
+                <select
+                  value={sortKey}
+                  onChange={(e) => setSortKey(e.target.value as SortKey)}
+                  className="min-w-0 flex-1 rounded border border-arena-600 bg-arena-800 px-1.5 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
+                >
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {t(opt.label)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setSortDir((d) => (d === 1 ? -1 : 1))}
+                  title={sortDir === 1 ? t('collectionBrowser.sort_asc_tooltip') : t('collectionBrowser.sort_desc_tooltip')}
+                  className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+                >
+                  {sortDir === 1 ? '↑' : '↓'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFilterModal(true)}
+                  className="flex items-center gap-1 rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+                >
+                  {t('collectionBrowser.filter_button')}
+                  {activeFilterCount(filters) > 0 && (
+                    <span className="rounded-full bg-accent-500 px-1.5 text-[10px] font-semibold text-arena-950">
+                      {activeFilterCount(filters)}
+                    </span>
+                  )}
+                </button>
+                {activeFilterCount(filters) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFilters(EMPTY_FILTERS)}
+                    title={t('deckEditor.reset_filters_tooltip')}
+                    className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-red-400 hover:text-red-400"
+                  >
+                    {t('deckEditor.reset')}
+                  </button>
+                )}
+              </div>
+
+              {character.is_npc && !loadingRight && (
+                <p className="mb-2 shrink-0 text-xs text-neutral-500">
+                  {npcTotal === 0 ? t('deckEditor.no_cards_match_catalog') : t('deckEditor.cards_loaded', { loaded: npcResults.length, total: npcTotal })}
+                </p>
               )}
-            </button>
-            {activeFilterCount(filters) > 0 && (
-              <button
-                type="button"
-                onClick={() => setFilters(EMPTY_FILTERS)}
-                title={t('deckEditor.reset_filters_tooltip')}
-                className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-red-400 hover:text-red-400"
-              >
-                {t('deckEditor.reset')}
-              </button>
-            )}
-          </div>
 
-          {character.is_npc && !loadingRight && (
-            <p className="mb-2 shrink-0 text-xs text-neutral-500">
-              {npcTotal === 0 ? t('deckEditor.no_cards_match_catalog') : t('deckEditor.cards_loaded', { loaded: npcResults.length, total: npcTotal })}
-            </p>
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {loadingRight && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
+                {!loadingRight && searchedEntries.length === 0 && <p className="text-sm text-neutral-500">{t('deckEditor.no_cards')}</p>}
+                {!loadingRight && searchedEntries.length > 0 && rightEntries.length === 0 && (
+                  <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_filtered')}</p>
+                )}
+                <div className="grid grid-cols-3 gap-2">
+                  {rightEntries.map((entry) => (
+                    <CollectionCard
+                      key={entry.card.id}
+                      entry={entry}
+                      busy={busyCardId === entry.card.id}
+                      onClick={() => setPreviewCard(entry.card)}
+                      onDoubleClick={() => void addCard(entry.card.id)}
+                    />
+                  ))}
+                </div>
+                {character.is_npc && !loadingRight && npcResults.length < npcTotal && (
+                  <button
+                    type="button"
+                    onClick={loadMoreNpcCards}
+                    disabled={loadingMoreNpc}
+                    className="mt-3 w-full rounded-md border border-arena-600 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400 disabled:opacity-50"
+                  >
+                    {loadingMoreNpc ? t('common.loading') : t('deckEditor.load_more_cards', { count: npcTotal - npcResults.length })}
+                  </button>
+                )}
+              </div>
+            </>
           )}
-
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {loadingRight && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
-            {!loadingRight && searchedEntries.length === 0 && <p className="text-sm text-neutral-500">{t('deckEditor.no_cards')}</p>}
-            {!loadingRight && searchedEntries.length > 0 && rightEntries.length === 0 && (
-              <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_filtered')}</p>
-            )}
-            <div className="grid grid-cols-3 gap-2">
-              {rightEntries.map((entry) => (
-                <CollectionCard
-                  key={entry.card.id}
-                  entry={entry}
-                  busy={busyCardId === entry.card.id}
-                  onClick={() => setPreviewCard(entry.card)}
-                  onDoubleClick={() => void addCard(entry.card.id)}
-                />
-              ))}
-            </div>
-            {character.is_npc && !loadingRight && npcResults.length < npcTotal && (
-              <button
-                type="button"
-                onClick={loadMoreNpcCards}
-                disabled={loadingMoreNpc}
-                className="mt-3 w-full rounded-md border border-arena-600 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400 disabled:opacity-50"
-              >
-                {loadingMoreNpc ? t('common.loading') : t('deckEditor.load_more_cards', { count: npcTotal - npcResults.length })}
-              </button>
-            )}
-          </div>
         </aside>
       </div>
 
@@ -403,7 +485,19 @@ export function DeckEditorOverlay({ token, character, deckId, onClose, onCharact
   );
 }
 
-function CardPreview({ card }: { card: ApiCard | null }) {
+function CardPreview({
+  card,
+  linkedActive,
+  onToggleLinked,
+}: {
+  card: ApiCard | null;
+  // Absents pour les usages en lecture seule (ex. la fiche de personnage —
+  // voir CharacterSheetOverlay.tsx, qui gère sa propre bascule "cartes
+  // liées" séparément avec la même logique dupliquée volontairement, un seul
+  // autre appelant ne justifiant pas une abstraction partagée).
+  linkedActive?: boolean;
+  onToggleLinked?: (archetype: string | null) => void;
+}) {
   const { t, i18n } = useTranslation();
   if (!card) {
     return <p className="text-sm text-neutral-500">{t('cardPreview.empty')}</p>;
@@ -430,7 +524,23 @@ function CardPreview({ card }: { card: ApiCard | null }) {
         </p>
       )}
       {card.pendulum_scale !== null && <p className="mb-2 text-neutral-300">{t('cardPreview.pendulum_scale', { scale: card.pendulum_scale })}</p>}
-      <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{displayCardDescription(card, i18n.language)}</p>
+      <p className="mb-3 whitespace-pre-wrap leading-relaxed text-neutral-300">{displayCardDescription(card, i18n.language)}</p>
+      {/* Cartes liées (demande utilisateur) : retrouver les autres cartes du
+          même archétype dans le catalogue complet — absent si la carte n'a
+          pas d'archétype connu (YGOPRODeck ne l'assigne pas à toutes). */}
+      {card.archetype && onToggleLinked && (
+        <button
+          type="button"
+          onClick={() => onToggleLinked(card.archetype)}
+          className={`w-full rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+            linkedActive
+              ? 'border-accent-500 bg-accent-500 text-arena-950'
+              : 'border-arena-600 text-neutral-300 hover:border-accent-500 hover:text-accent-400'
+          }`}
+        >
+          {linkedActive ? t('cardPreview.linked_cards_active') : t('cardPreview.linked_cards_button')}
+        </button>
+      )}
     </div>
   );
 }
@@ -482,6 +592,45 @@ function DeckZone({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Vignette d'une carte en mode "cartes liées" (voir plus haut) : distincte de
+ * CollectionCard, qui porte une `quantity` de collection sans notion de
+ * possédée/non-possédée — ici toutes les cartes du même archétype sont
+ * listées, celles non possédées grisées (demande utilisateur) et non
+ * glissables/ajoutables (onDoubleClick absent pour elles).
+ */
+function LinkedCard({
+  card,
+  owned,
+  busy,
+  onClick,
+  onDoubleClick,
+}: {
+  card: ApiCard;
+  owned: boolean;
+  busy: boolean;
+  onClick: () => void;
+  onDoubleClick?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      draggable={owned}
+      onDragStart={owned ? (e) => e.dataTransfer.setData('text/plain', card.id) : undefined}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      disabled={busy}
+      title={owned ? card.name : `${card.name} — ${t('collectionBrowser.not_owned_tooltip')}`}
+      className={`group relative rounded border transition disabled:opacity-50 ${
+        owned ? 'border-arena-700 hover:border-accent-500' : 'border-arena-800 opacity-40 grayscale hover:opacity-70'
+      }`}
+    >
+      {card.card_images[0] && <img src={card.card_images[0].image_url_small} alt={card.name} className="w-full rounded" />}
+    </button>
   );
 }
 

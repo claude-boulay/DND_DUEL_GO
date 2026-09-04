@@ -81,4 +81,12 @@ describe('buildCardCatalogQuery', () => {
   it('capacité inconnue : ignorée silencieusement plutôt que de produire un $or vide', () => {
     expect(buildCardCatalogQuery({ abilities: ['nope'] })).toEqual({});
   });
+
+  it('archétype : correspondance exacte sur le champ archetype', () => {
+    expect(buildCardCatalogQuery({ archetype: 'Blue-Eyes' })).toEqual({ archetype: 'Blue-Eyes' });
+  });
+
+  it('archétype vide : ignoré comme absent', () => {
+    expect(buildCardCatalogQuery({ archetype: '' })).toEqual({});
+  });
 });

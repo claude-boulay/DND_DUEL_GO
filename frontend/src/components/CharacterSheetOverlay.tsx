@@ -707,6 +707,15 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
   const [sortKey, setSortKey] = useState<SortKey>('type');
   const [sortDir, setSortDir] = useState<1 | -1>(1);
 
+  // Cartes liées (demande utilisateur) : bascule la grille de droite pour
+  // montrer tout le catalogue partageant l'archétype de la carte
+  // prévisualisée à gauche — même logique que DeckEditorOverlay.tsx (pas
+  // d'abstraction partagée pour ces deux seuls appelants, voir CardPreview
+  // là-bas). `null` = mode normal (collection filtrée).
+  const [linkedArchetype, setLinkedArchetype] = useState<string | null>(null);
+  const [linkedResults, setLinkedResults] = useState<ApiCollectionEntry['card'][]>([]);
+  const [loadingLinked, setLoadingLinked] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -727,6 +736,39 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
       cancelled = true;
     };
   }, [token, character.id]);
+
+  useEffect(() => {
+    if (!linkedArchetype) {
+      setLinkedResults([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingLinked(true);
+    api
+      .listCards(token, { archetype: linkedArchetype, limit: 100 })
+      .then(({ cards }) => {
+        if (!cancelled) setLinkedResults(cards);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(translateApiError(err, t));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingLinked(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, linkedArchetype]);
+
+  // Un PNJ est dispensé de collection pour la construction de deck
+  // (CLAUDE.md §3.6) — même convention que DeckEditorOverlay.tsx, rien n'y
+  // est jamais grisé pour lui.
+  const ownedCardIds = useMemo(() => new Set(character.collection), [character.collection]);
+  const isOwned = (cardId: string) => character.is_npc || ownedCardIds.has(cardId);
+
+  const toggleLinked = (archetype: string | null) => {
+    setLinkedArchetype((prev) => (prev === archetype ? null : archetype));
+  };
 
   const availableRaces = useMemo(() => {
     const races = new Set<string>();
@@ -765,7 +807,20 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
               </p>
             )}
             {previewCard.pendulum_scale !== null && <p className="mb-2 text-neutral-300">{t('cardPreview.pendulum_scale', { scale: previewCard.pendulum_scale })}</p>}
-            <p className="whitespace-pre-wrap leading-relaxed text-neutral-300">{displayCardDescription(previewCard, i18n.language)}</p>
+            <p className="mb-3 whitespace-pre-wrap leading-relaxed text-neutral-300">{displayCardDescription(previewCard, i18n.language)}</p>
+            {previewCard.archetype && (
+              <button
+                type="button"
+                onClick={() => toggleLinked(previewCard.archetype)}
+                className={`w-full rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+                  linkedArchetype === previewCard.archetype
+                    ? 'border-accent-500 bg-accent-500 text-arena-950'
+                    : 'border-arena-600 text-neutral-300 hover:border-accent-500 hover:text-accent-400'
+                }`}
+              >
+                {linkedArchetype === previewCard.archetype ? t('cardPreview.linked_cards_active') : t('cardPreview.linked_cards_button')}
+              </button>
+            )}
           </div>
         ) : (
           <p className="text-sm text-neutral-500">{t('cardPreview.empty')}</p>
@@ -773,71 +828,110 @@ function CollectionTab({ token, character }: { token: string; character: ApiChar
       </aside>
 
       <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-arena-700 bg-arena-900 p-3">
-        <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
-          <input
-            type="text"
-            placeholder={t('collectionBrowser.search_placeholder')}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
-          />
-          <select
-            value={sortKey}
-            onChange={(e) => setSortKey(e.target.value as SortKey)}
-            className="rounded border border-arena-600 bg-arena-800 px-1.5 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
-          >
-            {SORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {t(opt.label)}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={() => setSortDir((d) => (d === 1 ? -1 : 1))}
-            title={sortDir === 1 ? t('collectionBrowser.sort_asc_tooltip') : t('collectionBrowser.sort_desc_tooltip')}
-            className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
-          >
-            {sortDir === 1 ? '↑' : '↓'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowFilterModal(true)}
-            className="flex items-center gap-1 rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
-          >
-            {t('collectionBrowser.filter_button')}
-            {activeFilterCount(filters) > 0 && (
-              <span className="rounded-full bg-accent-500 px-1.5 text-[10px] font-semibold text-arena-950">{activeFilterCount(filters)}</span>
-            )}
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          {!loading && collection && collection.length === 0 && <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_collection')}</p>}
-          {!loading && collection && collection.length > 0 && entries.length === 0 && (
-            <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_filtered')}</p>
-          )}
-          <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
-            {entries.map((entry) => (
-              <button
-                key={entry.card.id}
-                type="button"
-                onClick={() => setPreviewCard(entry.card)}
-                title={entry.card.name}
-                className="group relative rounded border border-arena-700 transition hover:border-accent-500"
+        {linkedArchetype !== null ? (
+          <>
+            <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+              <button type="button" onClick={() => setLinkedArchetype(null)} className="text-xs text-accent-400 underline hover:text-accent-300">
+                {t('collectionBrowser.linked_cards_back')}
+              </button>
+              <p className="truncate text-xs font-semibold uppercase tracking-wide text-neutral-400">
+                {t('collectionBrowser.linked_cards_title', { name: linkedArchetype })}
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loadingLinked && <p className="text-sm text-neutral-500">{t('collectionBrowser.linked_cards_loading')}</p>}
+              {!loadingLinked && linkedResults.length === 0 && (
+                <p className="text-sm text-neutral-500">{t('collectionBrowser.linked_cards_empty')}</p>
+              )}
+              <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
+                {linkedResults.map((card) => {
+                  const owned = isOwned(card.id);
+                  return (
+                    <button
+                      key={card.id}
+                      type="button"
+                      onClick={() => setPreviewCard(card)}
+                      title={owned ? card.name : `${card.name} — ${t('collectionBrowser.not_owned_tooltip')}`}
+                      className={`group relative rounded border transition ${
+                        owned ? 'border-arena-700 hover:border-accent-500' : 'border-arena-800 opacity-40 grayscale hover:opacity-70'
+                      }`}
+                    >
+                      {card.card_images[0] && <img src={card.card_images[0].image_url_small} alt={card.name} className="w-full rounded" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mb-2 flex shrink-0 flex-wrap items-center gap-1.5 text-xs">
+              <input
+                type="text"
+                placeholder={t('collectionBrowser.search_placeholder')}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="min-w-0 flex-1 rounded-md border border-arena-600 bg-arena-800 px-2 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
+              />
+              <select
+                value={sortKey}
+                onChange={(e) => setSortKey(e.target.value as SortKey)}
+                className="rounded border border-arena-600 bg-arena-800 px-1.5 py-1.5 text-neutral-100 outline-none focus:border-accent-500"
               >
-                {entry.card.card_images[0] && (
-                  <img src={entry.card.card_images[0].image_url_small} alt={entry.card.name} className="w-full rounded" />
-                )}
-                {entry.quantity > 1 && (
-                  <span className="absolute bottom-0.5 right-0.5 rounded bg-arena-950/90 px-1 text-[10px] text-neutral-300">×{entry.quantity}</span>
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {t(opt.label)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setSortDir((d) => (d === 1 ? -1 : 1))}
+                title={sortDir === 1 ? t('collectionBrowser.sort_asc_tooltip') : t('collectionBrowser.sort_desc_tooltip')}
+                className="rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+              >
+                {sortDir === 1 ? '↑' : '↓'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowFilterModal(true)}
+                className="flex items-center gap-1 rounded border border-arena-600 px-2 py-1.5 text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+              >
+                {t('collectionBrowser.filter_button')}
+                {activeFilterCount(filters) > 0 && (
+                  <span className="rounded-full bg-accent-500 px-1.5 text-[10px] font-semibold text-arena-950">{activeFilterCount(filters)}</span>
                 )}
               </button>
-            ))}
-          </div>
-        </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {loading && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
+              {error && <p className="text-sm text-red-400">{error}</p>}
+              {!loading && collection && collection.length === 0 && <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_collection')}</p>}
+              {!loading && collection && collection.length > 0 && entries.length === 0 && (
+                <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_filtered')}</p>
+              )}
+              <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
+                {entries.map((entry) => (
+                  <button
+                    key={entry.card.id}
+                    type="button"
+                    onClick={() => setPreviewCard(entry.card)}
+                    title={entry.card.name}
+                    className="group relative rounded border border-arena-700 transition hover:border-accent-500"
+                  >
+                    {entry.card.card_images[0] && (
+                      <img src={entry.card.card_images[0].image_url_small} alt={entry.card.name} className="w-full rounded" />
+                    )}
+                    {entry.quantity > 1 && (
+                      <span className="absolute bottom-0.5 right-0.5 rounded bg-arena-950/90 px-1 text-[10px] text-neutral-300">×{entry.quantity}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </main>
 
       {showFilterModal && (

@@ -824,6 +824,10 @@ export const api = {
       attribute?: string; // "DARK,LIGHT,..."
       race?: string; // races monstres ET sous-types magie/piège, comma-séparés
       ability?: string; // "flip,tuner,..." — voir ABILITY_OPTIONS (cardFilters.ts)
+      // Cartes liées (demande utilisateur) : correspondance exacte sur
+      // Card.archetype, pour retrouver toutes les cartes du même archétype
+      // qu'une carte donnée dans le catalogue COMPLET.
+      archetype?: string;
       atk_min?: number;
       atk_max?: number;
       level_min?: number;

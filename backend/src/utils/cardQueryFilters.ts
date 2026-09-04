@@ -22,6 +22,10 @@ export interface CardCatalogFilterParams {
   // ABILITY_NEEDLES ci-dessous (miroir de ABILITY_OPTIONS côté front,
   // frontend/src/lib/cardFilters.ts).
   abilities?: string[];
+  // Correspondance exacte (voir Card.archetype) — demande utilisateur
+  // "cartes liées" : retrouver toutes les cartes du même archétype qu'une
+  // carte donnée (ex. "Blue-Eyes"), pas juste celles déjà possédées.
+  archetype?: string;
 }
 
 // Capacité -> sous-chaîne à chercher dans `type` (ex. "Flip Effect Monster",
@@ -85,6 +89,10 @@ export function buildCardCatalogQuery(params: CardCatalogFilterParams): Record<s
     if (needles.length > 0) {
       conditions.push({ $or: needles.map((needle) => ({ type: { $regex: needle } })) });
     }
+  }
+
+  if (params.archetype) {
+    conditions.push({ archetype: params.archetype });
   }
 
   if (conditions.length === 0) return {};

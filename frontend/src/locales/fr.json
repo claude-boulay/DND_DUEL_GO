@@ -161,7 +161,9 @@
   "cardPreview": {
     "empty": "Cliquez sur une carte pour l'afficher ici.",
     "level_rank": "Niv./Rang {{level}}",
-    "pendulum_scale": "Échelle Pendule {{scale}}"
+    "pendulum_scale": "Échelle Pendule {{scale}}",
+    "linked_cards_button": "🔗 Cartes liées",
+    "linked_cards_active": "🔗 Cartes liées (actif)"
   },
   "collectionBrowser": {
     "search_placeholder": "Rechercher dans la collection",
@@ -169,7 +171,12 @@
     "sort_desc_tooltip": "Ordre décroissant — cliquer pour inverser",
     "filter_button": "Filtrer",
     "empty_collection": "Aucune carte dans la collection.",
-    "empty_filtered": "Aucune carte ne correspond aux filtres."
+    "empty_filtered": "Aucune carte ne correspond aux filtres.",
+    "linked_cards_title": "Cartes liées à « {{name}} »",
+    "linked_cards_back": "← Retour",
+    "linked_cards_loading": "Recherche des cartes liées...",
+    "linked_cards_empty": "Aucune autre carte de cet archétype dans le catalogue.",
+    "not_owned_tooltip": "Carte non possédée"
   },
   "duelPanel": {
     "title": "Duels",

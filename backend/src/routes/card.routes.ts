@@ -133,6 +133,11 @@ const listCardsSchema = z.object({
   attribute: csvParam,
   race: csvParam,
   ability: csvParam,
+  // Cartes liées (demande utilisateur) : correspondance exacte sur
+  // Card.archetype, pour retrouver toutes les cartes du même archétype
+  // qu'une carte donnée dans le catalogue COMPLET, pas juste la collection
+  // déjà chargée côté client.
+  archetype: z.string().trim().max(100).optional(),
   atk_min: z.coerce.number().int().min(0).optional(),
   atk_max: z.coerce.number().int().min(0).optional(),
   level_min: z.coerce.number().int().min(0).optional(),
@@ -160,6 +165,7 @@ cardRouter.get(
       attribute,
       race,
       ability,
+      archetype,
       atk_min,
       atk_max,
       level_min,
@@ -196,6 +202,7 @@ cardRouter.get(
         attributes: attribute,
         races: race,
         abilities: ability,
+        archetype,
         atkMin: atk_min,
         atkMax: atk_max,
         levelMin: level_min,
