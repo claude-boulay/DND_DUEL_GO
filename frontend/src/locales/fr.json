@@ -47,7 +47,9 @@
     "extra_deck_full": "L'Extra Deck est limité à {{max}} cartes",
     "main_deck_full": "Le Main Deck est limité à {{max}} cartes",
     "missing_engine_code": "« {{name}} » n'a pas de code moteur — réenregistrez cette carte",
-    "missing_lua_script": "« {{name}} » est une carte custom sans script Lua — un vrai script est obligatoire (CLAUDE.md §3.4)"
+    "missing_lua_script": "« {{name}} » est une carte custom sans script Lua — un vrai script est obligatoire (CLAUDE.md §3.4)",
+    "not_buying_cards": "Ce marchand n'achète pas de cartes",
+    "card_in_deck": "« {{name}} » est utilisée dans un deck — retirez-la de vos decks avant de la vendre"
   },
   "duelEvents": {
     "summoned": "Invocation résolue.",
@@ -249,7 +251,16 @@
     "distinct_cards_one": "{{count}} carte distincte",
     "distinct_cards_other": "{{count}} cartes distinctes",
     "unknown_rarity": "Rareté inconnue",
-    "no_cards_for_set": "Aucune carte trouvée pour ce set."
+    "no_cards_for_set": "Aucune carte trouvée pour ce set.",
+    "buys_cards_label": "Achète les cartes",
+    "buys_cards_tooltip": "Si activé, les joueurs peuvent vendre des cartes de leur collection à ce marchand — prix calculé selon la rareté de la première édition de chaque carte",
+    "sell_cards_button": "💰 Vendre des cartes",
+    "sell_character_label": "Personnage :",
+    "sell_owned_count": "{{count}} exemplaire(s) possédé(s)",
+    "sell_quantity_label": "Quantité",
+    "sell_confirm": "Vendre",
+    "sell_select_card_prompt": "Sélectionnez une carte à vendre.",
+    "sell_success": "Vendu {{quantity}} × « {{name}} » pour {{total}} {{currency}}."
   },
   "merchantPicker": {
     "eyebrow": "Marchand — {{name}}",
@@ -541,6 +552,8 @@
     "description_placeholder": "Description (optionnelle)",
     "default_dc_tooltip": "DC proposé par défaut quand un nouvel article négociable est ajouté à ce marchand — chaque article garde ensuite son propre DC/remise.",
     "default_dc_label": "DC par défaut",
+    "buys_cards_label": "Achète les cartes",
+    "buys_cards_tooltip": "Les joueurs pourront vendre des cartes de leur collection à ce marchand (modifiable plus tard dans sa boutique)",
     "create": "Créer",
     "empty": "Aucun marchand dans ce salon.",
     "item_count_one": "{{count}} article",

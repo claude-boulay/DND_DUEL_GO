@@ -5,6 +5,7 @@ import {
   api,
   type ApiCard,
   type ApiCharacter,
+  type ApiCollectionEntry,
   type ApiMerchant,
   type ApiMerchantItem,
   type ApiPendingHaggle,
@@ -43,6 +44,8 @@ export function MerchantShopOverlay({
   const [showAddItem, setShowAddItem] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [refreshingImages, setRefreshingImages] = useState(false);
+  const [sellMode, setSellMode] = useState(false);
+  const [togglingBuysCards, setTogglingBuysCards] = useState(false);
   // MerchantItem.name n'est qu'un instantané figé à l'ajout (voir CLAUDE.md)
   // — jamais mis à jour par une réimportation ultérieure du set d'origine.
   // Résout ici le VRAI nom (traduit si dispo) de chaque article "carte" en
@@ -110,6 +113,21 @@ export function MerchantShopOverlay({
     }
   };
 
+  // Rachat de cartes (demande utilisateur) : GM-only opt-in, un marchand ne
+  // rachète pas par défaut — voir Merchant.model.ts buys_cards.
+  const handleToggleBuysCards = async () => {
+    setTogglingBuysCards(true);
+    setError(null);
+    try {
+      const { merchant: updated } = await api.updateMerchant(token, merchant.id, { buys_cards: !merchant.buys_cards });
+      onMerchantUpdate(updated);
+    } catch (err) {
+      setError(translateApiError(err, t));
+    } finally {
+      setTogglingBuysCards(false);
+    }
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
@@ -119,6 +137,31 @@ export function MerchantShopOverlay({
           {merchant.description && <p className="mt-0.5 max-w-xl truncate text-sm text-neutral-400">{merchant.description}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {isGm && (
+            <label
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-md border border-arena-600 px-3 py-2 text-xs text-neutral-300"
+              title={t('merchantShop.buys_cards_tooltip')}
+            >
+              <input
+                type="checkbox"
+                checked={merchant.buys_cards}
+                disabled={togglingBuysCards}
+                onChange={() => void handleToggleBuysCards()}
+              />
+              {t('merchantShop.buys_cards_label')}
+            </label>
+          )}
+          {!isGm && merchant.buys_cards && buyableCharacters.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSellMode((v) => !v)}
+              className={`rounded-md border px-3 py-2 text-xs font-semibold transition ${
+                sellMode ? 'border-accent-500 bg-accent-500 text-arena-950' : 'border-arena-600 text-neutral-300 hover:border-accent-500 hover:text-accent-400'
+              }`}
+            >
+              {t('merchantShop.sell_cards_button')}
+            </button>
+          )}
           {isGm && hasCardItems && (
             <button
               type="button"
@@ -142,6 +185,15 @@ export function MerchantShopOverlay({
 
       {error && <p className="border-b border-red-900 bg-red-950/40 px-6 py-2 text-sm text-red-400">{error}</p>}
 
+      {sellMode ? (
+        <SellCardsPanel
+          token={token}
+          merchantId={merchant.id}
+          currencyName={currencyName}
+          buyableCharacters={buyableCharacters}
+          onCharacterUpdate={onCharacterUpdate}
+        />
+      ) : (
       <div className="flex min-h-0 flex-1 gap-4 overflow-hidden p-4">
         <main className="min-w-0 flex-1 overflow-y-auto">
           {merchant.items.length === 0 ? (
@@ -202,8 +254,171 @@ export function MerchantShopOverlay({
           )}
         </aside>
       </div>
+      )}
     </div>,
     document.body,
+  );
+}
+
+/**
+ * Rachat de cartes par un marchand (demande utilisateur) : le joueur choisit
+ * un de ses personnages, parcourt sa collection réelle (pas les articles du
+ * marchand — ici c'est LUI qui vend), sélectionne une carte + une quantité.
+ * Le prix (calculé côté serveur depuis la rareté de la PREMIÈRE édition
+ * connue de la carte, voir utils/cardSellPrice.ts côté backend) n'est connu
+ * qu'après la vente — pas de prévisualisation client, la donnée nécessaire
+ * (CardSet.tcg_date de chaque set référencé) n'est pas exposée sur ApiCard.
+ */
+function SellCardsPanel({
+  token,
+  merchantId,
+  currencyName,
+  buyableCharacters,
+  onCharacterUpdate,
+}: {
+  token: string;
+  merchantId: string;
+  currencyName: string;
+  buyableCharacters: ApiCharacter[];
+  onCharacterUpdate: (characterId: string, patch: { money?: number; collection?: string[] }) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const [characterId, setCharacterId] = useState(buyableCharacters[0]?.id ?? '');
+  const [collection, setCollection] = useState<ApiCollectionEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const activeCharacterId = characterId || buyableCharacters[0]?.id || '';
+
+  const loadCollection = (charId: string) => {
+    if (!charId) return;
+    setLoading(true);
+    setError(null);
+    api
+      .getCharacterCollection(token, charId)
+      .then(({ collection: fetched }) => setCollection(fetched))
+      .catch((err) => setError(translateApiError(err, t)))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadCollection(activeCharacterId);
+    setSelectedCardId(null);
+    setFeedback(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeCharacterId]);
+
+  const selectedEntry = collection?.find((e) => e.card.id === selectedCardId) ?? null;
+
+  const handleSell = async () => {
+    if (!selectedCardId) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const { character, sale } = await api.sellCardToMerchant(token, merchantId, activeCharacterId, selectedCardId, quantity);
+      onCharacterUpdate(activeCharacterId, { money: character.money, collection: character.collection });
+      setFeedback({
+        ok: true,
+        message: t('merchantShop.sell_success', { name: sale.card_name, quantity: sale.quantity, total: sale.total_price, currency: currencyName }),
+      });
+      loadCollection(activeCharacterId);
+      setSelectedCardId(null);
+      setQuantity(1);
+    } catch (err) {
+      setFeedback({ ok: false, message: translateApiError(err, t) });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+      <div className="flex shrink-0 items-center gap-2">
+        <span className="text-xs text-neutral-400">{t('merchantShop.sell_character_label')}</span>
+        <select
+          value={activeCharacterId}
+          onChange={(e) => setCharacterId(e.target.value)}
+          className="rounded border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
+        >
+          {buyableCharacters.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.money} {currencyName})
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      <div className="grid min-h-0 flex-1 grid-cols-[1fr_260px] gap-4 overflow-hidden">
+        <div className="overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3">
+          {loading && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
+          {!loading && collection && collection.length === 0 && <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_collection')}</p>}
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-2">
+            {(collection ?? []).map((entry) => (
+              <button
+                key={entry.card.id}
+                type="button"
+                onClick={() => setSelectedCardId(entry.card.id)}
+                title={displayCardName(entry.card, i18n.language)}
+                className={`group relative rounded border transition ${
+                  selectedCardId === entry.card.id ? 'border-accent-400' : 'border-arena-700 hover:border-arena-500'
+                }`}
+              >
+                {entry.card.card_images[0] && (
+                  <img src={entry.card.card_images[0].image_url_small} alt={entry.card.name} className="w-full rounded" />
+                )}
+                {entry.quantity > 1 && (
+                  <span className="absolute bottom-0.5 right-0.5 rounded bg-arena-950/90 px-1 text-[10px] text-neutral-300">×{entry.quantity}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <aside className="flex flex-col overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3 text-sm">
+          {selectedEntry ? (
+            <>
+              {selectedEntry.card.card_images[0] && (
+                <img
+                  src={selectedEntry.card.card_images[0].image_url}
+                  alt={displayCardName(selectedEntry.card, i18n.language)}
+                  className="mb-2 w-full rounded-lg"
+                />
+              )}
+              <h3 className="mb-1 font-display text-base text-accent-400">{displayCardName(selectedEntry.card, i18n.language)}</h3>
+              <p className="mb-2 text-xs text-neutral-500">{t('merchantShop.sell_owned_count', { count: selectedEntry.quantity })}</p>
+              <label className="mb-2 flex items-center justify-between gap-2 text-neutral-300">
+                {t('merchantShop.sell_quantity_label')}
+                <input
+                  type="number"
+                  min={1}
+                  max={selectedEntry.quantity}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.min(selectedEntry.quantity, Math.max(1, Number(e.target.value))))}
+                  className="w-16 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void handleSell()}
+                disabled={submitting}
+                className="rounded bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+              >
+                {t('merchantShop.sell_confirm')}
+              </button>
+            </>
+          ) : (
+            <p className="text-neutral-500">{t('merchantShop.sell_select_card_prompt')}</p>
+          )}
+          {feedback && <p className={`mt-2 ${feedback.ok ? 'text-emerald-400' : 'text-red-400'}`}>{feedback.message}</p>}
+        </aside>
+      </div>
+    </div>
   );
 }
 

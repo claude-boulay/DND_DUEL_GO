@@ -33,6 +33,7 @@ export function MerchantPanel({
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newHaggleDc, setNewHaggleDc] = useState(15);
+  const [newBuysCards, setNewBuysCards] = useState(false);
   const [creating, setCreating] = useState(false);
 
   const fetchMerchants = useCallback(
@@ -86,11 +87,12 @@ export function MerchantPanel({
     setCreating(true);
     setError(null);
     try {
-      const { merchant } = await api.createMerchant(token, sessionId, newName, newDescription, newHaggleDc);
+      const { merchant } = await api.createMerchant(token, sessionId, newName, newDescription, newHaggleDc, newBuysCards);
       setMerchants((prev) => [...prev, merchant]);
       setNewName('');
       setNewDescription('');
       setNewHaggleDc(15);
+      setNewBuysCards(false);
     } catch (err) {
       setError(translateApiError(err, t));
     } finally {
@@ -146,6 +148,10 @@ export function MerchantPanel({
               onChange={(e) => setNewHaggleDc(Number(e.target.value))}
               className="w-14 rounded-md border border-arena-600 bg-arena-800 px-2 py-2 text-sm text-neutral-100 outline-none focus:border-accent-500"
             />
+          </label>
+          <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-neutral-400" title={t('merchantPanel.buys_cards_tooltip')}>
+            <input type="checkbox" checked={newBuysCards} onChange={(e) => setNewBuysCards(e.target.checked)} />
+            {t('merchantPanel.buys_cards_label')}
           </label>
           <button
             type="submit"

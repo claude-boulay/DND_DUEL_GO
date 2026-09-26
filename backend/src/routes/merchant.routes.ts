@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import { Merchant, type MerchantDocument } from '../models/Merchant.model';
 import { Card } from '../models/Card.model';
 import { CardSet } from '../models/CardSet.model';
+import { earliestPrintRarity, sellPriceForRarity } from '../utils/cardSellPrice';
 import { Character, type CharacterDocument } from '../models/Character.model';
 import type { GameSessionDocument } from '../models/GameSession.model';
 import { AppError } from '../middleware/errorHandler';
@@ -28,6 +29,7 @@ function toMerchantDto(merchant: MerchantDocument) {
     name: merchant.name,
     description: merchant.description,
     haggle_dc: merchant.haggle_dc,
+    buys_cards: merchant.buys_cards,
     items: merchant.items.map((item) => ({
       id: item._id.toString(),
       item_type: item.item_type,
@@ -88,6 +90,7 @@ const createMerchantSchema = z.object({
   name: z.string().trim().min(1).max(64),
   description: z.string().max(500).default(''),
   haggle_dc: z.number().int().min(1).max(30).default(15),
+  buys_cards: z.boolean().default(false),
 });
 
 merchantRouter.post(
@@ -108,6 +111,7 @@ merchantRouter.post(
       name: body.name,
       description: body.description,
       haggle_dc: body.haggle_dc,
+      buys_cards: body.buys_cards,
       items: [],
     });
 
@@ -148,6 +152,7 @@ const updateMerchantSchema = z.object({
   name: z.string().trim().min(1).max(64).optional(),
   description: z.string().max(500).optional(),
   haggle_dc: z.number().int().min(1).max(30).optional(),
+  buys_cards: z.boolean().optional(),
 });
 
 merchantRouter.patch(
@@ -159,6 +164,7 @@ merchantRouter.patch(
     if (updates.name !== undefined) merchant.name = updates.name;
     if (updates.description !== undefined) merchant.description = updates.description;
     if (updates.haggle_dc !== undefined) merchant.haggle_dc = updates.haggle_dc;
+    if (updates.buys_cards !== undefined) merchant.buys_cards = updates.buys_cards;
     await merchant.save();
 
     res.json({ merchant: toMerchantDto(merchant) });
@@ -616,6 +622,97 @@ merchantRouter.post(
         unit_price: unitPrice,
         total_price: totalPrice,
         haggle: haggleResult,
+      },
+    });
+  }),
+);
+
+const sellCardSchema = z.object({
+  character_id: z.string(),
+  card_id: z.string(),
+  quantity: z.number().int().min(1).max(99).default(1),
+});
+
+/**
+ * Rachat de cartes par un marchand (demande utilisateur) — GM-only opt-in
+ * par marchand (`Merchant.buys_cards`), le prix est calculé côté serveur
+ * depuis la rareté de la PREMIÈRE édition connue de la carte (voir
+ * utils/cardSellPrice.ts), jamais fourni par le client. Toute carte de la
+ * collection est vendable, quelle que soit son origine réelle (booster, don
+ * du MJ, import CSV) — décidé avec l'utilisateur, `collection` reste un
+ * simple `string[]` sans tracer la provenance de chaque exemplaire.
+ */
+merchantRouter.post(
+  '/:id/sell-card',
+  asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const merchant = await loadMerchantOrThrow(req.params.id!);
+    const session = await loadSessionOrThrow(merchant.game_session_id.toString());
+    const userId = req.user!.sub;
+    if (!isSessionMember(session, userId)) {
+      throw new AppError(403, "Vous n'êtes pas membre de ce salon", 'forbidden');
+    }
+    if (!merchant.buys_cards) {
+      throw new AppError(400, "Ce marchand n'achète pas de cartes", 'not_buying_cards');
+    }
+
+    const body = sellCardSchema.parse(req.body);
+    if (!Types.ObjectId.isValid(body.card_id)) throw new AppError(400, 'card_id invalide', 'invalid_input');
+
+    const character = await loadOwnedCharacterOrThrow(body.character_id, merchant.game_session_id.toString(), session, userId);
+
+    const card = await Card.findById(body.card_id);
+    if (!card) throw new AppError(404, 'Carte introuvable', 'not_found');
+
+    // Même code ET même forme de message que POST .../decks/:deckId/cards
+    // (voir errors.not_owned côté frontend, CLAUDE.md Phase 5 — un code ne se
+    // cataloguée que si TOUS ses sites d'appel partagent le même texte).
+    const ownedCopies = character.collection.filter((id) => id === body.card_id).length;
+    if (ownedCopies < body.quantity) {
+      throw new AppError(
+        400,
+        `Vous ne possédez que ${ownedCopies} exemplaire(s) de « ${card.name} » dans votre collection`,
+        'not_owned',
+        { owned: ownedCopies, name: card.name },
+      );
+    }
+
+    // Bloque tant qu'un seul exemplaire est utilisé dans un deck (décidé avec
+    // l'utilisateur) — `collection` et `deck.cards` sont deux tableaux
+    // indépendants (voir POST .../decks/:deckId/cards), donc vendre sans
+    // vérifier pourrait faire passer un deck déjà construit sous le nombre de
+    // copies réellement possédées, sans que le joueur s'en rende compte.
+    const usedInDecks = character.decks.reduce((sum, deck) => sum + deck.cards.filter((id) => id === body.card_id).length, 0);
+    if (usedInDecks > 0) {
+      throw new AppError(409, `« ${card.name} » est utilisée dans un deck — retirez-la de vos decks avant de la vendre`, 'card_in_deck', { name: card.name });
+    }
+
+    const setNames = card.card_sets.map((s) => s.set_name);
+    const referencedSets = setNames.length ? await CardSet.find({ set_name: { $in: setNames } }) : [];
+    const tcgDateBySetName = new Map(referencedSets.map((s) => [s.set_name, s.tcg_date]));
+    const rarity = earliestPrintRarity(card, tcgDateBySetName);
+    const unitPrice = sellPriceForRarity(rarity);
+    const totalPrice = unitPrice * body.quantity;
+
+    let remaining = body.quantity;
+    for (let i = character.collection.length - 1; i >= 0 && remaining > 0; i -= 1) {
+      if (character.collection[i] === body.card_id) {
+        character.collection.splice(i, 1);
+        remaining -= 1;
+      }
+    }
+    character.money += totalPrice;
+    await character.save();
+
+    broadcastSessionResourceChanged(req, session._id.toString(), 'characters');
+    res.json({
+      character: { id: character._id.toString(), money: character.money, collection: character.collection },
+      sale: {
+        card_id: body.card_id,
+        card_name: card.name,
+        quantity: body.quantity,
+        rarity,
+        unit_price: unitPrice,
+        total_price: totalPrice,
       },
     });
   }),

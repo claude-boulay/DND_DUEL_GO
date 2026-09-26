@@ -49,6 +49,11 @@ export interface MerchantAttrs {
   // avoir des articles à négocier très différemment les uns des autres.
   haggle_dc: number;
   items: MerchantItemAttrs[];
+  // Rachat de cartes (demande utilisateur) : GM-only, activable au cas par
+  // cas — un marchand ne rachète pas par défaut. Le prix est calculé côté
+  // serveur depuis la rareté de la carte (voir utils/cardSellPrice.ts), pas
+  // configuré par article comme le reste de la boutique.
+  buys_cards: boolean;
 }
 
 export type MerchantDocument = HydratedDocument<MerchantAttrs>;
@@ -75,6 +80,7 @@ const merchantSchema = new Schema<MerchantAttrs>(
     description: { type: String, default: '', maxlength: 500 },
     haggle_dc: { type: Number, default: 15, min: 1, max: 30 },
     items: { type: [merchantItemSchema], default: [] },
+    buys_cards: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

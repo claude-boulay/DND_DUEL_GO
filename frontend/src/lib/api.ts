@@ -280,6 +280,23 @@ export interface ApiMerchant {
   description: string;
   haggle_dc: number;
   items: ApiMerchantItem[];
+  // Rachat de cartes (demande utilisateur) : GM-only opt-in par marchand, le
+  // prix est calculé côté serveur depuis la rareté de la carte (voir
+  // ApiCardSaleResult) — pas configuré par article comme le reste de la boutique.
+  buys_cards: boolean;
+}
+
+/** Résultat d'une vente de carte à un marchand (voir sellCardToMerchant). */
+export interface ApiCardSaleResult {
+  card_id: string;
+  card_name: string;
+  quantity: number;
+  // Rareté de la PREMIÈRE édition connue de la carte (voir CLAUDE.md) —
+  // `null` si la carte n'a aucun set référencé (custom jamais liée à un
+  // booster), auquel cas le prix retombe sur celui de Commune.
+  rarity: string | null;
+  unit_price: number;
+  total_price: number;
 }
 
 export interface ApiHaggleResult {
@@ -840,10 +857,18 @@ export const api = {
   listMerchants: (token: string, sessionId: string) =>
     request<{ merchants: ApiMerchant[] }>(`/merchants/session/${encodeURIComponent(sessionId)}`, {}, token),
 
-  createMerchant: (token: string, sessionId: string, name: string, description: string, haggleDc: number) =>
+  createMerchant: (token: string, sessionId: string, name: string, description: string, haggleDc: number, buysCards = false) =>
     request<{ merchant: ApiMerchant }>(
       '/merchants',
-      { method: 'POST', body: JSON.stringify({ game_session_id: sessionId, name, description, haggle_dc: haggleDc }) },
+      { method: 'POST', body: JSON.stringify({ game_session_id: sessionId, name, description, haggle_dc: haggleDc, buys_cards: buysCards }) },
+      token,
+    ),
+
+  /** GM-only. */
+  updateMerchant: (token: string, merchantId: string, input: Partial<{ name: string; description: string; haggle_dc: number; buys_cards: boolean }>) =>
+    request<{ merchant: ApiMerchant }>(
+      `/merchants/${encodeURIComponent(merchantId)}`,
+      { method: 'PATCH', body: JSON.stringify(input) },
       token,
     ),
 
@@ -940,6 +965,20 @@ export const api = {
     request<{ haggle: ApiPendingHaggle; remaining_luck_rerolls: number }>(
       `/merchants/${encodeURIComponent(merchantId)}/haggle/${encodeURIComponent(haggleId)}/reroll`,
       { method: 'POST', body: JSON.stringify({}) },
+      token,
+    ),
+
+  /**
+   * Rachat de cartes par un marchand (demande utilisateur) — GM-only opt-in
+   * par marchand (`ApiMerchant.buys_cards`). Le prix est calculé côté serveur
+   * depuis la rareté de la première édition connue de la carte, jamais
+   * fourni ici. Refusé (409 `card_in_deck`) si la carte est utilisée dans un
+   * deck du personnage — à retirer d'abord.
+   */
+  sellCardToMerchant: (token: string, merchantId: string, characterId: string, cardId: string, quantity = 1) =>
+    request<{ character: { id: string; money: number; collection: string[] }; sale: ApiCardSaleResult }>(
+      `/merchants/${encodeURIComponent(merchantId)}/sell-card`,
+      { method: 'POST', body: JSON.stringify({ character_id: characterId, card_id: cardId, quantity }) },
       token,
     ),
 

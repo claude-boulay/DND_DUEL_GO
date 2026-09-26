@@ -47,7 +47,9 @@
     "extra_deck_full": "The Extra Deck is limited to {{max}} cards",
     "main_deck_full": "The Main Deck is limited to {{max}} cards",
     "missing_engine_code": "\"{{name}}\" has no engine code — re-save this card",
-    "missing_lua_script": "\"{{name}}\" is a custom card with no Lua script — a real script is required (CLAUDE.md §3.4)"
+    "missing_lua_script": "\"{{name}}\" is a custom card with no Lua script — a real script is required (CLAUDE.md §3.4)",
+    "not_buying_cards": "This merchant doesn't buy cards",
+    "card_in_deck": "\"{{name}}\" is used in a deck — remove it from your decks before selling it"
   },
   "duelEvents": {
     "summoned": "Summon resolved.",
@@ -249,7 +251,16 @@
     "distinct_cards_one": "{{count}} distinct card",
     "distinct_cards_other": "{{count}} distinct cards",
     "unknown_rarity": "Unknown rarity",
-    "no_cards_for_set": "No cards found for this set."
+    "no_cards_for_set": "No cards found for this set.",
+    "buys_cards_label": "Buys cards",
+    "buys_cards_tooltip": "If enabled, players can sell cards from their collection to this merchant — price based on each card's first-print rarity",
+    "sell_cards_button": "💰 Sell cards",
+    "sell_character_label": "Character:",
+    "sell_owned_count": "{{count}} copy/copies owned",
+    "sell_quantity_label": "Quantity",
+    "sell_confirm": "Sell",
+    "sell_select_card_prompt": "Select a card to sell.",
+    "sell_success": "Sold {{quantity}} × \"{{name}}\" for {{total}} {{currency}}."
   },
   "merchantPicker": {
     "eyebrow": "Merchant — {{name}}",
@@ -541,6 +552,8 @@
     "description_placeholder": "Description (optional)",
     "default_dc_tooltip": "Default DC suggested when a new negotiable item is added to this merchant — each item then keeps its own DC/discount.",
     "default_dc_label": "Default DC",
+    "buys_cards_label": "Buys cards",
+    "buys_cards_tooltip": "Players will be able to sell cards from their collection to this merchant (changeable later from its shop)",
     "create": "Create",
     "empty": "No merchants in this session.",
     "item_count_one": "{{count}} item",
