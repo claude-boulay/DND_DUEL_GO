@@ -286,16 +286,34 @@ export interface ApiMerchant {
   buys_cards: boolean;
 }
 
-/** Résultat d'une vente de carte à un marchand (voir sellCardToMerchant). */
-export interface ApiCardSaleResult {
+/** Une carte + quantité à vendre à un marchand (voir quoteCardSale/sellCardsToMerchant) — plusieurs cartes différentes en un seul appel (demande utilisateur). */
+export interface ApiSellItemInput {
+  card_id: string;
+  quantity: number;
+}
+
+/** Prix résolu pour UN article d'une vente (devis ou vente réelle) — voir ApiCardSaleQuote/ApiCardSaleResult. */
+export interface ApiPricedSellItem {
   card_id: string;
   card_name: string;
-  quantity: number;
   // Rareté de la PREMIÈRE édition connue de la carte (voir CLAUDE.md) —
   // `null` si la carte n'a aucun set référencé (custom jamais liée à un
   // booster), auquel cas le prix retombe sur celui de Commune.
   rarity: string | null;
   unit_price: number;
+  quantity: number;
+  subtotal: number;
+}
+
+/** Devis (voir quoteCardSale) : ne mute rien, juste le prix que rapporterait chaque article. */
+export interface ApiCardSaleQuote {
+  items: ApiPricedSellItem[];
+  total_price: number;
+}
+
+/** Résultat d'une vente groupée réelle (voir sellCardsToMerchant). */
+export interface ApiCardSaleResult {
+  items: ApiPricedSellItem[];
   total_price: number;
 }
 
@@ -969,16 +987,31 @@ export const api = {
     ),
 
   /**
-   * Rachat de cartes par un marchand (demande utilisateur) — GM-only opt-in
-   * par marchand (`ApiMerchant.buys_cards`). Le prix est calculé côté serveur
-   * depuis la rareté de la première édition connue de la carte, jamais
-   * fourni ici. Refusé (409 `card_in_deck`) si la carte est utilisée dans un
-   * deck du personnage — à retirer d'abord.
+   * Devis de vente (demande utilisateur : voir le prix avant de confirmer) —
+   * ne mute rien, mêmes vérifications (possession, deck) que la vente réelle
+   * donc une erreur (ex. carte utilisée dans un deck) est déjà visible avant
+   * la confirmation, pas seulement au clic final.
    */
-  sellCardToMerchant: (token: string, merchantId: string, characterId: string, cardId: string, quantity = 1) =>
+  quoteCardSale: (token: string, merchantId: string, characterId: string, items: ApiSellItemInput[]) =>
+    request<ApiCardSaleQuote>(
+      `/merchants/${encodeURIComponent(merchantId)}/sell-cards/quote`,
+      { method: 'POST', body: JSON.stringify({ character_id: characterId, items }) },
+      token,
+    ),
+
+  /**
+   * Rachat de cartes par un marchand (demande utilisateur) — vente groupée
+   * de plusieurs cartes différentes en un seul appel. GM-only opt-in par
+   * marchand (`ApiMerchant.buys_cards`). Le prix est calculé côté serveur
+   * depuis la rareté de la première édition connue de chaque carte, jamais
+   * fourni ici. Refusé EN BLOC (409 `card_in_deck`) si une seule des cartes
+   * est utilisée dans un deck du personnage — à retirer d'abord, aucune
+   * vente partielle.
+   */
+  sellCardsToMerchant: (token: string, merchantId: string, characterId: string, items: ApiSellItemInput[]) =>
     request<{ character: { id: string; money: number; collection: string[] }; sale: ApiCardSaleResult }>(
-      `/merchants/${encodeURIComponent(merchantId)}/sell-card`,
-      { method: 'POST', body: JSON.stringify({ character_id: characterId, card_id: cardId, quantity }) },
+      `/merchants/${encodeURIComponent(merchantId)}/sell-cards`,
+      { method: 'POST', body: JSON.stringify({ character_id: characterId, items }) },
       token,
     ),
 

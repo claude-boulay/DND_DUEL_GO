@@ -256,11 +256,17 @@
     "buys_cards_tooltip": "If enabled, players can sell cards from their collection to this merchant — price based on each card's first-print rarity",
     "sell_cards_button": "💰 Sell cards",
     "sell_character_label": "Character:",
-    "sell_owned_count": "{{count}} copy/copies owned",
-    "sell_quantity_label": "Quantity",
     "sell_confirm": "Sell",
-    "sell_select_card_prompt": "Select a card to sell.",
-    "sell_success": "Sold {{quantity}} × \"{{name}}\" for {{total}} {{currency}}."
+    "sell_select_card_prompt": "Click cards in your collection to add them to the cart.",
+    "sell_click_hint": "Click a card to add or remove it from the cart.",
+    "sell_cart_title": "Cart ({{count}})",
+    "sell_quote_loading": "Calculating price...",
+    "sell_total_label": "Total:",
+    "sell_confirm_title": "Confirm sale",
+    "sell_confirming": "Selling...",
+    "sell_confirm_final": "Confirm sale",
+    "sell_success": "Sold {{quantity}} × \"{{name}}\" for {{total}} {{currency}}.",
+    "sell_success_multi": "{{count}} cards sold for {{total}} {{currency}}."
   },
   "merchantPicker": {
     "eyebrow": "Merchant — {{name}}",

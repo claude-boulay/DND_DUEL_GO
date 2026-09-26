@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   api,
   type ApiCard,
+  type ApiCardSaleQuote,
   type ApiCharacter,
   type ApiCollectionEntry,
   type ApiMerchant,
@@ -354,13 +355,17 @@ export function MerchantShopOverlay({
 }
 
 /**
- * Rachat de cartes par un marchand (demande utilisateur) : le joueur choisit
- * un de ses personnages, parcourt sa collection réelle (pas les articles du
- * marchand — ici c'est LUI qui vend), sélectionne une carte + une quantité.
- * Le prix (calculé côté serveur depuis la rareté de la PREMIÈRE édition
- * connue de la carte, voir utils/cardSellPrice.ts côté backend) n'est connu
- * qu'après la vente — pas de prévisualisation client, la donnée nécessaire
- * (CardSet.tcg_date de chaque set référencé) n'est pas exposée sur ApiCard.
+ * Rachat de cartes par un marchand (demande utilisateur, avec un suivi
+ * précisant le besoin réel : un panier multi-cartes, une prévisualisation du
+ * prix AVANT de vendre, et une modale de confirmation explicite) : le joueur
+ * choisit un de ses personnages, parcourt sa collection réelle (pas les
+ * articles du marchand — ici c'est LUI qui vend), clique des cartes pour les
+ * ajouter/retirer d'un panier avec une quantité par carte. Le panier est
+ * revalorisé en direct via `.../sell-cards/quote` (devis, ne mute rien) à
+ * chaque changement — un vrai prix par carte est donc visible avant même
+ * d'ouvrir la modale de confirmation, contrairement à la version précédente
+ * qui ne le révélait qu'après la vente (limite alors documentée, maintenant
+ * levée : le devis expose exactement ce que la vente réelle facturerait).
  */
 function SellCardsPanel({
   token,
@@ -380,9 +385,13 @@ function SellCardsPanel({
   const [collection, setCollection] = useState<ApiCollectionEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState(1);
-  const [submitting, setSubmitting] = useState(false);
+  // Panier : card_id -> quantité choisie (jamais 0, une entrée à 0 est retirée
+  // du panier plutôt que conservée avec cette valeur).
+  const [cart, setCart] = useState<Map<string, number>>(new Map());
+  const [quote, setQuote] = useState<ApiCardSaleQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [feedback, setFeedback] = useState<{ ok: boolean; message: string } | null>(null);
 
   const activeCharacterId = characterId || buyableCharacters[0]?.id || '';
@@ -400,33 +409,104 @@ function SellCardsPanel({
 
   useEffect(() => {
     loadCollection(activeCharacterId);
-    setSelectedCardId(null);
+    setCart(new Map());
     setFeedback(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeCharacterId]);
 
-  const selectedEntry = collection?.find((e) => e.card.id === selectedCardId) ?? null;
-
-  const handleSell = async () => {
-    if (!selectedCardId) return;
-    setSubmitting(true);
-    setFeedback(null);
-    try {
-      const { character, sale } = await api.sellCardToMerchant(token, merchantId, activeCharacterId, selectedCardId, quantity);
-      onCharacterUpdate(activeCharacterId, { money: character.money, collection: character.collection });
-      setFeedback({
-        ok: true,
-        message: t('merchantShop.sell_success', { name: sale.card_name, quantity: sale.quantity, total: sale.total_price, currency: currencyName }),
-      });
-      loadCollection(activeCharacterId);
-      setSelectedCardId(null);
-      setQuantity(1);
-    } catch (err) {
-      setFeedback({ ok: false, message: translateApiError(err, t) });
-    } finally {
-      setSubmitting(false);
+  // Devis en direct (demande utilisateur : voir le prix avant de vendre) —
+  // débattu légèrement pour éviter un appel réseau à chaque frappe sur un
+  // champ quantité, redemandé à chaque changement de contenu du panier.
+  useEffect(() => {
+    if (cart.size === 0) {
+      setQuote(null);
+      setQuoteError(null);
+      return;
     }
+    let cancelled = false;
+    setQuoteLoading(true);
+    setQuoteError(null);
+    const items = [...cart.entries()].map(([card_id, quantity]) => ({ card_id, quantity }));
+    const handle = setTimeout(() => {
+      api
+        .quoteCardSale(token, merchantId, activeCharacterId, items)
+        .then((result) => {
+          if (!cancelled) setQuote(result);
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            setQuote(null);
+            setQuoteError(translateApiError(err, t));
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setQuoteLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, merchantId, activeCharacterId, cart]);
+
+  const toggleCard = (cardId: string) => {
+    setCart((prev) => {
+      const next = new Map(prev);
+      if (next.has(cardId)) next.delete(cardId);
+      else next.set(cardId, 1);
+      return next;
+    });
   };
+
+  const setCartQuantity = (cardId: string, quantity: number, maxQuantity: number) => {
+    setCart((prev) => {
+      const next = new Map(prev);
+      next.set(cardId, Math.min(maxQuantity, Math.max(1, quantity)));
+      return next;
+    });
+  };
+
+  const removeFromCart = (cardId: string) => {
+    setCart((prev) => {
+      const next = new Map(prev);
+      next.delete(cardId);
+      return next;
+    });
+  };
+
+  const handleConfirmSell = async () => {
+    const items = [...cart.entries()].map(([card_id, quantity]) => ({ card_id, quantity }));
+    const { character, sale } = await api.sellCardsToMerchant(token, merchantId, activeCharacterId, items);
+    onCharacterUpdate(activeCharacterId, { money: character.money, collection: character.collection });
+    setFeedback({
+      ok: true,
+      message:
+        sale.items.length === 1
+          ? t('merchantShop.sell_success', { name: sale.items[0]!.card_name, quantity: sale.items[0]!.quantity, total: sale.total_price, currency: currencyName })
+          : t('merchantShop.sell_success_multi', {
+              // Nombre total d'EXEMPLAIRES vendus (pas juste de lignes/cartes
+              // distinctes) — vendre 2 « Dark Magician » + 1 autre carte
+              // affiche "3 cartes vendues", pas "2" (nombre de lignes), qui
+              // serait trompeur sur ce qui a réellement quitté la collection.
+              count: sale.items.reduce((sum, item) => sum + item.quantity, 0),
+              total: sale.total_price,
+              currency: currencyName,
+            }),
+    });
+    loadCollection(activeCharacterId);
+    setCart(new Map());
+    setQuote(null);
+  };
+
+  const cartEntries = [...cart.entries()]
+    .map(([cardId, quantity]) => {
+      const collectionEntry = collection?.find((e) => e.card.id === cardId);
+      if (!collectionEntry) return null;
+      const priced = quote?.items.find((i) => i.card_id === cardId) ?? null;
+      return { card: collectionEntry.card, quantity, maxQuantity: collectionEntry.quantity, priced };
+    })
+    .filter((e): e is NonNullable<typeof e> => e !== null);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
@@ -446,72 +526,189 @@ function SellCardsPanel({
       </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
+      {feedback && <p className={`text-sm ${feedback.ok ? 'text-emerald-400' : 'text-red-400'}`}>{feedback.message}</p>}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_260px] gap-4 overflow-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-4 overflow-hidden">
         <div className="overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3">
           {loading && <p className="text-sm text-neutral-500">{t('common.loading')}</p>}
           {!loading && collection && collection.length === 0 && <p className="text-sm text-neutral-500">{t('collectionBrowser.empty_collection')}</p>}
+          {!loading && collection && collection.length > 0 && <p className="mb-2 text-xs text-neutral-500">{t('merchantShop.sell_click_hint')}</p>}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-2">
-            {(collection ?? []).map((entry) => (
-              <button
-                key={entry.card.id}
-                type="button"
-                onClick={() => setSelectedCardId(entry.card.id)}
-                title={displayCardName(entry.card, i18n.language)}
-                className={`group relative rounded border transition ${
-                  selectedCardId === entry.card.id ? 'border-accent-400' : 'border-arena-700 hover:border-arena-500'
-                }`}
-              >
-                {entry.card.card_images[0] && (
-                  <img src={entry.card.card_images[0].image_url_small} alt={entry.card.name} className="w-full rounded" />
-                )}
-                {entry.quantity > 1 && (
-                  <span className="absolute bottom-0.5 right-0.5 rounded bg-arena-950/90 px-1 text-[10px] text-neutral-300">×{entry.quantity}</span>
-                )}
-              </button>
-            ))}
+            {(collection ?? []).map((entry) => {
+              const inCart = cart.has(entry.card.id);
+              return (
+                <button
+                  key={entry.card.id}
+                  type="button"
+                  onClick={() => toggleCard(entry.card.id)}
+                  title={displayCardName(entry.card, i18n.language)}
+                  className={`group relative rounded border transition ${inCart ? 'border-accent-400 ring-1 ring-accent-400' : 'border-arena-700 hover:border-arena-500'}`}
+                >
+                  {entry.card.card_images[0] && (
+                    <img src={entry.card.card_images[0].image_url_small} alt={entry.card.name} className="w-full rounded" />
+                  )}
+                  {entry.quantity > 1 && (
+                    <span className="absolute bottom-0.5 right-0.5 rounded bg-arena-950/90 px-1 text-[10px] text-neutral-300">×{entry.quantity}</span>
+                  )}
+                  {inCart && (
+                    <span className="absolute left-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-accent-500 text-[10px] font-bold text-arena-950">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        <aside className="flex flex-col overflow-y-auto rounded-lg border border-arena-700 bg-arena-900 p-3 text-sm">
-          {selectedEntry ? (
-            <>
-              {selectedEntry.card.card_images[0] && (
-                <img
-                  src={selectedEntry.card.card_images[0].image_url}
-                  alt={displayCardName(selectedEntry.card, i18n.language)}
-                  className="mb-2 w-full rounded-lg"
-                />
-              )}
-              <h3 className="mb-1 font-display text-base text-accent-400">{displayCardName(selectedEntry.card, i18n.language)}</h3>
-              <p className="mb-2 text-xs text-neutral-500">{t('merchantShop.sell_owned_count', { count: selectedEntry.quantity })}</p>
-              <label className="mb-2 flex items-center justify-between gap-2 text-neutral-300">
-                {t('merchantShop.sell_quantity_label')}
-                <input
-                  type="number"
-                  min={1}
-                  max={selectedEntry.quantity}
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.min(selectedEntry.quantity, Math.max(1, Number(e.target.value))))}
-                  className="w-16 rounded border border-arena-600 bg-arena-800 px-2 py-1 text-right text-neutral-100 outline-none focus:border-accent-500"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => void handleSell()}
-                disabled={submitting}
-                className="rounded bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
-              >
-                {t('merchantShop.sell_confirm')}
-              </button>
-            </>
-          ) : (
+        <aside className="flex flex-col overflow-hidden rounded-lg border border-arena-700 bg-arena-900 p-3 text-sm">
+          <h3 className="mb-2 shrink-0 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            {t('merchantShop.sell_cart_title', { count: cartEntries.length })}
+          </h3>
+          {cartEntries.length === 0 ? (
             <p className="text-neutral-500">{t('merchantShop.sell_select_card_prompt')}</p>
+          ) : (
+            <>
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+                {cartEntries.map(({ card, quantity, maxQuantity, priced }) => (
+                  <div key={card.id} className="flex items-center gap-2 rounded border border-arena-700 bg-arena-800 p-1.5">
+                    {card.card_images[0] && <img src={card.card_images[0].image_url_small} alt={card.name} className="h-12 w-9 shrink-0 rounded object-cover" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs text-neutral-200" title={displayCardName(card, i18n.language)}>
+                        {displayCardName(card, i18n.language)}
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={1}
+                          max={maxQuantity}
+                          value={quantity}
+                          onChange={(e) => setCartQuantity(card.id, Number(e.target.value), maxQuantity)}
+                          className="w-12 rounded border border-arena-600 bg-arena-900 px-1 py-0.5 text-right text-[11px] text-neutral-100 outline-none focus:border-accent-500"
+                        />
+                        <span className="text-[10px] text-neutral-500">/ {maxQuantity}</span>
+                        {priced && <span className="ml-auto text-[11px] font-semibold text-accent-400">{priced.subtotal}</span>}
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => removeFromCart(card.id)} className="shrink-0 text-neutral-500 hover:text-red-400">
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-2 shrink-0 border-t border-arena-700 pt-2">
+                {quoteLoading && <p className="text-xs text-neutral-500">{t('merchantShop.sell_quote_loading')}</p>}
+                {quoteError && <p className="text-xs text-red-400">{quoteError}</p>}
+                {quote && !quoteLoading && (
+                  <p className="mb-2 text-sm">
+                    {t('merchantShop.sell_total_label')} <span className="font-semibold text-accent-400">{quote.total_price} {currencyName}</span>
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(true)}
+                  disabled={!quote || quoteLoading || !!quoteError}
+                  className="w-full rounded bg-accent-500 px-3 py-1.5 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+                >
+                  {t('merchantShop.sell_confirm')}
+                </button>
+              </div>
+            </>
           )}
-          {feedback && <p className={`mt-2 ${feedback.ok ? 'text-emerald-400' : 'text-red-400'}`}>{feedback.message}</p>}
         </aside>
       </div>
+
+      {showConfirm && quote && (
+        <SellConfirmModal
+          quote={quote}
+          currencyName={currencyName}
+          i18nLanguage={i18n.language}
+          cartEntries={cartEntries}
+          onConfirm={handleConfirmSell}
+          onClose={() => setShowConfirm(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Modale de confirmation (demande utilisateur) — récapitule le panier + le total avant d'exécuter la vente pour de vrai. */
+function SellConfirmModal({
+  quote,
+  currencyName,
+  i18nLanguage,
+  cartEntries,
+  onConfirm,
+  onClose,
+}: {
+  quote: ApiCardSaleQuote;
+  currencyName: string;
+  i18nLanguage: string;
+  cartEntries: Array<{ card: ApiCard; quantity: number }>;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConfirm = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onConfirm();
+      onClose();
+    } catch (err) {
+      setError(translateApiError(err, t));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6">
+      <div className="w-full max-w-md rounded-xl border border-arena-700 bg-arena-900 p-5 shadow-2xl">
+        <h3 className="mb-3 font-display text-lg text-accent-400">{t('merchantShop.sell_confirm_title')}</h3>
+        <div className="mb-3 max-h-64 space-y-1.5 overflow-y-auto text-sm">
+          {quote.items.map((item) => {
+            const card = cartEntries.find((e) => e.card.id === item.card_id)?.card;
+            return (
+              <div key={item.card_id} className="flex items-center justify-between gap-2 text-neutral-300">
+                <span className="min-w-0 truncate">
+                  {card ? displayCardName(card, i18nLanguage) : item.card_name} × {item.quantity}
+                </span>
+                <span className="shrink-0 font-semibold text-accent-400">{item.subtotal}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mb-4 flex items-center justify-between border-t border-arena-700 pt-2 text-sm font-semibold">
+          <span className="text-neutral-200">{t('merchantShop.sell_total_label')}</span>
+          <span className="text-accent-400">{quote.total_price} {currencyName}</span>
+        </div>
+        {error && <p className="mb-2 text-xs text-red-400">{error}</p>}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void handleConfirm()}
+            disabled={submitting}
+            className="flex-1 rounded-md bg-accent-500 px-3 py-2 text-sm font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+          >
+            {submitting ? t('merchantShop.sell_confirming') : t('merchantShop.sell_confirm_final')}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="rounded-md border border-arena-600 px-3 py-2 text-sm text-neutral-300 transition hover:border-accent-500 hover:text-accent-400 disabled:opacity-50"
+          >
+            {t('characterSheet.cancel')}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

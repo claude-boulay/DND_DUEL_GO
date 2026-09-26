@@ -256,11 +256,17 @@
     "buys_cards_tooltip": "Si activé, les joueurs peuvent vendre des cartes de leur collection à ce marchand — prix calculé selon la rareté de la première édition de chaque carte",
     "sell_cards_button": "💰 Vendre des cartes",
     "sell_character_label": "Personnage :",
-    "sell_owned_count": "{{count}} exemplaire(s) possédé(s)",
-    "sell_quantity_label": "Quantité",
     "sell_confirm": "Vendre",
-    "sell_select_card_prompt": "Sélectionnez une carte à vendre.",
-    "sell_success": "Vendu {{quantity}} × « {{name}} » pour {{total}} {{currency}}."
+    "sell_select_card_prompt": "Cliquez des cartes dans votre collection pour les ajouter au panier.",
+    "sell_click_hint": "Cliquez une carte pour l'ajouter ou la retirer du panier.",
+    "sell_cart_title": "Panier ({{count}})",
+    "sell_quote_loading": "Calcul du prix...",
+    "sell_total_label": "Total :",
+    "sell_confirm_title": "Confirmer la vente",
+    "sell_confirming": "Vente en cours...",
+    "sell_confirm_final": "Confirmer la vente",
+    "sell_success": "Vendu {{quantity}} × « {{name}} » pour {{total}} {{currency}}.",
+    "sell_success_multi": "{{count}} cartes vendues pour {{total}} {{currency}}."
   },
   "merchantPicker": {
     "eyebrow": "Marchand — {{name}}",

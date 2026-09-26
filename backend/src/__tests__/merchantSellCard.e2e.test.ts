@@ -10,11 +10,13 @@ import { Character } from '../models/Character.model';
 
 /**
  * E2E : rachat de cartes par un marchand (demande utilisateur) — voir
- * Merchant.model.ts `buys_cards` et merchant.routes.ts POST .../sell-card.
- * Prix par rareté (décidé avec l'utilisateur) : Commune 1, Rare 5, Super
- * Rare 10, Ultra Rare 20, plus rare que ça 50 — voir utils/cardSellPrice.ts.
- * Cartes/sets seedés directement en base (comme merchantPromo.e2e.test.ts),
- * pas d'appel réseau.
+ * Merchant.model.ts `buys_cards` et merchant.routes.ts POST
+ * .../sell-cards/quote (devis, sans mutation) et .../sell-cards (vente
+ * groupée réelle, plusieurs cartes différentes en un seul appel — demande
+ * utilisateur explicite). Prix par rareté (décidé avec l'utilisateur) :
+ * Commune 1, Rare 5, Super Rare 10, Ultra Rare 20, plus rare que ça 50 — voir
+ * utils/cardSellPrice.ts. Cartes/sets seedés directement en base (comme
+ * merchantPromo.e2e.test.ts), pas d'appel réseau.
  */
 const app = createApp();
 const rand = Math.floor(Math.random() * 1e6);
@@ -188,9 +190,18 @@ describe('Marchand : rachat de cartes selon la rareté de la première édition 
 
   it("un marchand qui n'achète pas de cartes (buys_cards: false) refuse la vente (400)", async () => {
     const res = await request(app)
-      .post(`/api/merchants/${nonBuyingMerchantId}/sell-card`)
+      .post(`/api/merchants/${nonBuyingMerchantId}/sell-cards`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, card_id: reprintedCardId, quantity: 1 })
+      .send({ character_id: characterId, items: [{ card_id: reprintedCardId, quantity: 1 }] })
+      .expect(400);
+    expect(res.body.error.code).toBe('not_buying_cards');
+  });
+
+  it("un marchand qui n'achète pas de cartes refuse aussi le DEVIS (400)", async () => {
+    const res = await request(app)
+      .post(`/api/merchants/${nonBuyingMerchantId}/sell-cards/quote`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ character_id: characterId, items: [{ card_id: reprintedCardId, quantity: 1 }] })
       .expect(400);
     expect(res.body.error.code).toBe('not_buying_cards');
   });
@@ -207,13 +218,24 @@ describe('Marchand : rachat de cartes selon la rareté de la première édition 
     const moneyBefore = before.body.character.money;
     const ownedBefore = before.body.character.collection.filter((id: string) => id === card!._id.toString()).length;
 
-    const res = await request(app)
-      .post(`/api/merchants/${buyingMerchantId}/sell-card`)
+    // Devis d'abord : mêmes montants que la vente réelle, ne mute rien.
+    const quote = await request(app)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards/quote`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, card_id: card!._id.toString(), quantity: 1 })
+      .send({ character_id: characterId, items: [{ card_id: card!._id.toString(), quantity: 1 }] })
+      .expect(200);
+    expect(quote.body.items[0].unit_price).toBe(expectedPrice);
+    expect(quote.body.total_price).toBe(expectedPrice);
+    const afterQuote = await request(app).get(`/api/characters/${characterId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+    expect(afterQuote.body.character.collection.length).toBe(before.body.character.collection.length); // le devis ne mute rien
+
+    const res = await request(app)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({ character_id: characterId, items: [{ card_id: card!._id.toString(), quantity: 1 }] })
       .expect(200);
 
-    expect(res.body.sale.unit_price).toBe(expectedPrice);
+    expect(res.body.sale.items[0].unit_price).toBe(expectedPrice);
     expect(res.body.sale.total_price).toBe(expectedPrice);
     expect(res.body.character.money).toBe(moneyBefore + expectedPrice);
     const ownedAfter = res.body.character.collection.filter((id: string) => id === card!._id.toString()).length;
@@ -222,34 +244,111 @@ describe('Marchand : rachat de cartes selon la rareté de la première édition 
 
   it('carte réimprimée : le prix suit la rareté de la PREMIÈRE édition (Common, 1), pas la réédition Ultra Rare plus récente', async () => {
     const res = await request(app)
-      .post(`/api/merchants/${buyingMerchantId}/sell-card`)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, card_id: reprintedCardId, quantity: 1 })
+      .send({ character_id: characterId, items: [{ card_id: reprintedCardId, quantity: 1 }] })
       .expect(200);
 
-    expect(res.body.sale.rarity).toBe('Common');
-    expect(res.body.sale.unit_price).toBe(1);
+    expect(res.body.sale.items[0].rarity).toBe('Common');
+    expect(res.body.sale.items[0].unit_price).toBe(1);
   });
 
   it('carte custom jamais liée à un booster : repli sur le prix Commune (1), pas refusée', async () => {
     const res = await request(app)
-      .post(`/api/merchants/${buyingMerchantId}/sell-card`)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, card_id: unlinkedCustomCardId, quantity: 1 })
+      .send({ character_id: characterId, items: [{ card_id: unlinkedCustomCardId, quantity: 1 }] })
       .expect(200);
 
-    expect(res.body.sale.rarity).toBeNull();
-    expect(res.body.sale.unit_price).toBe(1);
+    expect(res.body.sale.items[0].rarity).toBeNull();
+    expect(res.body.sale.items[0].unit_price).toBe(1);
+  });
+
+  it('vend PLUSIEURS cartes différentes en un seul appel (demande utilisateur) : chaque article a son propre prix, le total est la somme', async () => {
+    const commonCard = await Card.findOne({ ygoprodeck_id: 951_000_000 + rand }); // reste 1 exemplaire
+    const rareCard = await Card.findOne({ ygoprodeck_id: 952_000_000 + rand }); // reste 1 exemplaire
+
+    const before = await request(app).get(`/api/characters/${characterId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+    const moneyBefore = before.body.character.money;
+
+    const res = await request(app)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({
+        character_id: characterId,
+        items: [
+          { card_id: commonCard!._id.toString(), quantity: 1 },
+          { card_id: rareCard!._id.toString(), quantity: 1 },
+        ],
+      })
+      .expect(200);
+
+    expect(res.body.sale.items).toHaveLength(2);
+    expect(res.body.sale.total_price).toBe(1 + 5); // Commune + Rare
+    expect(res.body.character.money).toBe(moneyBefore + 6);
+  });
+
+  it('fusionne deux entrées répétant le même card_id (quantités additionnées) plutôt que de les traiter indépendamment', async () => {
+    // Recrédite 2 exemplaires d'une carte connue pour ce test précis.
+    const card = await Card.findOne({ ygoprodeck_id: 951_000_000 + rand });
+    await request(app)
+      .post(`/api/characters/${characterId}/collection/add-card`)
+      .set('Authorization', `Bearer ${gm.token}`)
+      .send({ card_id: card!._id.toString(), quantity: 2 })
+      .expect(200);
+
+    const before = await request(app).get(`/api/characters/${characterId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+    const ownedBefore = before.body.character.collection.filter((id: string) => id === card!._id.toString()).length;
+    expect(ownedBefore).toBeGreaterThanOrEqual(2);
+
+    const res = await request(app)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({
+        character_id: characterId,
+        items: [
+          { card_id: card!._id.toString(), quantity: 1 },
+          { card_id: card!._id.toString(), quantity: 1 },
+        ],
+      })
+      .expect(200);
+
+    expect(res.body.sale.items).toHaveLength(1); // fusionné en une seule ligne
+    expect(res.body.sale.items[0].quantity).toBe(2);
+    expect(res.body.sale.total_price).toBe(2); // 2 × prix Commune (1)
   });
 
   it('vendre plus d\'exemplaires que possédés est refusé (400)', async () => {
-    const card = await Card.findOne({ ygoprodeck_id: 953_000_000 + rand }); // super rare, il n'en reste qu'1 après le test précédent
+    const card = await Card.findOne({ ygoprodeck_id: 953_000_000 + rand }); // super rare, il n'en reste qu'1
     const res = await request(app)
-      .post(`/api/merchants/${buyingMerchantId}/sell-card`)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, card_id: card!._id.toString(), quantity: 99 })
+      .send({ character_id: characterId, items: [{ card_id: card!._id.toString(), quantity: 99 }] })
       .expect(400);
     expect(res.body.error.code).toBe('not_owned');
+  });
+
+  it('un article invalide dans une vente groupée refuse la vente ENTIÈRE, sans vendre partiellement les articles valides', async () => {
+    const validCard = await Card.findOne({ ygoprodeck_id: 954_000_000 + rand }); // ultra rare, il en reste 1
+    const before = await request(app).get(`/api/characters/${characterId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+    const ownedBefore = before.body.character.collection.filter((id: string) => id === validCard!._id.toString()).length;
+
+    const res = await request(app)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
+      .set('Authorization', `Bearer ${player.token}`)
+      .send({
+        character_id: characterId,
+        items: [
+          { card_id: validCard!._id.toString(), quantity: 1 },
+          { card_id: validCard!._id.toString(), quantity: 99 }, // fusionné à 100 avec la ligne précédente : dépasse largement le possédé
+        ],
+      })
+      .expect(400);
+    expect(res.body.error.code).toBe('not_owned');
+
+    const after = await request(app).get(`/api/characters/${characterId}`).set('Authorization', `Bearer ${player.token}`).expect(200);
+    const ownedAfter = after.body.character.collection.filter((id: string) => id === validCard!._id.toString()).length;
+    expect(ownedAfter).toBe(ownedBefore); // rien n'a été vendu
   });
 
   it('une carte utilisée dans un deck ne peut pas être vendue (409), même un autre exemplaire du même id', async () => {
@@ -267,9 +366,9 @@ describe('Marchand : rachat de cartes selon la rareté de la première édition 
       .expect(201);
 
     const res = await request(app)
-      .post(`/api/merchants/${buyingMerchantId}/sell-card`)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
       .set('Authorization', `Bearer ${player.token}`)
-      .send({ character_id: characterId, card_id: card!._id.toString(), quantity: 1 })
+      .send({ character_id: characterId, items: [{ card_id: card!._id.toString(), quantity: 1 }] })
       .expect(409);
     expect(res.body.error.code).toBe('card_in_deck');
   });
@@ -278,9 +377,9 @@ describe('Marchand : rachat de cartes selon la rareté de la première édition 
     const outsider = await registerUser('sell_outsider');
     const card = await Card.findOne({ ygoprodeck_id: 951_000_000 + rand });
     await request(app)
-      .post(`/api/merchants/${buyingMerchantId}/sell-card`)
+      .post(`/api/merchants/${buyingMerchantId}/sell-cards`)
       .set('Authorization', `Bearer ${outsider.token}`)
-      .send({ character_id: characterId, card_id: card!._id.toString(), quantity: 1 })
+      .send({ character_id: characterId, items: [{ card_id: card!._id.toString(), quantity: 1 }] })
       .expect(403);
   });
 
