@@ -46,6 +46,15 @@ export function MerchantShopOverlay({
   const [refreshingImages, setRefreshingImages] = useState(false);
   const [sellMode, setSellMode] = useState(false);
   const [togglingBuysCards, setTogglingBuysCards] = useState(false);
+  // Modifier nom/description/DC par défaut après création (demande
+  // utilisateur — jusqu'ici seuls buys_cards et les articles étaient
+  // modifiables une fois le marchand créé, alors que PATCH /merchants/:id
+  // acceptait déjà ces champs côté backend sans jamais être appelé pour eux).
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [editName, setEditName] = useState(merchant.name);
+  const [editDescription, setEditDescription] = useState(merchant.description);
+  const [editHaggleDc, setEditHaggleDc] = useState(merchant.haggle_dc);
+  const [savingInfo, setSavingInfo] = useState(false);
   // MerchantItem.name n'est qu'un instantané figé à l'ajout (voir CLAUDE.md)
   // — jamais mis à jour par une réimportation ultérieure du set d'origine.
   // Résout ici le VRAI nom (traduit si dispo) de chaque article "carte" en
@@ -128,13 +137,97 @@ export function MerchantShopOverlay({
     }
   };
 
+  const startEditingInfo = () => {
+    setEditName(merchant.name);
+    setEditDescription(merchant.description);
+    setEditHaggleDc(merchant.haggle_dc);
+    setEditingInfo(true);
+  };
+
+  const handleSaveInfo = async () => {
+    setSavingInfo(true);
+    setError(null);
+    try {
+      const { merchant: updated } = await api.updateMerchant(token, merchant.id, {
+        name: editName.trim(),
+        description: editDescription,
+        haggle_dc: editHaggleDc,
+      });
+      onMerchantUpdate(updated);
+      setEditingInfo(false);
+    } catch (err) {
+      setError(translateApiError(err, t));
+    } finally {
+      setSavingInfo(false);
+    }
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col bg-arena-950 text-neutral-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-arena-700 px-6 py-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-[0.3em] text-accent-500">{t('merchantShop.eyebrow')}</p>
-          <h2 className="font-display text-2xl text-accent-400">{merchant.name}</h2>
-          {merchant.description && <p className="mt-0.5 max-w-xl truncate text-sm text-neutral-400">{merchant.description}</p>}
+          {editingInfo ? (
+            <div className="mt-1 flex max-w-md flex-col gap-1.5">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="rounded-md border border-arena-600 bg-arena-800 px-2 py-1 font-display text-lg text-accent-400 outline-none focus:border-accent-500"
+              />
+              <input
+                type="text"
+                placeholder={t('merchantPanel.description_placeholder')}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                className="rounded-md border border-arena-600 bg-arena-800 px-2 py-1 text-sm text-neutral-100 outline-none focus:border-accent-500"
+              />
+              <label className="flex items-center gap-1.5 text-xs text-neutral-400" title={t('merchantPanel.default_dc_tooltip')}>
+                {t('merchantPanel.default_dc_label')}
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={editHaggleDc}
+                  onChange={(e) => setEditHaggleDc(Number(e.target.value))}
+                  className="w-14 rounded-md border border-arena-600 bg-arena-800 px-2 py-1 text-neutral-100 outline-none focus:border-accent-500"
+                />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleSaveInfo()}
+                  disabled={savingInfo || !editName.trim()}
+                  className="rounded-md bg-accent-500 px-3 py-1 text-xs font-semibold text-arena-950 transition hover:bg-accent-400 disabled:opacity-50"
+                >
+                  {t('characterSheet.save')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingInfo(false)}
+                  className="rounded-md border border-arena-600 px-3 py-1 text-xs text-neutral-300 transition hover:border-accent-500 hover:text-accent-400"
+                >
+                  {t('characterSheet.cancel')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2">
+              <div className="min-w-0">
+                <h2 className="font-display text-2xl text-accent-400">{merchant.name}</h2>
+                {merchant.description && <p className="mt-0.5 max-w-xl truncate text-sm text-neutral-400">{merchant.description}</p>}
+              </div>
+              {isGm && (
+                <button
+                  type="button"
+                  onClick={startEditingInfo}
+                  className="mt-1 shrink-0 text-xs text-accent-400 underline hover:text-accent-300"
+                >
+                  {t('characterSheet.edit')}
+                </button>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {isGm && (
